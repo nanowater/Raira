@@ -45,6 +45,9 @@ struct LyricsResult {
     Lyrics lyrics;
 };
 
+const int POLL_INTERVAL_MS = 500; /* /current is ~1 KB and answers in <1 ms locally */
+const int LYRICS_SETTLE_MS = 500;
+
 std::mutex g_lyr_mu;
 std::condition_variable g_lyr_cv;
 bool g_lyr_has_req = false;
@@ -83,9 +86,22 @@ void lyrics_loop()
             req           = std::move(g_lyr_req);
             g_lyr_has_req = false;
         }
+        /* Debounce: only look lyrics up once the track has stayed current for LYRICS_SETTLE_MS, so
+         * skipping through songs doesn't fire a request for every one of them. */
+        bool superseded = false;
+        for(int waited = 0; waited < LYRICS_SETTLE_MS; waited += 50) {
+            if(g_lyr_gen.load() != req.gen) {
+                superseded = true;
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+        if(superseded) continue; /* the newer request is already pending */
+
         LyricsResult * r = new LyricsResult;
         r->gen           = req.gen;
-        r->found         = lyrics_fetch(req.info, r->lyrics);
+        uint64_t gen     = req.gen;
+        r->found         = lyrics_fetch(req.info, r->lyrics, [gen] { return g_lyr_gen.load() != gen; });
         lv_async_call(apply_lyrics, r);
     }
 }
@@ -117,14 +133,14 @@ void apply_update(void * p)
 
 void poll_loop(TidalClient client)
 {
-    std::string cover_for;  /* track_id the displayed cover belongs to */
-    std::string lyrics_for; /* track_id lyrics were requested for */
+    std::string cover_for;  /* cover key (image URL) the displayed cover belongs to */
+    std::string lyrics_for; /* metadata key lyrics were requested for */
     while(true) {
         /* Sleep until the next poll, or wake early for a transport command. */
         std::deque<music_ui_cmd_t> cmds;
         {
             std::unique_lock<std::mutex> lk(g_mu);
-            g_cv.wait_for(lk, std::chrono::seconds(1), [] { return !g_cmds.empty(); });
+            g_cv.wait_for(lk, std::chrono::milliseconds(POLL_INTERVAL_MS), [] { return !g_cmds.empty(); });
             cmds.swap(g_cmds);
         }
         for(music_ui_cmd_t c : cmds) {
@@ -137,22 +153,41 @@ void poll_loop(TidalClient client)
 
         MediaInfo info;
         if(client.get_current(info)) {
-            if(!info.track_id.empty() && info.track_id != lyrics_for) {
-                lyrics_for = info.track_id;
+            /* Key on the fields the lookup uses, not just the track URL: while skipping, tidal-hifi can
+             * report the new URL before title/artist/duration catch up, and a lookup made from that
+             * half-updated state would show the previous song's lyrics. */
+            const std::string lyrics_key = info.track_id + '|' + info.title + '|' + info.artists + '|' + info.album + '|' +
+                                           std::to_string(info.duration_sec);
+            if(!info.title.empty() && lyrics_key != lyrics_for) {
+                lyrics_for = lyrics_key;
                 request_lyrics(info);
             }
             Update * u = new Update{info, {}, {}};
-            if(!info.track_id.empty() && info.track_id != cover_for) {
+            /* Key the cover by its image URL: consecutive tracks of one album keep the cover,
+             * and a new URL means new artwork is due. */
+            const std::string cover_key = info.image_url.empty() ? info.track_id : info.image_url;
+            if(!cover_key.empty() && cover_key != cover_for) {
                 std::vector<unsigned char> img;
-                if(client.get_cover(img)) {
-                    /* tidal-hifi serves JPEG (labelled image/png); LVGL's JPEG decoder
-                     * only reads files, so decode here, off the LVGL thread. */
-                    if(cover_decode(img, MUSIC_UI_COVER_SIZE, u->cover))
-                        cover_for = info.track_id;
-                    else if(img.size() > 8 && img[0] == 0x89 && img[1] == 'P' && img[2] == 'N' && img[3] == 'G') {
-                        u->png    = std::move(img);
-                        cover_for = info.track_id;
+                /* Fetch from the artwork URL itself (a smaller size is plenty for the widget).
+                 * tidal-hifi's /current/image serves a file it rewrites after the metadata changes, so
+                 * while skipping tracks quickly it can lag behind or return an in-between track's art;
+                 * it is only the fallback when the CDN is unreachable. */
+                bool got = false;
+                if(!info.image_url.empty()) {
+                    std::string small = info.image_url;
+                    size_t p          = small.find("1280x1280");
+                    if(p != std::string::npos) small.replace(p, 9, "320x320");
+                    got = client.get_cover_from_url(small, img);
+                }
+                if(!got) got = client.get_cover(img);
+                if(got) {
+                    /* JPEG is decoded here, off the LVGL thread (LVGL's JPEG decoder only reads files). */
+                    bool ok = cover_decode(img, MUSIC_UI_COVER_SIZE, u->cover);
+                    if(!ok && img.size() > 8 && img[0] == 0x89 && img[1] == 'P' && img[2] == 'N' && img[3] == 'G') {
+                        u->png = std::move(img);
+                        ok     = true;
                     }
+                    if(ok) cover_for = cover_key;
                 }
             }
             lv_async_call(apply_update, u);

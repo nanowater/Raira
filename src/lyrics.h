@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <vector>
 #include "media_info.h"
@@ -19,5 +20,6 @@ Lyrics lyrics_parse_lrc(const std::string & lrc);
 Lyrics lyrics_parse_plain(const std::string & text);
 
 /* Blocking lookup on LRCLIB (https://lrclib.net). Never call from the LVGL thread.
- * Returns false when nothing was found or the request failed. */
-bool lyrics_fetch(const MediaInfo & info, Lyrics & out);
+ * Returns false when nothing was found, the request failed, or `cancelled` turned true
+ * (checked between requests and during transfers, so a superseded lookup stops quickly). */
+bool lyrics_fetch(const MediaInfo & info, Lyrics & out, const std::function<bool()> & cancelled = nullptr);

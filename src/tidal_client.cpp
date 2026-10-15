@@ -36,11 +36,23 @@ static size_t write_cb(void * ptr, size_t size, size_t nmemb, void * stream)
     return size * nmemb;
 }
 
-bool TidalClient::http_get(const std::string & path, std::string & body)
+/* Reset the shared handle for a fresh request; curl keeps the open connections across the reset. */
+static CURL * prepare(std::shared_ptr<void> & holder)
 {
-    CURL * curl = curl_easy_init();
+    if(!holder) {
+        CURL * c = curl_easy_init();
+        if(!c) return nullptr;
+        holder = std::shared_ptr<void>(c, [](void * p) { curl_easy_cleanup(static_cast<CURL *>(p)); });
+    } else {
+        curl_easy_reset(static_cast<CURL *>(holder.get()));
+    }
+    return static_cast<CURL *>(holder.get());
+}
+
+static bool http_get_url(std::shared_ptr<void> & holder, const std::string & url, std::string & body)
+{
+    CURL * curl = prepare(holder);
     if(!curl) return false;
-    std::string url = cfg_.base_url() + path;
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
@@ -51,15 +63,19 @@ bool TidalClient::http_get(const std::string & path, std::string & body)
     CURLcode rc = curl_easy_perform(curl);
     long code   = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
-    curl_easy_cleanup(curl);
     return rc == CURLE_OK && code == 200 && !body.empty();
+}
+
+bool TidalClient::http_get(const std::string & path, std::string & body)
+{
+    return http_get_url(curl_, cfg_.base_url() + path, body);
 }
 
 bool TidalClient::http_post(const std::string & path)
 {
-    CURL * curl = curl_easy_init();
+    CURL * curl = prepare(curl_);
     if(!curl) return false;
-    std::string url  = cfg_.base_url() + path;
+    std::string url = cfg_.base_url() + path;
     std::string sink;
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_POST, 1L);
@@ -72,7 +88,6 @@ bool TidalClient::http_post(const std::string & path)
     CURLcode rc = curl_easy_perform(curl);
     long code   = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
-    curl_easy_cleanup(curl);
     return rc == CURLE_OK && code == 200;
 }
 
@@ -136,10 +151,19 @@ bool TidalClient::get_current(MediaInfo & out)
     if(!sec_of(j, "currentInSeconds", m.current_sec)) sec_of(j, "current", m.current_sec);
     if(!sec_of(j, "durationInSeconds", m.duration_sec)) sec_of(j, "duration", m.duration_sec);
 
-    m.track_id = str_of(j, "url");
+    m.image_url = str_of(j, "image");
+    m.track_id  = str_of(j, "url");
     if(m.track_id.empty()) m.track_id = m.title;
 
     out = std::move(m);
+    return true;
+}
+
+bool TidalClient::get_cover_from_url(const std::string & url, std::vector<unsigned char> & out)
+{
+    std::string body;
+    if(!http_get_url(curl_, url, body)) return false;
+    out.assign(body.begin(), body.end());
     return true;
 }
 

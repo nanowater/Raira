@@ -13,7 +13,15 @@ static size_t write_cb(void * ptr, size_t size, size_t nmemb, void * stream)
     return size * nmemb;
 }
 
-static bool http_get_once(const std::string & url, std::string & body, long & code)
+using CancelFn = std::function<bool()>;
+
+static int xfer_cb(void * clientp, curl_off_t, curl_off_t, curl_off_t, curl_off_t)
+{
+    const CancelFn * c = static_cast<const CancelFn *>(clientp);
+    return (c && *c && (*c)()) ? 1 : 0; /* non-zero aborts the transfer */
+}
+
+static bool http_get_once(const std::string & url, std::string & body, long & code, const CancelFn & cancelled)
 {
     CURL * curl = curl_easy_init();
     if(!curl) return false;
@@ -25,6 +33,9 @@ static bool http_get_once(const std::string & url, std::string & body, long & co
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 4L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, xfer_cb);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &cancelled);
     CURLcode rc = curl_easy_perform(curl);
     code        = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
@@ -33,14 +44,19 @@ static bool http_get_once(const std::string & url, std::string & body, long & co
 }
 
 /* LRCLIB answers 429 when requests come in bursts; back off and retry a couple of times. */
-static bool http_get_url(const std::string & url, std::string & body)
+static bool http_get_url(const std::string & url, std::string & body, const CancelFn & cancelled)
 {
     for(int attempt = 0; attempt < 3; attempt++) {
+        if(cancelled && cancelled()) return false;
         long code = 0;
         body.clear();
-        if(http_get_once(url, body, code)) return true;
+        if(http_get_once(url, body, code, cancelled)) return true;
         if(code != 429) return false;
-        std::this_thread::sleep_for(std::chrono::milliseconds(1500 * (attempt + 1)));
+        /* back off in short slices so a cancel is noticed quickly */
+        for(int waited = 0; waited < 1500 * (attempt + 1); waited += 100) {
+            if(cancelled && cancelled()) return false;
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
     }
     return false;
 }
@@ -239,7 +255,7 @@ static int score_candidate(const json & item, size_t rank, bool exact, const Med
     return score;
 }
 
-bool lyrics_fetch(const MediaInfo & info, Lyrics & out)
+bool lyrics_fetch(const MediaInfo & info, Lyrics & out, const std::function<bool()> & cancelled)
 {
     if(info.title.empty()) return false;
     const std::string base = "https://lrclib.net/api/";
@@ -254,7 +270,7 @@ bool lyrics_fetch(const MediaInfo & info, Lyrics & out)
     std::string get = base + "get?track_name=" + escape(info.title) + "&artist_name=" + escape(info.artists);
     if(!info.album.empty()) get += "&album_name=" + escape(info.album);
     if(info.duration_sec > 0) get += "&duration=" + std::to_string(info.duration_sec);
-    if(http_get_url(get, body)) {
+    if(http_get_url(get, body, cancelled)) {
         json j = json::parse(body, nullptr, false);
         if(j.is_object()) {
             cands.push_back(std::move(j));
@@ -264,7 +280,7 @@ bool lyrics_fetch(const MediaInfo & info, Lyrics & out)
 
     body.clear();
     std::string q = strip_suffix(info.title) + " " + first_artist(info.artists);
-    if(http_get_url(base + "search?q=" + escape(q), body)) {
+    if(http_get_url(base + "search?q=" + escape(q), body, cancelled)) {
         json arr = json::parse(body, nullptr, false);
         if(arr.is_array()) {
             for(auto & item : arr) {
@@ -274,6 +290,8 @@ bool lyrics_fetch(const MediaInfo & info, Lyrics & out)
             }
         }
     }
+
+    if(cancelled && cancelled()) return false;
 
     const json * best = nullptr;
     int best_score    = -1;
