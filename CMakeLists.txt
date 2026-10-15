@@ -99,9 +99,18 @@ target_link_libraries(lvgl_linux PUBLIC ${LIBS})
 add_executable(lvglsim
     src/main.cpp
     src/music_ui.cpp
+    src/tidal_client.cpp
+    src/media_poller.cpp
+    src/cover_decoder.cpp
+    src/fonts/font_mono_13.c
+    src/fonts/noto_sans_kr.c
 )
 find_package(CURL REQUIRED)
-target_link_libraries(lvglsim PUBLIC lvgl_linux ${EXTRA_LIBS} CURL::libcurl)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(TURBOJPEG REQUIRED IMPORTED_TARGET libturbojpeg)
+target_link_libraries(lvglsim PUBLIC lvgl_linux ${EXTRA_LIBS} CURL::libcurl PkgConfig::TURBOJPEG)
+set_source_files_properties(src/fonts/noto_sans_kr.c PROPERTIES COMPILE_DEFINITIONS "NOTO_SANS_KR_PATH=\"${CMAKE_CURRENT_LIST_DIR}/assets/fonts/NotoSansKR-Regular-subset.otf\"")
+target_compile_definitions(lvglsim PRIVATE LV_LABEL_SCROLL_DELAY=2000 LV_LABEL_WAIT_CHAR_COUNT=8)
 
 if(CONFIG_LV_USE_DEMO_TRUCK)
     target_compile_definitions(lvglsim PUBLIC CONFIG_LV_USE_DEMO_TRUCK)

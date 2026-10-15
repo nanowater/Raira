@@ -22,9 +22,11 @@
 #include "lib/simulator_util.h"
 #include "lib/simulator_settings.h"
 #include "music_ui.h"
+#include "media_poller.h"
 
 /* Internal functions */
 static void configure_simulator(int argc, char ** argv);
+static TidalConfig tidal_cfg;
 static void print_lvgl_version(void);
 static void print_usage(void);
 static void show_demo(void);
@@ -57,12 +59,13 @@ static void print_lvgl_version(void)
 static void print_usage(void)
 {
     fprintf(stdout,
-            "\nlvglsim [-V] [-B] [-D] [-f] [-m] [-b backend_name] [-W window_width] [-H window_height] [-R rotation]\n\n");
+            "\nlvglsim [-V] [-B] [-D] [-f] [-m] [-s host[:port]] [-b backend_name] [-W window_width] [-H window_height] [-R rotation]\n\n");
     fprintf(stdout, "-V print LVGL version\n");
     fprintf(stdout, "-B list supported backends\n");
     fprintf(stdout, "-D run the LVGL demo instead of the app UI\n");
     fprintf(stdout, "-f fullscreen\n");
     fprintf(stdout, "-m maximize\n");
+    fprintf(stdout, "-s tidal-hifi host[:port] (default localhost:47836, env TIDAL_HIFI_HOST)\n");
 }
 
 /**
@@ -110,6 +113,10 @@ static void configure_simulator(int argc, char ** argv)
     selected_backend = NULL;
     driver_backends_register();
 
+    if(const char * env_host = getenv("TIDAL_HIFI_HOST")) {
+        if(!tidal_cfg.parse(env_host)) die("Invalid TIDAL_HIFI_HOST '%s'\n", env_host);
+    }
+
     const char * env_w = getenv("LV_SIM_WINDOW_WIDTH");
     const char * env_h = getenv("LV_SIM_WINDOW_HEIGHT");
     /* Default values */
@@ -117,7 +124,7 @@ static void configure_simulator(int argc, char ** argv)
     settings.window_height = atoi(env_h ? env_h : "480");
 
     /* Parse the command-line options. */
-    while((opt = getopt(argc, argv, "b:fmW:H:R:BVDh")) != -1) {
+    while((opt = getopt(argc, argv, "b:fmW:H:R:s:BVDh")) != -1) {
         switch(opt) {
             case 'h':
                 print_usage();
@@ -130,6 +137,9 @@ static void configure_simulator(int argc, char ** argv)
             case 'B':
                 driver_backends_print_supported();
                 exit(EXIT_SUCCESS);
+                break;
+            case 's':
+                if(!tidal_cfg.parse(optarg)) die("Invalid -s value '%s' (expected host[:port])\n", optarg);
                 break;
             case 'D':
                 show_demo_screen = true;
@@ -219,6 +229,7 @@ int main(int argc, char ** argv)
     }
     else {
         music_ui_create();
+        media_poller_start(tidal_cfg);
     }
 
     while(1) {
