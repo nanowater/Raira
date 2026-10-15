@@ -30,6 +30,8 @@ public:
     bool play_pause() { return http_post("/player/playpause"); }
     bool next() { return http_post("/player/next"); }
     bool previous() { return http_post("/player/previous"); }
+    bool toggle_shuffle() { return http_post("/player/shuffle/toggle"); }
+    bool toggle_repeat() { return http_post("/player/repeat/toggle"); }
 
 private:
     bool http_post(const std::string & path);

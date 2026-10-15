@@ -122,7 +122,10 @@ void apply_update(void * p)
 {
     Update * u = static_cast<Update *>(p);
     music_ui_state_t st{u->info.title.c_str(), u->info.artists.c_str(), u->info.current_sec, u->info.duration_sec,
-                        u->info.status == "playing"};
+                        u->info.status == "playing", u->info.shuffle,
+                        u->info.repeat == "single" ? MUSIC_UI_REPEAT_SINGLE
+                        : u->info.repeat == "all"  ? MUSIC_UI_REPEAT_ALL
+                                                   : MUSIC_UI_REPEAT_OFF};
     music_ui_update(&st);
     if(!u->cover.data.empty())
         music_ui_set_album_art_raw(u->cover.data.data(), u->cover.w, u->cover.h, LV_COLOR_FORMAT_XRGB8888);
@@ -148,6 +151,8 @@ void poll_loop(TidalClient client)
                 case MUSIC_UI_CMD_PREVIOUS: client.previous(); break;
                 case MUSIC_UI_CMD_PLAY_PAUSE: client.play_pause(); break;
                 case MUSIC_UI_CMD_NEXT: client.next(); break;
+                case MUSIC_UI_CMD_SHUFFLE: client.toggle_shuffle(); break;
+                case MUSIC_UI_CMD_REPEAT: client.toggle_repeat(); break;
             }
         }
 

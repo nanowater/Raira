@@ -151,6 +151,12 @@ bool TidalClient::get_current(MediaInfo & out)
     if(!sec_of(j, "currentInSeconds", m.current_sec)) sec_of(j, "current", m.current_sec);
     if(!sec_of(j, "durationInSeconds", m.duration_sec)) sec_of(j, "duration", m.duration_sec);
 
+    auto pl = j.find("player");
+    if(pl != j.end() && pl->is_object()) {
+        auto sh = pl->find("shuffle");
+        if(sh != pl->end() && sh->is_boolean()) m.shuffle = sh->get<bool>();
+        m.repeat = str_of(*pl, "repeat");
+    }
     m.image_url = str_of(j, "image");
     m.track_id  = str_of(j, "url");
     if(m.track_id.empty()) m.track_id = m.title;

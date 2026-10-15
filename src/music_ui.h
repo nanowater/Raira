@@ -22,9 +22,20 @@ typedef struct {
     int current_sec;
     int duration_sec;
     bool playing;
+    bool shuffle;
+    int repeat; /* music_ui_repeat_t */
 } music_ui_state_t;
 
-typedef enum { MUSIC_UI_CMD_PREVIOUS, MUSIC_UI_CMD_PLAY_PAUSE, MUSIC_UI_CMD_NEXT } music_ui_cmd_t;
+/* Declared in the order tidal-hifi cycles them: off -> all -> single -> off. */
+typedef enum { MUSIC_UI_REPEAT_OFF, MUSIC_UI_REPEAT_ALL, MUSIC_UI_REPEAT_SINGLE } music_ui_repeat_t;
+
+typedef enum {
+    MUSIC_UI_CMD_PREVIOUS,
+    MUSIC_UI_CMD_PLAY_PAUSE,
+    MUSIC_UI_CMD_NEXT,
+    MUSIC_UI_CMD_SHUFFLE,
+    MUSIC_UI_CMD_REPEAT
+} music_ui_cmd_t;
 
 /* Called on the LVGL thread when a transport button is pressed; must not block. */
 typedef void (*music_ui_transport_cb_t)(music_ui_cmd_t cmd);

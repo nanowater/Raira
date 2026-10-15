@@ -34,17 +34,53 @@ static lv_timer_t * title_scroll_timer      = nullptr;
 static lv_obj_t * play_label                = nullptr;
 static music_ui_transport_cb_t transport_cb = nullptr;
 
-/* After a play/pause click the icon flips right away; polled status is ignored until it
- * agrees or the grace period ends (tidal-hifi reports the old state for a moment). */
+/* After a click the icon flips right away; polled status is ignored until it agrees or the
+ * grace period ends (tidal-hifi reports the old state for a moment). */
 static const uint32_t OPTIMISTIC_GRACE_MS = 2000;
-static bool shown_playing                 = false;
-static bool optimistic_active             = false;
-static uint32_t optimistic_since          = 0;
+static const uint32_t ICON_ON             = 0xFFFFFF;
+static const uint32_t ICON_OFF            = 0x6B7280;
+
+struct Optimistic {
+    bool active    = false;
+    uint32_t since = 0;
+    void start()
+    {
+        active = true;
+        since  = lv_tick_get();
+    }
+    /* Returns true while the polled value should be ignored. */
+    bool holds(bool polled_matches_shown)
+    {
+        if(active && (polled_matches_shown || lv_tick_elaps(since) > OPTIMISTIC_GRACE_MS)) active = false;
+        return active;
+    }
+};
+
+static bool shown_playing  = false;
+static bool shown_shuffle  = false;
+static int shown_repeat    = MUSIC_UI_REPEAT_OFF;
+static Optimistic opt_play, opt_shuffle, opt_repeat;
+static lv_obj_t * shuffle_label    = nullptr;
+static lv_obj_t * repeat_label     = nullptr;
+static lv_obj_t * repeat_one_label = nullptr; /* small "1" over the loop icon */
 
 static void show_playing(bool playing)
 {
     shown_playing = playing;
     if(play_label) lv_label_set_text(play_label, playing ? LV_SYMBOL_PAUSE : LV_SYMBOL_PLAY);
+}
+
+static void show_shuffle(bool on)
+{
+    shown_shuffle = on;
+    if(shuffle_label) lv_obj_set_style_text_color(shuffle_label, lv_color_hex(on ? ICON_ON : ICON_OFF), 0);
+}
+
+static void show_repeat(int mode)
+{
+    shown_repeat = mode;
+    if(repeat_label) lv_obj_set_style_text_color(repeat_label, lv_color_hex(mode != MUSIC_UI_REPEAT_OFF ? ICON_ON : ICON_OFF), 0);
+    if(repeat_one_label) lv_obj_set_hidden(repeat_one_label, mode != MUSIC_UI_REPEAT_SINGLE);
 }
 
 /* Album art buffer (encoded PNG or decoded pixels) owned by the UI. */
@@ -181,8 +217,14 @@ static void on_transport_clicked(lv_event_t * e)
     music_ui_cmd_t cmd = (music_ui_cmd_t)(intptr_t)lv_event_get_user_data(e);
     if(cmd == MUSIC_UI_CMD_PLAY_PAUSE) {
         show_playing(!shown_playing);
-        optimistic_active = true;
-        optimistic_since  = lv_tick_get();
+        opt_play.start();
+    } else if(cmd == MUSIC_UI_CMD_SHUFFLE) {
+        show_shuffle(!shown_shuffle);
+        opt_shuffle.start();
+    } else if(cmd == MUSIC_UI_CMD_REPEAT) {
+        /* tidal-hifi cycles off -> all -> single (enum order) */
+        show_repeat((shown_repeat + 1) % 3);
+        opt_repeat.start();
     }
     if(transport_cb) transport_cb(cmd);
 }
@@ -212,9 +254,9 @@ void music_ui_update(const music_ui_state_t * st)
 {
     if(!st) return;
     lyrics_sync_position(st);
-    if(optimistic_active && (st->playing == shown_playing || lv_tick_elaps(optimistic_since) > OPTIMISTIC_GRACE_MS))
-        optimistic_active = false;
-    if(!optimistic_active) show_playing(st->playing);
+    if(!opt_play.holds(st->playing == shown_playing)) show_playing(st->playing);
+    if(!opt_shuffle.holds(st->shuffle == shown_shuffle)) show_shuffle(st->shuffle);
+    if(!opt_repeat.holds(st->repeat == shown_repeat)) show_repeat(st->repeat);
     const char * new_title   = st->title ? st->title : "";
     const char * new_artists = st->artists ? st->artists : "";
 
@@ -396,9 +438,20 @@ void music_ui_create(void)
     lv_obj_set_style_pad_all(controls, 0, 0);
     lv_obj_set_scrollable(controls, false);
 
-    create_transport_button(controls, LV_SYMBOL_PREV, 52, &lv_font_montserrat_22, MUSIC_UI_CMD_PREVIOUS);
-    play_label = create_transport_button(controls, LV_SYMBOL_PLAY, 64, &lv_font_montserrat_30, MUSIC_UI_CMD_PLAY_PAUSE);
-    create_transport_button(controls, LV_SYMBOL_NEXT, 52, &lv_font_montserrat_22, MUSIC_UI_CMD_NEXT);
+    // 셔플 / 이전 / 재생 / 다음 / 반복 (카드 폭 250px에 한 줄)
+    shuffle_label = create_transport_button(controls, LV_SYMBOL_SHUFFLE, 38, &lv_font_montserrat_16, MUSIC_UI_CMD_SHUFFLE);
+    create_transport_button(controls, LV_SYMBOL_PREV, 46, &lv_font_montserrat_22, MUSIC_UI_CMD_PREVIOUS);
+    play_label = create_transport_button(controls, LV_SYMBOL_PLAY, 60, &lv_font_montserrat_30, MUSIC_UI_CMD_PLAY_PAUSE);
+    create_transport_button(controls, LV_SYMBOL_NEXT, 46, &lv_font_montserrat_22, MUSIC_UI_CMD_NEXT);
+    repeat_label = create_transport_button(controls, LV_SYMBOL_LOOP, 38, &lv_font_montserrat_16, MUSIC_UI_CMD_REPEAT);
+
+    repeat_one_label = lv_label_create(lv_obj_get_parent(repeat_label));
+    lv_label_set_text(repeat_one_label, "1");
+    lv_obj_set_style_text_font(repeat_one_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(repeat_one_label, lv_color_white(), 0);
+    lv_obj_center(repeat_one_label);
+    show_shuffle(false);
+    show_repeat(MUSIC_UI_REPEAT_OFF);
 
     // 가사 영역 (오른쪽)
     lyrics_font  = noto_font(24, noto_font(24, &lv_font_montserrat_22), true); /* Bold; Regular for any missing glyph */
