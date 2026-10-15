@@ -55,6 +55,27 @@ bool TidalClient::http_get(const std::string & path, std::string & body)
     return rc == CURLE_OK && code == 200 && !body.empty();
 }
 
+bool TidalClient::http_post(const std::string & path)
+{
+    CURL * curl = curl_easy_init();
+    if(!curl) return false;
+    std::string url  = cfg_.base_url() + path;
+    std::string sink;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "");
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &sink);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 2L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+    CURLcode rc = curl_easy_perform(curl);
+    long code   = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
+    curl_easy_cleanup(curl);
+    return rc == CURLE_OK && code == 200;
+}
+
 static std::string str_of(const json & j, const char * key)
 {
     auto it = j.find(key);

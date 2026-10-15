@@ -29,6 +29,21 @@ static lv_obj_t * progress_bar         = nullptr;
 static lv_obj_t * current_time_lbl     = nullptr;
 static lv_obj_t * duration_time_lbl    = nullptr;
 static lv_timer_t * title_scroll_timer = nullptr;
+static lv_obj_t * play_label           = nullptr;
+static music_ui_transport_cb_t transport_cb = nullptr;
+
+/* After a play/pause click the icon flips right away; polled status is ignored until it
+ * agrees or the grace period ends (tidal-hifi reports the old state for a moment). */
+static const uint32_t OPTIMISTIC_GRACE_MS = 2000;
+static bool shown_playing                 = false;
+static bool optimistic_active             = false;
+static uint32_t optimistic_since          = 0;
+
+static void show_playing(bool playing)
+{
+    shown_playing = playing;
+    if(play_label) lv_label_set_text(play_label, playing ? LV_SYMBOL_PAUSE : LV_SYMBOL_PLAY);
+}
 
 /* Album art buffer (encoded PNG or decoded pixels) owned by the UI. */
 static unsigned char * art_data = nullptr;
@@ -52,9 +67,49 @@ static void set_label_if_changed(lv_obj_t * lbl, const char * text)
     if(lbl && strcmp(lv_label_get_text(lbl), text) != 0) lv_label_set_text(lbl, text);
 }
 
+void music_ui_set_transport_cb(music_ui_transport_cb_t cb)
+{
+    transport_cb = cb;
+}
+
+static void on_transport_clicked(lv_event_t * e)
+{
+    music_ui_cmd_t cmd = (music_ui_cmd_t)(intptr_t)lv_event_get_user_data(e);
+    if(cmd == MUSIC_UI_CMD_PLAY_PAUSE) {
+        show_playing(!shown_playing);
+        optimistic_active = true;
+        optimistic_since  = lv_tick_get();
+    }
+    if(transport_cb) transport_cb(cmd);
+}
+
+/* Round icon button using a built-in LVGL symbol. Returns the label (for icon swaps). */
+static lv_obj_t * create_transport_button(lv_obj_t * parent, const char * symbol, int32_t size, const lv_font_t * font,
+                                          music_ui_cmd_t cmd)
+{
+    lv_obj_t * btn = lv_button_create(parent);
+    lv_obj_set_size(btn, size, size);
+    lv_obj_set_style_radius(btn, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_shadow_width(btn, 0, 0);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_20, LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(btn, lv_color_white(), LV_STATE_PRESSED);
+    lv_obj_add_event_cb(btn, on_transport_clicked, LV_EVENT_CLICKED, (void *)(intptr_t)cmd);
+
+    lv_obj_t * lbl = lv_label_create(btn);
+    lv_label_set_text(lbl, symbol);
+    lv_obj_set_style_text_font(lbl, font, 0);
+    lv_obj_set_style_text_color(lbl, lv_color_white(), 0);
+    lv_obj_center(lbl);
+    return lbl;
+}
+
 void music_ui_update(const music_ui_state_t * st)
 {
     if(!st) return;
+    if(optimistic_active && (st->playing == shown_playing || lv_tick_elaps(optimistic_since) > OPTIMISTIC_GRACE_MS))
+        optimistic_active = false;
+    if(!optimistic_active) show_playing(st->playing);
     const char * new_title   = st->title ? st->title : "";
     const char * new_artists = st->artists ? st->artists : "";
 
@@ -148,7 +203,7 @@ void music_ui_create(void)
 
     // 미디어 카드 (cover + title + artists 그룹)
     lv_obj_t * media_card = lv_obj_create(screen);
-    lv_obj_set_size(media_card, 280, 380);
+    lv_obj_set_size(media_card, 280, 420);
     lv_obj_set_flex_flow(media_card, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(media_card, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_bg_opa(media_card, LV_OPA_TRANSP, 0);
@@ -222,4 +277,18 @@ void music_ui_create(void)
     lv_obj_set_style_text_font(duration_time_lbl, &font_mono_13, LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(duration_time_lbl, lv_color_hex(0xFFFFFF), LV_STATE_DEFAULT);
     lv_obj_align(duration_time_lbl, LV_ALIGN_TOP_RIGHT, 0, 20);
+
+    // 재생 컨트롤 (재생바 아래, 카드 폭에 맞춤)
+    lv_obj_t * controls = lv_obj_create(media_card);
+    lv_obj_set_size(controls, 250, 64);
+    lv_obj_set_flex_flow(controls, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(controls, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_bg_opa(controls, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(controls, 0, 0);
+    lv_obj_set_style_pad_all(controls, 0, 0);
+    lv_obj_set_scrollable(controls, false);
+
+    create_transport_button(controls, LV_SYMBOL_PREV, 52, &lv_font_montserrat_22, MUSIC_UI_CMD_PREVIOUS);
+    play_label = create_transport_button(controls, LV_SYMBOL_PLAY, 64, &lv_font_montserrat_30, MUSIC_UI_CMD_PLAY_PAUSE);
+    create_transport_button(controls, LV_SYMBOL_NEXT, 52, &lv_font_montserrat_22, MUSIC_UI_CMD_NEXT);
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <lvgl/lvgl.h>
+#include <stdbool.h>
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -20,7 +21,14 @@ typedef struct {
     const char * artists;
     int current_sec;
     int duration_sec;
+    bool playing;
 } music_ui_state_t;
+
+typedef enum { MUSIC_UI_CMD_PREVIOUS, MUSIC_UI_CMD_PLAY_PAUSE, MUSIC_UI_CMD_NEXT } music_ui_cmd_t;
+
+/* Called on the LVGL thread when a transport button is pressed; must not block. */
+typedef void (*music_ui_transport_cb_t)(music_ui_cmd_t cmd);
+void music_ui_set_transport_cb(music_ui_transport_cb_t cb);
 
 /* Update now-playing widgets. LVGL thread only (e.g. from lv_async_call). Strings are copied. */
 void music_ui_update(const music_ui_state_t * st);

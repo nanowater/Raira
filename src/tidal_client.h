@@ -22,7 +22,13 @@ public:
     /* Raw encoded image bytes (JPEG/PNG) of the current cover. */
     bool get_cover(std::vector<unsigned char> & out);
 
+    /* Transport commands; each returns true on HTTP 200. */
+    bool play_pause() { return http_post("/player/playpause"); }
+    bool next() { return http_post("/player/next"); }
+    bool previous() { return http_post("/player/previous"); }
+
 private:
+    bool http_post(const std::string & path);
     bool http_get(const std::string & path, std::string & body);
     TidalConfig cfg_;
 };
