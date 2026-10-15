@@ -110,7 +110,12 @@ find_package(CURL REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(TURBOJPEG REQUIRED IMPORTED_TARGET libturbojpeg)
 target_link_libraries(lvglsim PUBLIC lvgl_linux ${EXTRA_LIBS} CURL::libcurl PkgConfig::TURBOJPEG)
-set_source_files_properties(src/fonts/noto_sans_kr.c PROPERTIES COMPILE_DEFINITIONS "NOTO_SANS_KR_PATH=\"${CMAKE_CURRENT_LIST_DIR}/assets/fonts/NotoSansKR-Regular-subset.otf\"")
+# .incbin is invisible to the dependency scanner, so declare the fonts as explicit dependencies
+set(NOTO_REGULAR "${CMAKE_CURRENT_LIST_DIR}/assets/fonts/NotoSansKR-Regular-subset.otf")
+set(NOTO_BOLD "${CMAKE_CURRENT_LIST_DIR}/assets/fonts/NotoSansKR-Bold-subset.otf")
+set_source_files_properties(src/fonts/noto_sans_kr.c PROPERTIES
+    COMPILE_DEFINITIONS "NOTO_SANS_KR_PATH=\"${NOTO_REGULAR}\";NOTO_SANS_KR_BOLD_PATH=\"${NOTO_BOLD}\""
+    OBJECT_DEPENDS "${NOTO_REGULAR};${NOTO_BOLD}")
 target_compile_definitions(lvglsim PRIVATE LV_LABEL_SCROLL_DELAY=2000 LV_LABEL_WAIT_CHAR_COUNT=8)
 
 if(CONFIG_LV_USE_DEMO_TRUCK)

@@ -8,13 +8,14 @@
 #include "music_ui.h"
 
 extern "C" const lv_font_t font_mono_13; /* DejaVu Sans Mono 13px, digits and ":" only (src/fonts) */
-extern "C" const unsigned char * noto_sans_kr_get(size_t * size); /* embedded Noto Sans KR subset */
+extern "C" const unsigned char * noto_sans_kr_get(size_t * size);      /* embedded Noto Sans KR subset */
+extern "C" const unsigned char * noto_sans_kr_bold_get(size_t * size); /* same glyph set, Bold */
 
-/* Noto Sans KR at the given px size via TinyTTF; falls back to Montserrat if loading fails. */
-static const lv_font_t * noto_font(int32_t px, const lv_font_t * fallback)
+/* Noto Sans KR at the given px size via TinyTTF; falls back to `fallback` if loading fails. */
+static const lv_font_t * noto_font(int32_t px, const lv_font_t * fallback, bool bold = false)
 {
     size_t size                = 0;
-    const unsigned char * data = noto_sans_kr_get(&size);
+    const unsigned char * data = bold ? noto_sans_kr_bold_get(&size) : noto_sans_kr_get(&size);
     lv_font_t * f              = lv_tiny_ttf_create_data(data, size, px);
     if(!f) return fallback;
     f->fallback = fallback; /* glyphs outside the subset (e.g. symbols) */
@@ -116,18 +117,6 @@ static void lyrics_highlight(int idx)
 
 static void lyrics_tick_cb(lv_timer_t *)
 {
-    static int n = 0;
-    if(++n % 20 == 0) {
-        lv_obj_t * scr  = lv_screen_active();
-        lv_obj_t * card = lv_obj_get_child(scr, 0);
-        lv_area_t c;
-        lv_obj_get_coords(card, &c);
-        lv_area_t t;
-        lv_obj_get_coords(artists, &t);
-        fprintf(stderr, "DBG card=(%d..%d) card_scroll=(%d,%d) artists=(%d..%d) w=%d title_w=%d cover_x=%d\n",
-                (int)c.x1, (int)c.x2, (int)lv_obj_get_scroll_x(card), (int)lv_obj_get_scroll_y(card), (int)t.x1,
-                (int)t.x2, (int)lv_obj_get_width(artists), (int)lv_obj_get_width(title), (int)lv_obj_get_x(cover));
-    }
     if(!lyrics_synced || lyric_times.empty()) return;
     int32_t pos = position_ms();
     int idx     = -1;
@@ -412,7 +401,7 @@ void music_ui_create(void)
     create_transport_button(controls, LV_SYMBOL_NEXT, 52, &lv_font_montserrat_22, MUSIC_UI_CMD_NEXT);
 
     // 가사 영역 (오른쪽)
-    lyrics_font  = noto_font(24, &lv_font_montserrat_22);
+    lyrics_font  = noto_font(24, noto_font(24, &lv_font_montserrat_22), true); /* Bold; Regular for any missing glyph */
     lyrics_panel = lv_obj_create(screen);
     lv_obj_set_size(lyrics_panel, 420, 420);
     lv_obj_align(lyrics_panel, LV_ALIGN_TOP_RIGHT, -30, 30);
