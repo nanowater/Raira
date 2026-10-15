@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 #include <lvgl/lvgl.h>
 #include <src/misc/cache/instance/lv_image_cache.h>
 #include "music_ui.h"
@@ -20,16 +21,16 @@ static const lv_font_t * noto_font(int32_t px, const lv_font_t * fallback)
     return f;
 }
 
-static lv_obj_t * cover                = nullptr;
-static lv_obj_t * title_box            = nullptr;
-static lv_obj_t * title                = nullptr;
-static lv_obj_t * artists              = nullptr;
-static lv_obj_t * progress_panel       = nullptr;
-static lv_obj_t * progress_bar         = nullptr;
-static lv_obj_t * current_time_lbl     = nullptr;
-static lv_obj_t * duration_time_lbl    = nullptr;
-static lv_timer_t * title_scroll_timer = nullptr;
-static lv_obj_t * play_label           = nullptr;
+static lv_obj_t * cover                     = nullptr;
+static lv_obj_t * title_box                 = nullptr;
+static lv_obj_t * title                     = nullptr;
+static lv_obj_t * artists                   = nullptr;
+static lv_obj_t * progress_panel            = nullptr;
+static lv_obj_t * progress_bar              = nullptr;
+static lv_obj_t * current_time_lbl          = nullptr;
+static lv_obj_t * duration_time_lbl         = nullptr;
+static lv_timer_t * title_scroll_timer      = nullptr;
+static lv_obj_t * play_label                = nullptr;
 static music_ui_transport_cb_t transport_cb = nullptr;
 
 /* After a play/pause click the icon flips right away; polled status is ignored until it
@@ -65,6 +66,120 @@ static void enable_title_scroll_cb(lv_timer_t * t)
 static void set_label_if_changed(lv_obj_t * lbl, const char * text)
 {
     if(lbl && strcmp(lv_label_get_text(lbl), text) != 0) lv_label_set_text(lbl, text);
+}
+
+/* ---- Lyrics ------------------------------------------------------------ */
+
+static lv_obj_t * lyrics_panel       = nullptr;
+static const lv_font_t * lyrics_font = nullptr;
+static std::vector<lv_obj_t *> lyric_labels;
+static std::vector<int> lyric_times;
+static bool lyrics_synced = false;
+static int lyric_cur      = -1;
+
+/* Playback position, interpolated between the 1 s polls so line changes feel on time. */
+static bool pos_playing    = false;
+static int32_t pos_base_ms = 0;
+static uint32_t pos_tick   = 0;
+
+static const uint32_t LYRIC_COLOR_DIM = 0x6B7280;
+static const int32_t LYRICS_ANCHOR_Y  = 130; /* px from the panel top where the current line rests */
+
+static int32_t position_ms()
+{
+    return pos_base_ms + (pos_playing ? (int32_t)lv_tick_elaps(pos_tick) : 0);
+}
+
+static void lyrics_clear_labels()
+{
+    if(lyrics_panel) lv_obj_clean(lyrics_panel);
+    lyric_labels.clear();
+    lyric_times.clear();
+    lyric_cur = -1;
+}
+
+static void lyrics_highlight(int idx)
+{
+    if(idx == lyric_cur) return;
+    if(lyric_cur >= 0 && lyric_cur < (int)lyric_labels.size())
+        lv_obj_set_style_text_color(lyric_labels[lyric_cur], lv_color_hex(LYRIC_COLOR_DIM), 0);
+    lyric_cur = idx;
+    if(idx < 0 || idx >= (int)lyric_labels.size()) return;
+
+    lv_obj_t * l = lyric_labels[idx];
+    lv_obj_set_style_text_color(l, lv_color_white(), 0);
+    lv_obj_update_layout(lyrics_panel);
+    /* lv_obj_get_y() is relative to the content area (below the top padding), so scrolling by it
+     * leaves the current line at LYRICS_ANCHOR_Y from the panel top. */
+    lv_obj_scroll_to_y(lyrics_panel, lv_obj_get_y(l), LV_ANIM_ON);
+}
+
+static void lyrics_tick_cb(lv_timer_t *)
+{
+    static int n = 0;
+    if(++n % 20 == 0) {
+        lv_obj_t * scr  = lv_screen_active();
+        lv_obj_t * card = lv_obj_get_child(scr, 0);
+        lv_area_t c;
+        lv_obj_get_coords(card, &c);
+        lv_area_t t;
+        lv_obj_get_coords(artists, &t);
+        fprintf(stderr, "DBG card=(%d..%d) card_scroll=(%d,%d) artists=(%d..%d) w=%d title_w=%d cover_x=%d\n",
+                (int)c.x1, (int)c.x2, (int)lv_obj_get_scroll_x(card), (int)lv_obj_get_scroll_y(card), (int)t.x1,
+                (int)t.x2, (int)lv_obj_get_width(artists), (int)lv_obj_get_width(title), (int)lv_obj_get_x(cover));
+    }
+    if(!lyrics_synced || lyric_times.empty()) return;
+    int32_t pos = position_ms();
+    int idx     = -1;
+    for(int i = 0; i < (int)lyric_times.size(); i++) {
+        if(lyric_times[i] <= pos)
+            idx = i;
+        else
+            break;
+    }
+    lyrics_highlight(idx);
+}
+
+void music_ui_set_lyrics_message(const char * msg)
+{
+    if(!lyrics_panel) return;
+    lyrics_synced = false;
+    lyrics_clear_labels();
+    lv_obj_t * l = lv_label_create(lyrics_panel);
+    lv_label_set_text(l, msg ? msg : "");
+    lv_obj_set_style_text_font(l, lyrics_font, 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(LYRIC_COLOR_DIM), 0);
+}
+
+void music_ui_set_lyrics(const music_ui_lyric_line_t * lines, size_t count, bool synced)
+{
+    if(!lyrics_panel) return;
+    lyrics_clear_labels();
+    lyrics_synced = synced && count > 0;
+    lv_obj_scroll_to_y(lyrics_panel, 0, LV_ANIM_OFF);
+
+    for(size_t i = 0; i < count; i++) {
+        lv_obj_t * l = lv_label_create(lyrics_panel);
+        lv_obj_set_width(l, lv_pct(100));
+        lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_WRAP);
+        lv_label_set_text(l, lines[i].text ? lines[i].text : "");
+        lv_obj_set_style_text_font(l, lyrics_font, 0);
+        lv_obj_set_style_text_color(l, lv_color_hex(synced ? LYRIC_COLOR_DIM : 0xD1D5DB), 0);
+        lyric_labels.push_back(l);
+        lyric_times.push_back(lines[i].time_ms);
+    }
+    if(lyrics_synced) lyrics_tick_cb(nullptr);
+}
+
+static void lyrics_sync_position(const music_ui_state_t * st)
+{
+    int32_t reported = st->current_sec * 1000 + 500; /* polls report whole seconds */
+    bool keep        = pos_playing && st->playing && std::abs(position_ms() - reported) <= 1000;
+    pos_playing      = st->playing;
+    if(!keep) {
+        pos_base_ms = reported;
+        pos_tick    = lv_tick_get();
+    }
 }
 
 void music_ui_set_transport_cb(music_ui_transport_cb_t cb)
@@ -107,6 +222,7 @@ static lv_obj_t * create_transport_button(lv_obj_t * parent, const char * symbol
 void music_ui_update(const music_ui_state_t * st)
 {
     if(!st) return;
+    lyrics_sync_position(st);
     if(optimistic_active && (st->playing == shown_playing || lv_tick_elaps(optimistic_since) > OPTIMISTIC_GRACE_MS))
         optimistic_active = false;
     if(!optimistic_active) show_playing(st->playing);
@@ -243,6 +359,9 @@ void music_ui_create(void)
     // 가수/그룹 (제목 아래, 조금 작게)
     artists = lv_label_create(media_card);
     lv_label_set_text(artists, "");
+    // 커버 폭에 고정하고, 길면 그대로 잘라냄 (안 그러면 카드 폭을 넘겨 레이아웃이 밀림)
+    lv_obj_set_width(artists, MUSIC_UI_COVER_SIZE);
+    lv_label_set_long_mode(artists, LV_LABEL_LONG_MODE_CLIP);
     lv_obj_set_style_text_font(artists, noto_font(16, &lv_font_montserrat_16), LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(artists, lv_color_hex(0xA0A0A0), LV_STATE_DEFAULT);
 
@@ -291,4 +410,20 @@ void music_ui_create(void)
     create_transport_button(controls, LV_SYMBOL_PREV, 52, &lv_font_montserrat_22, MUSIC_UI_CMD_PREVIOUS);
     play_label = create_transport_button(controls, LV_SYMBOL_PLAY, 64, &lv_font_montserrat_30, MUSIC_UI_CMD_PLAY_PAUSE);
     create_transport_button(controls, LV_SYMBOL_NEXT, 52, &lv_font_montserrat_22, MUSIC_UI_CMD_NEXT);
+
+    // 가사 영역 (오른쪽)
+    lyrics_font  = noto_font(24, &lv_font_montserrat_22);
+    lyrics_panel = lv_obj_create(screen);
+    lv_obj_set_size(lyrics_panel, 420, 420);
+    lv_obj_align(lyrics_panel, LV_ALIGN_TOP_RIGHT, -30, 30);
+    lv_obj_set_flex_flow(lyrics_panel, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_bg_opa(lyrics_panel, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(lyrics_panel, 0, 0);
+    lv_obj_set_style_pad_row(lyrics_panel, 14, 0);
+    lv_obj_set_style_pad_top(lyrics_panel, LYRICS_ANCHOR_Y, 0);          /* current line sits above the center */
+    lv_obj_set_style_pad_bottom(lyrics_panel, 420 - LYRICS_ANCHOR_Y, 0); /* lets the last lines reach that spot */
+    lv_obj_set_style_pad_hor(lyrics_panel, 8, 0);
+    lv_obj_set_scrollbar_mode(lyrics_panel, LV_SCROLLBAR_MODE_OFF);
+    music_ui_set_lyrics_message("");
+    lv_timer_create(lyrics_tick_cb, 100, nullptr);
 }

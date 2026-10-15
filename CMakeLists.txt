@@ -102,6 +102,7 @@ add_executable(lvglsim
     src/tidal_client.cpp
     src/media_poller.cpp
     src/cover_decoder.cpp
+    src/lyrics.cpp
     src/fonts/font_mono_13.c
     src/fonts/noto_sans_kr.c
 )

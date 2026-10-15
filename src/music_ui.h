@@ -30,6 +30,18 @@ typedef enum { MUSIC_UI_CMD_PREVIOUS, MUSIC_UI_CMD_PLAY_PAUSE, MUSIC_UI_CMD_NEXT
 typedef void (*music_ui_transport_cb_t)(music_ui_cmd_t cmd);
 void music_ui_set_transport_cb(music_ui_transport_cb_t cb);
 
+typedef struct {
+    const char * text;
+    int time_ms; /* ignored when the lyrics are not synced */
+} music_ui_lyric_line_t;
+
+/* Show lyrics (strings are copied). Synced lyrics follow the playback position and
+ * highlight the current line; unsynced ones are just a scrollable text. LVGL thread only. */
+void music_ui_set_lyrics(const music_ui_lyric_line_t * lines, size_t count, bool synced);
+
+/* Replace the lyrics area with a single message (e.g. loading / not found). */
+void music_ui_set_lyrics_message(const char * msg);
+
 /* Update now-playing widgets. LVGL thread only (e.g. from lv_async_call). Strings are copied. */
 void music_ui_update(const music_ui_state_t * st);
 

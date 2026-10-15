@@ -1,3 +1,4 @@
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <deque>
@@ -6,6 +7,7 @@
 #include <vector>
 #include <lvgl/lvgl.h>
 #include "cover_decoder.h"
+#include "lyrics.h"
 #include "media_poller.h"
 #include "music_ui.h"
 
@@ -31,6 +33,75 @@ void on_transport(music_ui_cmd_t cmd)
     g_cv.notify_one();
 }
 
+/* ---- Lyrics: fetched on their own thread so a slow LRCLIB never stalls polling ---- */
+
+struct LyricsRequest {
+    MediaInfo info;
+    uint64_t gen = 0;
+};
+struct LyricsResult {
+    uint64_t gen = 0;
+    bool found   = false;
+    Lyrics lyrics;
+};
+
+std::mutex g_lyr_mu;
+std::condition_variable g_lyr_cv;
+bool g_lyr_has_req = false;
+LyricsRequest g_lyr_req;
+std::atomic<uint64_t> g_lyr_gen{0}; /* newest requested track; older results are dropped */
+
+void apply_lyrics_message(void * p)
+{
+    const char * msg = static_cast<const char *>(p);
+    music_ui_set_lyrics_message(msg);
+}
+
+void apply_lyrics(void * p)
+{
+    LyricsResult * r = static_cast<LyricsResult *>(p);
+    if(r->gen == g_lyr_gen.load()) {
+        if(r->found) {
+            std::vector<music_ui_lyric_line_t> lines;
+            lines.reserve(r->lyrics.lines.size());
+            for(const LyricLine & l : r->lyrics.lines) lines.push_back({l.text.c_str(), l.time_ms});
+            music_ui_set_lyrics(lines.data(), lines.size(), r->lyrics.synced);
+        } else {
+            music_ui_set_lyrics_message("가사를 찾을 수 없어요");
+        }
+    }
+    delete r;
+}
+
+void lyrics_loop()
+{
+    while(true) {
+        LyricsRequest req;
+        {
+            std::unique_lock<std::mutex> lk(g_lyr_mu);
+            g_lyr_cv.wait(lk, [] { return g_lyr_has_req; });
+            req           = std::move(g_lyr_req);
+            g_lyr_has_req = false;
+        }
+        LyricsResult * r = new LyricsResult;
+        r->gen           = req.gen;
+        r->found         = lyrics_fetch(req.info, r->lyrics);
+        lv_async_call(apply_lyrics, r);
+    }
+}
+
+void request_lyrics(const MediaInfo & info)
+{
+    uint64_t gen = ++g_lyr_gen;
+    lv_async_call(apply_lyrics_message, const_cast<char *>("가사를 불러오는 중..."));
+    {
+        std::lock_guard<std::mutex> lk(g_lyr_mu);
+        g_lyr_req     = {info, gen};
+        g_lyr_has_req = true;
+    }
+    g_lyr_cv.notify_one();
+}
+
 void apply_update(void * p)
 {
     Update * u = static_cast<Update *>(p);
@@ -46,7 +117,8 @@ void apply_update(void * p)
 
 void poll_loop(TidalClient client)
 {
-    std::string cover_for; /* track_id the displayed cover belongs to */
+    std::string cover_for;  /* track_id the displayed cover belongs to */
+    std::string lyrics_for; /* track_id lyrics were requested for */
     while(true) {
         /* Sleep until the next poll, or wake early for a transport command. */
         std::deque<music_ui_cmd_t> cmds;
@@ -65,6 +137,10 @@ void poll_loop(TidalClient client)
 
         MediaInfo info;
         if(client.get_current(info)) {
+            if(!info.track_id.empty() && info.track_id != lyrics_for) {
+                lyrics_for = info.track_id;
+                request_lyrics(info);
+            }
             Update * u = new Update{info, {}, {}};
             if(!info.track_id.empty() && info.track_id != cover_for) {
                 std::vector<unsigned char> img;
@@ -89,5 +165,6 @@ void poll_loop(TidalClient client)
 void media_poller_start(const TidalConfig & cfg)
 {
     music_ui_set_transport_cb(on_transport);
+    std::thread(lyrics_loop).detach();
     std::thread(poll_loop, TidalClient(cfg)).detach();
 }
