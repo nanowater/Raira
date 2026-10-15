@@ -10,17 +10,6 @@ env
 cmake-build-*/
 *.bin
 
-# track only the firmware files we actually author/edit
-*
-!.gitignore
-!AGENTS.md
-!src/
-/src/*
-!/src/music_ui.cpp
-!/src/music_ui.h
-!CMakeLists.txt
-!configs/
-/configs/*
-!/configs/get_started.defconfig
+
 
 .idea/
