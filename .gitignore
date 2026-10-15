@@ -1,0 +1,13 @@
+.config
+.config.old
+build/
+.deps
+env
+
+# sim / dev env caches
+.cache/
+.venv/
+cmake-build-*/
+*.bin
+
+.idea/
