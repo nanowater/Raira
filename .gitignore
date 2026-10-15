@@ -13,6 +13,7 @@ cmake-build-*/
 # track only the firmware files we actually author/edit
 *
 !.gitignore
+!AGENTS.md
 !src/
 /src/*
 !/src/music_ui.cpp
