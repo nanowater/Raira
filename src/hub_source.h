@@ -93,6 +93,7 @@ private:
         bool ready = false; /* paired/authenticated */
         std::set<std::string> features;
         std::vector<std::string> order; /* player ids in the order the source listed them */
+        std::string selected;           /* the source's own pick (the PC's settings page, else what plays there): "" = none sent */
         std::map<std::string, Player> players;
         std::string last_focus_sent = "?"; /* what we last told this source */
         int auth_failures = 0;

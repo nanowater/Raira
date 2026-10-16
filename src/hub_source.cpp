@@ -163,8 +163,9 @@ void HubSource::handle_players(Src & s, const json & j)
         order.push_back(id);
         next[id] = std::move(pl);
     }
-    s.players = std::move(next);
-    s.order   = std::move(order);
+    s.players  = std::move(next);
+    s.order    = std::move(order);
+    s.selected = str_of(j, "selected");
 }
 
 void HubSource::handle_state(Src & s, const json & j)
@@ -312,30 +313,43 @@ bool HubSource::focus_locked(WsConnId & conn, Src *& src, Player *& pl, std::str
     };
     if(!focus_pref_.empty()) return find_key(focus_pref_); /* pinned: when it is gone there is nothing to show */
 
-    /* automatic: whoever started playing last; stay on the previous choice while nothing is playing */
+    /* automatic: every source proposes the player it would show itself (the one picked on the PC's settings page, else
+     * what plays there; a source that sends no pick proposes whatever plays). Of the proposals that are playing, the one
+     * that started last wins, so a browser video does not take over from the TIDAL the user picked on the PC. */
+    auto proposal = [](Src & s) -> Player * {
+        auto it = s.players.find(s.selected);
+        return it == s.players.end() ? nullptr : &it->second;
+    };
     bool found = false;
     clk::time_point best;
     std::string best_key;
+    auto consider = [&](Src & s, Player & p) {
+        if(!p.playing || (found && p.playing_since <= best)) return;
+        found    = true;
+        best     = p.playing_since;
+        best_key = key_of(s, p);
+    };
     for(auto & kv : srcs_) {
         if(!kv.second.ready) continue;
-        for(auto & pp : kv.second.players) {
-            if(!pp.second.playing) continue;
-            if(!found || pp.second.playing_since > best) {
-                found    = true;
-                best     = pp.second.playing_since;
-                best_key = key_of(kv.second, pp.second);
-            }
-        }
+        if(Player * p = proposal(kv.second)) consider(kv.second, *p);
+        else
+            for(auto & pp : kv.second.players) consider(kv.second, pp.second);
     }
     if(found) {
         auto_focus_ = best_key;
         return find_key(best_key);
     }
-    if(!auto_focus_.empty() && find_key(auto_focus_)) return true;
-    for(auto & kv : srcs_) {
-        if(!kv.second.ready || kv.second.order.empty()) continue;
-        auto_focus_ = key_of(kv.second, kv.second.players[kv.second.order.front()]);
-        return find_key(auto_focus_);
+    /* nothing proposed is playing: show the proposal of the source looked at last (else of the first source) */
+    const std::string last_source = auto_focus_.substr(0, auto_focus_.find('/'));
+    for(int pass = 0; pass < 2; pass++) {
+        for(auto & kv : srcs_) {
+            Src & s = kv.second;
+            if(!s.ready || s.order.empty() || (pass == 0 && s.id != last_source)) continue;
+            Player * p = proposal(s);
+            if(!p) p = &s.players[s.order.front()];
+            auto_focus_ = key_of(s, *p);
+            return find_key(auto_focus_);
+        }
     }
     auto_focus_.clear();
     return false;
