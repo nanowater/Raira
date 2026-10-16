@@ -1,6 +1,6 @@
 # Hub protocol (draft v1): the device is the hub
 
-Status: **draft, first version implemented** (2026-10-17): the simulator is the hub (`lvglsim -S <port>`, `src/hub_source.*` on `src/platform/ws_server.h`, libwebsockets in `platform_sim`) and the bridge is a source (`bridge/src/hubclient.rs`). Working: `hello`/`auth`/`pair`, `players` and `state` push, `focus`, `cmd`/`ack`, `cover_req` with the binary reply. **Not yet:** mDNS discovery (the bridge needs the device's address, typed in its settings page), `lyrics_req` (lyrics are still fetched on the device), the ESP32 server (`esp_http_server`), TLS. Written 2026-10-17. It replaces the direction of
+Status: **draft, first version implemented** (2026-10-17): the simulator is the hub (`lvglsim -S <port>`, `src/hub_source.*` on `src/platform/ws_server.h`, libwebsockets in `platform_sim`) and the bridge is a source (`bridge/src/hubclient.rs`). Working: `hello`/`auth`/`pair`, `players` and `state` push, `focus`, `cmd`/`ack`, `cover_req` with the binary reply. mDNS discovery works too (simulator: `platform_sim/mdns_responder.cpp`; bridge: `discovery.rs` with `mdns-sd`). **Not yet:** `lyrics_req` (lyrics are still fetched on the device), the ESP32 server (`esp_http_server`), TLS. Written 2026-10-17. It replaces the direction of
 `BRIDGE_PROTOCOL.md` (v0: the device polls a server on the PC, implemented in `bridge/` and `BridgeSource`) while keeping
 its vocabulary: players, `state`, capabilities, commands. v0 stays working until v1 can take over. Everything about
 ESP32 load is an estimate, not a measurement (no hardware yet).
@@ -40,9 +40,10 @@ Terms: **device** = the hub (ESP32 / simulator). **source** = a program that con
 
 ## Discovery
 
-The device advertises itself over mDNS/DNS-SD: service `_musicbridge._tcp`, port 47900, host name `music-controller.local`
-(editable on the device), TXT records `proto=1`, `name=<device name>`, `id=<device id>`. A source browses for it, lists
-what it finds and connects to the devices it is paired with (or lets the user pick one to pair with). A source may also
+The device advertises itself over mDNS/DNS-SD: service `_musicbridge._tcp`, its WebSocket port, host name `music-controller.local`
+(editable on the device), TXT records `proto=1`, `name=<device name>`, `id=<device id>`. Implemented behaviour: it announces twice on start, answers PTR/SRV/TXT/A questions
+(on the interface the question came in on, with that interface's address as the A record) and sends a goodbye (TTL 0) when it exits cleanly; a source that
+is killed lingers in others' caches until the 120 s TTL runs out. No probing or conflict handling. A source browses for it. A device it already knows (by `id`) is followed to its new address automatically; new ones are listed (the bridge's settings page, "Found nearby") for the user to connect to, then pair. A source may also
 be given an address by hand (`host[:port]`) when mDNS does not cross a network.
 
 ## Pairing and trust
@@ -69,7 +70,7 @@ secret and the code can be sniffed by someone on the same network (TLS/PAKE is a
 |---|---|---|
 | `hello` | `proto` (1), `source_id` (stable UUID), `name` ("Arch PC"), `os` (`linux`/`windows`), `version`, `features` (`["lyrics","cover"]`) | first message |
 | `auth` / `pair` | `secret` / `code` | see Pairing; a wrong or late `pair` is answered with `{"t":"pair_failed","reason":"wrong_code"|"closed"}` |
-| `players` | `players`: `[{"id","name","service","status"}]` | the complete list, sent when it changes (a player appears, disappears, starts/stops) |
+| `players` | `players`: `[{"id","name","service","status"}]`, `selected` (the source's own pick: an id, or `null`) | the complete list, sent when it changes (a player appears, disappears, starts/stops, or the pick changes) |
 | `state` | one player's state, see below | sent when anything but the position changes, and when the position jumps (seek, track change) |
 | `ack` | `id`, `ok` (bool), `error` (`unsupported`, `no_player`, `upstream_failed`, `bad_request`) | answer to a `cmd` |
 | `lyrics` | `id`, `found`, `synced`, `lines`: `[{"ms","text"}]` | answer to `lyrics_req` (`ms` is absent for unsynced lyrics) |
@@ -126,9 +127,11 @@ is valid *when the message arrives*.
 
 ## What the device does
 
-- Keeps every connected source's players and last `state`. **Focus** = the player shown: pinned by the user, or
-  *automatic*: the player that most recently started playing (a deterministic rule on the device; it may stay on a paused
-  player until another one starts).
+- Keeps every connected source's players and last `state`. **Focus** = the player shown: pinned by the user on the device, or
+  *automatic*: every source proposes its `selected` player (the one picked on the PC's settings page, else what plays there; a source
+  that sends none proposes any playing player), and of the proposals that are playing the one that started last wins; while none is
+  playing the device shows the proposal of the source it looked at last. So a pick made on the PC holds even when a browser video
+  starts, and a device can still override everything by pinning a player.
 - Settings screens: **Sources** (list, pair, remove), **Player** (every player grouped by source, "Automatic" first; replaces
   today's picker), WiFi, device name.
 - Sends `focus` whenever it changes, `cmd` for buttons/encoder/seek, `cover_req` when it lacks a cover, `lyrics_req` for the
@@ -171,4 +174,5 @@ S3 (no hardware decoder), real internal-RAM headroom with the WebSocket server r
 4. A source that is *also* the lyrics provider: caching policy, and what the device shows while lyrics are loading.
 5. Several devices and one source: allowed (the source connects to each), but volume/shuffle state then belongs to the
    player, not the device; the `state` stream keeps the devices consistent.
-6. Quick source/player switching on the main screen (gesture or button): still undecided, see AGENTS.md "Encoder UX".
+6. The default port 47900 (like tidal-hifi's 47836) lies inside Linux's ephemeral port range (32768-60999): once in a while an outgoing connection of some program holds it and `bind` fails with EADDRINUSE (seen once in testing). A port below 32768 would avoid it; not changed yet.
+7. Quick source/player switching on the main screen (gesture or button): still undecided, see AGENTS.md "Encoder UX".
