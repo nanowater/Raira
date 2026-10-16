@@ -178,6 +178,11 @@ bool TidalClient::get_current(MediaInfo & out)
         if(sh != pl->end() && sh->is_boolean()) m.shuffle = sh->get<bool>();
         m.repeat = str_of(*pl, "repeat");
     }
+    auto aq = j.find("audioQuality");
+    if(aq != j.end() && aq->is_object()) {
+        m.quality       = str_of(*aq, "quality");
+        m.quality_badge = str_of(*aq, "badgeText");
+    }
     auto vol = j.find("volume");
     if(vol != j.end() && vol->is_number()) m.volume = vol->get<double>();
     m.image_url = str_of(j, "image");

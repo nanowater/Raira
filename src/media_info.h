@@ -8,6 +8,8 @@ struct MediaInfo {
     std::string title;
     std::string artists;
     std::string album;
+    std::string quality; /* e.g. "HI_RES_LOSSLESS", "LOSSLESS" */
+    std::string quality_badge; /* e.g. "24-bit 48.0kHz" */
     bool shuffle = false;
     std::string repeat;  /* "off" / "single" / "all" */
     std::string status;  /* "playing" / "paused" / ... */

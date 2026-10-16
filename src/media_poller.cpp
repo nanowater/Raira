@@ -164,10 +164,30 @@ void request_lyrics(const MediaInfo & info)
     g_lyr_cv.notify_one();
 }
 
+/* Text for the quality badge: the quality tier by name ("Hi-Res Lossless"); the service's own badge
+ * text ("24-bit 48.0kHz") only when it reports no tier. Unknown tiers are shown as sent. */
+std::string quality_text(const MediaInfo & m)
+{
+    if(m.quality == "HI_RES_LOSSLESS") return "Hi-Res Lossless";
+    if(m.quality == "HI_RES") return "Hi-Res";
+    if(m.quality == "LOSSLESS") return "Lossless";
+    if(m.quality == "HIGH") return "High";
+    if(m.quality == "LOW") return "Low";
+    return m.quality.empty() ? m.quality_badge : m.quality;
+}
+
+int quality_tier(const MediaInfo & m)
+{
+    if(m.quality == "HI_RES_LOSSLESS" || m.quality == "HI_RES") return MUSIC_UI_QUALITY_HIRES;
+    if(m.quality == "LOSSLESS") return MUSIC_UI_QUALITY_LOSSLESS;
+    return MUSIC_UI_QUALITY_NORMAL;
+}
+
 void apply_update(const Update * u)
 {
+    const std::string quality = quality_text(u->info);
     music_ui_state_t st{u->info.title.c_str(), u->info.artists.c_str(), u->info.current_sec, u->info.duration_sec,
-                        u->info.status == "playing", u->info.shuffle,
+                        quality.c_str(), quality_tier(u->info), u->info.status == "playing", u->info.shuffle,
                         u->info.repeat == "single" ? MUSIC_UI_REPEAT_SINGLE
                         : u->info.repeat == "all"  ? MUSIC_UI_REPEAT_ALL
                                                    : MUSIC_UI_REPEAT_OFF};

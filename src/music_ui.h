@@ -21,12 +21,16 @@ typedef struct {
     const char * artists;
     int current_sec;
     int duration_sec;
+    const char * quality; /* short audio-quality text for the badge, "" to hide it */
+    int quality_tier;     /* music_ui_quality_t: picks the badge color */
     bool playing;
     bool shuffle;
     int repeat; /* music_ui_repeat_t */
 } music_ui_state_t;
 
 /* Declared in the order tidal-hifi cycles them: off -> all -> single -> off. */
+typedef enum { MUSIC_UI_QUALITY_NORMAL, MUSIC_UI_QUALITY_LOSSLESS, MUSIC_UI_QUALITY_HIRES } music_ui_quality_t;
+
 typedef enum { MUSIC_UI_REPEAT_OFF, MUSIC_UI_REPEAT_ALL, MUSIC_UI_REPEAT_SINGLE } music_ui_repeat_t;
 
 typedef enum {

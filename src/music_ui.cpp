@@ -30,6 +30,7 @@ static lv_obj_t * progress_panel            = nullptr;
 static lv_obj_t * progress_bar              = nullptr; /* lv_slider: shows progress, drag/tap to seek */
 static lv_obj_t * current_time_lbl          = nullptr;
 static lv_obj_t * duration_time_lbl         = nullptr;
+static lv_obj_t * quality_lbl               = nullptr; /* audio quality, between the two times */
 static lv_timer_t * title_scroll_timer      = nullptr;
 static lv_obj_t * play_label                = nullptr;
 static music_ui_transport_cb_t transport_cb = nullptr;
@@ -455,6 +456,15 @@ void music_ui_update(const music_ui_state_t * st)
     }
     fmt_time(st->duration_sec, buf, sizeof(buf));
     set_label_if_changed(duration_time_lbl, buf);
+    const char * quality = st->quality ? st->quality : "";
+    set_label_if_changed(quality_lbl, quality);
+    if(quality_lbl) {
+        /* plain gray for compressed tiers, cyan for lossless, gold for hi-res */
+        uint32_t color = st->quality_tier == MUSIC_UI_QUALITY_HIRES      ? 0xE5B94A
+                         : st->quality_tier == MUSIC_UI_QUALITY_LOSSLESS ? 0x5CC8E8
+                                                                         : 0xA0A0A0;
+        lv_obj_set_style_text_color(quality_lbl, lv_color_hex(color), 0);
+    }
 }
 
 lv_obj_t * music_ui_album_art(void)
@@ -607,6 +617,13 @@ void music_ui_create(void)
     lv_obj_set_style_text_font(duration_time_lbl, &font_mono_16, LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(duration_time_lbl, lv_color_hex(0xFFFFFF), LV_STATE_DEFAULT);
     lv_obj_align(duration_time_lbl, LV_ALIGN_TOP_RIGHT, 0, 22);
+
+    // 음질 (두 시간 사이, 가운데)
+    quality_lbl = lv_label_create(progress_panel);
+    lv_label_set_text(quality_lbl, "");
+    lv_obj_set_style_text_font(quality_lbl, &lv_font_montserrat_14, LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(quality_lbl, lv_color_hex(0xA0A0A0), LV_STATE_DEFAULT);
+    lv_obj_align(quality_lbl, LV_ALIGN_TOP_MID, 0, 22);
 
     // 재생 컨트롤 (재생바 아래, 카드 폭에 맞춤)
     lv_obj_t * controls = lv_obj_create(media_card);
