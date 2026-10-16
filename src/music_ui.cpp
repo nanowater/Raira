@@ -35,6 +35,7 @@ static lv_obj_t * play_label                = nullptr;
 static music_ui_transport_cb_t transport_cb = nullptr;
 static music_ui_seek_cb_t seek_cb           = nullptr;
 static int g_duration_sec                   = 0;
+static lv_obj_t * offline_banner            = nullptr;
 
 /* After a click the icon flips right away; polled status is ignored until it agrees or the
  * grace period ends (tidal-hifi reports the old state for a moment). */
@@ -332,6 +333,11 @@ static void lyrics_sync_position(const music_ui_state_t * st, bool hold)
         pos_base_ms = reported;
         pos_tick    = lv_tick_get();
     }
+}
+
+void music_ui_set_connected(bool connected)
+{
+    if(offline_banner) lv_obj_set_hidden(offline_banner, connected);
 }
 
 void music_ui_set_seek_cb(music_ui_seek_cb_t cb)
@@ -644,4 +650,32 @@ void music_ui_create(void)
     lv_obj_add_event_cb(lyrics_panel, lyrics_scroll_cb, LV_EVENT_SCROLL, nullptr);
     music_ui_set_lyrics_message("");
     lv_timer_create(lyrics_tick_cb, 100, nullptr);
+
+    // 연결 끊김 배너 (끊겼을 때만 표시, 오른쪽 위)
+    offline_banner = lv_obj_create(screen);
+    lv_obj_set_size(offline_banner, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_align(offline_banner, LV_ALIGN_TOP_RIGHT, -30, 11);
+    lv_obj_set_flex_flow(offline_banner, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(offline_banner, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_bg_color(offline_banner, lv_color_hex(0x1F2937), 0);
+    lv_obj_set_style_bg_opa(offline_banner, LV_OPA_90, 0);
+    lv_obj_set_style_border_width(offline_banner, 0, 0);
+    lv_obj_set_style_radius(offline_banner, 14, 0);
+    lv_obj_set_style_pad_hor(offline_banner, 12, 0);
+    lv_obj_set_style_pad_ver(offline_banner, 4, 0);
+    lv_obj_set_style_pad_column(offline_banner, 8, 0);
+    lv_obj_set_scrollable(offline_banner, false);
+
+    lv_obj_t * dot = lv_obj_create(offline_banner);
+    lv_obj_set_size(dot, 10, 10);
+    lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(dot, lv_color_hex(0xEF4444), 0);
+    lv_obj_set_style_border_width(dot, 0, 0);
+
+    lv_obj_t * offline_text = lv_label_create(offline_banner);
+    lv_label_set_text(offline_text, "연결 끊김");
+    lv_obj_set_style_text_font(offline_text, noto_font(18, &lv_font_montserrat_16), 0);
+    lv_obj_set_style_text_color(offline_text, lv_color_white(), 0);
+
+    lv_obj_set_hidden(offline_banner, true); /* shown only while the host is unreachable */
 }

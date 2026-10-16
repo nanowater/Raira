@@ -46,6 +46,10 @@ void music_ui_set_transport_cb(music_ui_transport_cb_t cb);
 typedef void (*music_ui_seek_cb_t)(int seconds);
 void music_ui_set_seek_cb(music_ui_seek_cb_t cb);
 
+/* Show/hide the "connection lost" banner (hidden by default; only shown while disconnected).
+ * LVGL thread only. */
+void music_ui_set_connected(bool connected);
+
 typedef struct {
     const char * text;
     int time_ms; /* ignored when the lyrics are not synced */

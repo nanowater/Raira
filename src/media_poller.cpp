@@ -100,6 +100,7 @@ struct LyricsResult {
 
 const int POLL_INTERVAL_MS = 500; /* /current is ~1 KB and answers in <1 ms locally */
 const int LYRICS_SETTLE_MS = 500;
+const int CONNECTION_LOST_AFTER_FAILS = 3;
 
 std::mutex g_lyr_mu;
 std::condition_variable g_lyr_cv;
@@ -182,6 +183,8 @@ void poll_loop(TidalClient client)
     std::string cover_for;  /* cover key (image URL) the displayed cover belongs to */
     std::string lyrics_for; /* metadata key lyrics were requested for */
     auto last_poll = std::chrono::steady_clock::now() - std::chrono::milliseconds(POLL_INTERVAL_MS);
+    int failed_polls = 0;
+    bool connected   = true; /* the banner stays hidden until polls actually fail */
     while(true) {
         /* Sleep until the next poll, or wake early for a transport command, a seek or a volume step. */
         std::deque<music_ui_cmd_t> cmds;
@@ -226,7 +229,20 @@ void poll_loop(TidalClient client)
         last_poll = std::chrono::steady_clock::now();
 
         MediaInfo info;
-        if(client.get_current(info)) {
+        const bool polled = client.get_current(info);
+        /* Report only changes, and only after a few failures in a row so a single dropped poll
+         * does not flash the banner; it disappears on the first successful poll. */
+        if(polled) {
+            failed_polls = 0;
+            if(!connected) {
+                connected = true;
+                post_to_ui([] { music_ui_set_connected(true); });
+            }
+        } else if(++failed_polls >= CONNECTION_LOST_AFTER_FAILS && connected) {
+            connected = false;
+            post_to_ui([] { music_ui_set_connected(false); });
+        }
+        if(polled) {
             if(info.volume >= 0) volume_sync_polled(info.volume);
             /* Key on the fields the lookup uses, not just the track URL: while skipping, tidal-hifi can
              * report the new URL before title/artist/duration catch up, and a lookup made from that
