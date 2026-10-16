@@ -2,6 +2,8 @@
 #include <chrono>
 #include <condition_variable>
 #include <deque>
+#include <functional>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -12,6 +14,27 @@
 #include "music_ui.h"
 
 namespace {
+
+/* Background threads must not call LVGL (lv_async_call is not thread-safe: it creates a timer in
+ * LVGL's global list). They queue work here instead; a timer on the LVGL thread runs it. */
+std::mutex g_ui_mu;
+std::deque<std::function<void()>> g_ui_queue;
+
+void post_to_ui(std::function<void()> fn)
+{
+    std::lock_guard<std::mutex> lk(g_ui_mu);
+    g_ui_queue.push_back(std::move(fn));
+}
+
+void drain_ui_queue(lv_timer_t *)
+{
+    std::deque<std::function<void()>> work;
+    {
+        std::lock_guard<std::mutex> lk(g_ui_mu);
+        work.swap(g_ui_queue);
+    }
+    for(auto & fn : work) fn();
+}
 
 struct Update {
     MediaInfo info;
@@ -54,15 +77,8 @@ bool g_lyr_has_req = false;
 LyricsRequest g_lyr_req;
 std::atomic<uint64_t> g_lyr_gen{0}; /* newest requested track; older results are dropped */
 
-void apply_lyrics_message(void * p)
+void apply_lyrics(const LyricsResult * r)
 {
-    const char * msg = static_cast<const char *>(p);
-    music_ui_set_lyrics_message(msg);
-}
-
-void apply_lyrics(void * p)
-{
-    LyricsResult * r = static_cast<LyricsResult *>(p);
     if(r->gen == g_lyr_gen.load()) {
         if(r->found) {
             std::vector<music_ui_lyric_line_t> lines;
@@ -73,7 +89,6 @@ void apply_lyrics(void * p)
             music_ui_set_lyrics_message("가사를 찾을 수 없어요");
         }
     }
-    delete r;
 }
 
 void lyrics_loop()
@@ -98,18 +113,18 @@ void lyrics_loop()
         }
         if(superseded) continue; /* the newer request is already pending */
 
-        LyricsResult * r = new LyricsResult;
-        r->gen           = req.gen;
+        auto r  = std::make_shared<LyricsResult>();
+        r->gen  = req.gen;
         uint64_t gen     = req.gen;
         r->found         = lyrics_fetch(req.info, r->lyrics, [gen] { return g_lyr_gen.load() != gen; });
-        lv_async_call(apply_lyrics, r);
+        post_to_ui([r] { apply_lyrics(r.get()); });
     }
 }
 
 void request_lyrics(const MediaInfo & info)
 {
     uint64_t gen = ++g_lyr_gen;
-    lv_async_call(apply_lyrics_message, const_cast<char *>("가사를 불러오는 중..."));
+    post_to_ui([] { music_ui_set_lyrics_message("가사를 불러오는 중..."); });
     {
         std::lock_guard<std::mutex> lk(g_lyr_mu);
         g_lyr_req     = {info, gen};
@@ -118,9 +133,8 @@ void request_lyrics(const MediaInfo & info)
     g_lyr_cv.notify_one();
 }
 
-void apply_update(void * p)
+void apply_update(const Update * u)
 {
-    Update * u = static_cast<Update *>(p);
     music_ui_state_t st{u->info.title.c_str(), u->info.artists.c_str(), u->info.current_sec, u->info.duration_sec,
                         u->info.status == "playing", u->info.shuffle,
                         u->info.repeat == "single" ? MUSIC_UI_REPEAT_SINGLE
@@ -131,7 +145,6 @@ void apply_update(void * p)
         music_ui_set_album_art_raw(u->cover.data.data(), u->cover.w, u->cover.h, LV_COLOR_FORMAT_XRGB8888);
     else if(!u->png.empty())
         music_ui_set_album_art_encoded(u->png.data(), u->png.size());
-    delete u;
 }
 
 void poll_loop(TidalClient client)
@@ -167,7 +180,7 @@ void poll_loop(TidalClient client)
                 lyrics_for = lyrics_key;
                 request_lyrics(info);
             }
-            Update * u = new Update{info, {}, {}};
+            auto u = std::make_shared<Update>(Update{info, {}, {}});
             /* Key the cover by its image URL: consecutive tracks of one album keep the cover,
              * and a new URL means new artwork is due. */
             const std::string cover_key = info.image_url.empty() ? info.track_id : info.image_url;
@@ -195,7 +208,7 @@ void poll_loop(TidalClient client)
                     if(ok) cover_for = cover_key;
                 }
             }
-            lv_async_call(apply_update, u);
+            post_to_ui([u] { apply_update(u.get()); });
         }
     }
 }
@@ -205,6 +218,7 @@ void poll_loop(TidalClient client)
 void media_poller_start(const TidalConfig & cfg)
 {
     music_ui_set_transport_cb(on_transport);
+    lv_timer_create(drain_ui_queue, 20, nullptr); /* runs queued UI work on the LVGL thread */
     std::thread(lyrics_loop).detach();
     std::thread(poll_loop, TidalClient(cfg)).detach();
 }
