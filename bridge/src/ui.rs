@@ -18,6 +18,7 @@ use serde_json::{Value, json};
 use crate::auth::Access;
 use crate::config::{self, Config};
 use crate::hub::{ApiError, Hub};
+use crate::hubclient::HubClients;
 use crate::tidal::Tidal;
 
 pub struct UiState {
@@ -26,7 +27,8 @@ pub struct UiState {
     /// what the server is running with (a saved change only takes effect after a restart)
     pub bind: String,
     pub port: u16,
-    pub config: Mutex<Config>,
+    pub config: Arc<Mutex<Config>>,
+    pub clients: Arc<HubClients>,
 }
 
 pub type Ui = Arc<UiState>;
@@ -83,6 +85,7 @@ pub async fn status(State(s): State<Ui>) -> Json<Value> {
         },
         "players": players,
         "now": now.map(|n| json!({ "title": n.track.title, "artists": n.track.artists, "status": n.status, "player": n.player })),
+        "devices": s.clients.statuses(),
         "tidal": { "enabled": tidal.is_some(), "addr": tidal.as_ref().map(|t| t.0.clone()), "reachable": tidal.map(|t| t.1).unwrap_or(false) },
         "config": {
             "path": config::path().display().to_string(),
@@ -133,11 +136,46 @@ pub async fn set_config(State(s): State<Ui>, Json(b): Json<ConfigBody>) -> Respo
         return bad("the tidal-hifi address must look like host or host:port");
     }
 
-    let cfg = Config { bind: Some(bind), port: Some(b.port), tidal_hifi: Some(tidal_spec) };
-    if let Err(e) = config::save(&cfg) {
-        return (StatusCode::INTERNAL_SERVER_ERROR, format!("cannot save {}: {e}", config::path().display())).into_response();
+    {
+        let mut cfg = s.config.lock().unwrap();
+        cfg.bind = Some(bind);
+        cfg.port = Some(b.port);
+        cfg.tidal_hifi = Some(tidal_spec);
+        if let Err(e) = config::save(&cfg) {
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("cannot save {}: {e}", config::path().display())).into_response();
+        }
     }
-    *s.config.lock().unwrap() = cfg;
     s.hub.set_tidal(tidal.and_then(|t| t.ok())); // applies at once; bind and port need a restart
     StatusCode::NO_CONTENT.into_response()
+}
+
+#[derive(Deserialize)]
+pub struct AddrBody {
+    addr: String,
+}
+
+#[derive(Deserialize)]
+pub struct PairBody {
+    addr: String,
+    code: String,
+}
+
+pub async fn add_device(State(s): State<Ui>, Json(b): Json<AddrBody>) -> Response {
+    match s.clients.add(b.addr.trim()) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(m) => (StatusCode::BAD_REQUEST, m).into_response(),
+    }
+}
+
+pub async fn remove_device(State(s): State<Ui>, Json(b): Json<AddrBody>) -> StatusCode {
+    s.clients.remove(&b.addr);
+    StatusCode::NO_CONTENT
+}
+
+pub async fn pair_device(State(s): State<Ui>, Json(b): Json<PairBody>) -> Response {
+    if s.clients.pair(&b.addr, b.code.trim()) {
+        StatusCode::NO_CONTENT.into_response()
+    } else {
+        (StatusCode::BAD_REQUEST, "that device is not connected right now".to_string()).into_response()
+    }
 }

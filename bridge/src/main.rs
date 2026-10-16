@@ -2,6 +2,7 @@ mod auth;
 mod config;
 mod cover;
 mod hub;
+mod hubclient;
 mod model;
 mod tidal;
 mod tray;
@@ -94,9 +95,13 @@ async fn main() {
     tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
 
     // command line > settings file (edited from the settings page) > defaults
-    let cfg = config::load();
-    let bind = arg("--bind").or(cfg.bind.clone()).unwrap_or_else(|| "0.0.0.0".into());
-    let port: u16 = arg("--port").and_then(|p| p.parse().ok()).or(cfg.port).unwrap_or(47900);
+    let cfg = Arc::new(Mutex::new(config::load()));
+    let (cfg_bind, cfg_port, cfg_tidal) = {
+        let c = cfg.lock().unwrap();
+        (c.bind.clone(), c.port, c.tidal_hifi.clone())
+    };
+    let bind = arg("--bind").or(cfg_bind).unwrap_or_else(|| "0.0.0.0".into());
+    let port: u16 = arg("--port").and_then(|p| p.parse().ok()).or(cfg_port).unwrap_or(47900);
 
     // Access: --no-auth = open, --token X = that token, otherwise a stored token, required unless bound to loopback.
     let access = auth::Access::new(&bind, flag("--no-auth"), arg("--token"));
@@ -107,7 +112,7 @@ async fn main() {
     }
 
     // tidal-hifi's own API fills what its MPRIS lacks (shuffle, repeat, quality); on by default, harmless when absent
-    let tidal_spec = arg("--tidal-hifi").or(cfg.tidal_hifi.clone()).unwrap_or_else(|| ui::DEFAULT_TIDAL.into());
+    let tidal_spec = arg("--tidal-hifi").or(cfg_tidal).unwrap_or_else(|| ui::DEFAULT_TIDAL.into());
     let tidal = if flag("--no-tidal-hifi") { None } else { tidal::Tidal::new(&tidal_spec) };
     let hub = Hub::new(tidal).await.expect("cannot connect to the D-Bus session bus");
 
@@ -132,13 +137,20 @@ async fn main() {
         .layer(axum::middleware::from_fn_with_state(access.clone(), auth::check));
 
     // the settings page: this PC only
-    let ui_state: ui::Ui = Arc::new(ui::UiState { hub: hub.clone(), access: access.clone(), bind: bind.clone(), port, config: Mutex::new(cfg) });
+    // the hub client: this bridge connects to devices (from the settings file and --device host[:port])
+    let extra: Vec<String> = std::env::args().zip(std::env::args().skip(1)).filter(|(a, _)| a == "--device").map(|(_, v)| v).collect();
+    let clients = hubclient::HubClients::start(hub.clone(), cfg.clone(), extra);
+
+    let ui_state: ui::Ui = Arc::new(ui::UiState { hub: hub.clone(), access: access.clone(), bind: bind.clone(), port, config: cfg, clients });
     let settings = Router::new()
         .route("/", get(ui::page))
         .route("/ui/status", get(ui::status))
         .route("/ui/select", post(ui::select))
         .route("/ui/token/regenerate", post(ui::regenerate_token))
         .route("/ui/config", post(ui::set_config))
+        .route("/ui/devices/add", post(ui::add_device))
+        .route("/ui/devices/remove", post(ui::remove_device))
+        .route("/ui/devices/pair", post(ui::pair_device))
         .with_state(ui_state.clone())
         .layer(axum::middleware::from_fn_with_state(ui_state, ui::guard));
 

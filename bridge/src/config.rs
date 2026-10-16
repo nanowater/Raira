@@ -11,6 +11,21 @@ pub struct Config {
     pub port: Option<u16>,
     /// tidal-hifi's address; `Some("")` = turned off, `None` = the default (127.0.0.1:47836)
     pub tidal_hifi: Option<String>,
+    /// this bridge's identity towards devices (generated on first use)
+    pub source_id: Option<String>,
+    pub source_name: Option<String>,
+    /// the devices (hubs) this bridge connects to
+    #[serde(default)]
+    pub devices: Vec<DeviceCfg>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct DeviceCfg {
+    /// "host:port"
+    pub addr: String,
+    pub name: Option<String>,
+    /// from pairing; stays on this PC
+    pub secret: Option<String>,
 }
 
 pub fn dir() -> PathBuf {
@@ -31,5 +46,17 @@ pub fn load() -> Config {
 
 pub fn save(c: &Config) -> std::io::Result<()> {
     std::fs::create_dir_all(dir())?;
-    std::fs::write(path(), serde_json::to_string_pretty(c).unwrap_or_default())
+    let text = serde_json::to_string_pretty(c).unwrap_or_default();
+    // it holds the pairing secrets of the devices: readable by this user only
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        let mut f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(path())?;
+        f.write_all(text.as_bytes())?;
+        let _ = std::fs::set_permissions(path(), std::fs::Permissions::from_mode(0o600)); // a file created earlier keeps its old mode
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    std::fs::write(path(), text)
 }

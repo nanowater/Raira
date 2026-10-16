@@ -20,6 +20,11 @@ pub struct ApiError {
 }
 
 impl ApiError {
+    /// The protocol's error code (`unsupported`, `no_player`, ...).
+    pub fn code(&self) -> &'static str {
+        self.error
+    }
+
     fn new(status: StatusCode, error: &'static str, message: impl Into<String>) -> Self {
         Self { status, error, message: message.into() }
     }
@@ -243,6 +248,28 @@ impl Hub {
     pub async fn state(&self, player: Option<&str>) -> Result<State, ApiError> {
         let snap = self.snapshot().await;
         let (id, raw) = Self::pick(&snap, player)?;
+        Ok(self.state_of(id, raw).await)
+    }
+
+    /// The player list and every player's state from one reading of the system (what the hub client pushes).
+    pub async fn all_states(&self) -> (Players, Vec<State>) {
+        let snap = self.snapshot().await;
+        let players = Players {
+            selected: snap.selected.clone(),
+            players: snap
+                .players
+                .iter()
+                .map(|(id, raw)| PlayerEntry { id: id.clone(), name: raw.identity.clone(), service: service_of(raw), status: status_of(raw) })
+                .collect(),
+        };
+        let mut states = Vec::new();
+        for (id, raw) in &snap.players {
+            states.push(self.state_of(id, raw).await);
+        }
+        (players, states)
+    }
+
+    async fn state_of(&self, id: &str, raw: &Raw) -> State {
         let tid = track_id(raw);
         let cover = raw.meta.art_url.as_ref().map(|url| {
             let key = format!("{:016x}", fnv1a(&format!("{url}|{tid}")));
@@ -282,8 +309,8 @@ impl Hub {
             }
         }
 
-        Ok(State {
-            player: id.clone(),
+        State {
+            player: id.to_string(),
             status: status_of(raw),
             track: Track {
                 id: tid,
@@ -301,7 +328,7 @@ impl Hub {
             repeat,
             quality,
             capabilities: caps,
-        })
+        }
     }
 
     pub async fn command(&self, player: Option<&str>, cmd: Cmd) -> Result<(), ApiError> {

@@ -37,6 +37,9 @@
   label.field span { display: block; font-size: 13px; color: var(--dim); margin-bottom: 3px; }
   .player { display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-radius: 8px; }
   .player:hover { background: var(--field); }
+  .dev { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 6px; border-top: 1px solid var(--line); }
+  .dev:first-child { border-top: 0; }
+  .dev input[type=text] { width: 9em; }
   .tag { font-size: 12px; color: var(--dim); border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; }
   .note { font-size: 13px; margin-top: 8px; }
   .note.bad { color: var(--bad); } .note.good { color: var(--good); } .note.warn { color: var(--warn); }
@@ -53,7 +56,17 @@
   </header>
 
   <section>
-    <h2>Connect a device</h2>
+    <h2>Devices</h2>
+    <div class="dim small">Music controllers this PC reports to. Press <b>Pair a source</b> in the device's Settings &rarr; Sources, then type the code it shows.</div>
+    <div id="devices"></div>
+    <div class="row" style="margin-top:10px">
+      <input type="text" id="newdev" class="grow" placeholder="Device address, e.g. 192.168.0.40 or music-controller.local">
+      <button id="adddev">Add device</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Connect a device (older: the device polls this PC)</h2>
     <div class="row"><span class="dim">Address</span><span id="addr" class="grow"></span></div>
     <div class="row">
       <span class="dim">Token</span>
@@ -110,8 +123,38 @@ function ago(s) { if (s == null) return null; if (s < 2) return 'just now'; if (
 function dot(kind, text) { const d = document.createElement('span'); d.className = 'dot ' + kind; const f = document.createDocumentFragment(); f.append(d, text); return f; }
 function setNote(el, kind, text) { el.className = 'note ' + kind; el.textContent = text; el.hidden = !text; }
 
+const codes = {};  // what was typed per device, kept across the 1.5 s refreshes
+function renderDevices(list) {
+  const box = $('devices');
+  const focused = document.activeElement && box.contains(document.activeElement) ? document.activeElement.dataset.addr : null;
+  box.replaceChildren();
+  if (!list.length) box.append(Object.assign(document.createElement('div'), { className: 'dim note', textContent: 'No device yet.' }));
+  for (const dv of list) {
+    const row = document.createElement('div'); row.className = 'dev';
+    const name = document.createElement('span'); name.className = 'grow';
+    name.append(Object.assign(document.createElement('b'), { textContent: dv.name || dv.addr }), ' ', Object.assign(document.createElement('span'), { className: 'dim small', textContent: dv.name ? dv.addr : '' }));
+    const kind = { connected: 'good', pairing_required: 'warn', offline: 'bad', connecting: '' }[dv.state] || '';
+    const label = { connected: 'Connected', pairing_required: 'Needs pairing', offline: 'Not reachable', connecting: 'Connecting...' }[dv.state] || dv.state;
+    row.append(name, dot(kind, label + (dv.detail && dv.state !== 'connected' ? ' - ' + dv.detail : '')));
+    if (dv.state === 'pairing_required') {
+      const code = Object.assign(document.createElement('input'), { type: 'text', placeholder: '123456', maxLength: 6, inputMode: 'numeric', value: codes[dv.addr] || '' });
+      code.dataset.addr = dv.addr;
+      code.oninput = () => { codes[dv.addr] = code.value; };
+      const pair = Object.assign(document.createElement('button'), { textContent: 'Pair', className: 'primary' });
+      const go = async () => { try { await api('/ui/devices/pair', 'POST', { addr: dv.addr, code: (codes[dv.addr] || '').replace(/\s/g, '') }); codes[dv.addr] = ''; refresh(); } catch (e) { toast(e.message); } };
+      pair.onclick = go; code.onkeydown = e => { if (e.key === 'Enter') go(); };
+      row.append(code, pair);
+    }
+    const rm = Object.assign(document.createElement('button'), { textContent: 'Remove' });
+    rm.onclick = async () => { if (!confirm('Stop reporting to ' + (dv.name || dv.addr) + '?')) return; try { await api('/ui/devices/remove', 'POST', { addr: dv.addr }); refresh(); } catch (e) { toast(e.message); } };
+    row.append(rm); box.append(row);
+  }
+  if (focused) { const el = box.querySelector('input[data-addr="' + CSS.escape(focused) + '"]'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
+}
+
 function render(d) {
   data = d;
+  renderDevices(d.devices || []);
   $('ver').textContent = 'v' + d.version;
   const host = d.lan_ip || '<this PC\'s IP>';
   $('addr').replaceChildren(Object.assign(document.createElement('code'), { textContent: host + ':' + d.port }));
@@ -161,6 +204,10 @@ function render(d) {
 async function refresh() { try { render(await (await api('/ui/status')).json()); } catch (e) { /* the bridge is gone: keep the last view */ } }
 
 for (const id of ['tidal', 'bind', 'port']) { $(id).addEventListener('input', () => editing = true); }
+$('adddev').onclick = async () => {
+  try { await api('/ui/devices/add', 'POST', { addr: $('newdev').value }); $('newdev').value = ''; refresh(); } catch (e) { toast(e.message); }
+};
+$('newdev').onkeydown = e => { if (e.key === 'Enter') $('adddev').click(); };
 $('show').onclick = () => { shown = !shown; if (data) render(data); };
 $('copy').onclick = async () => { try { await navigator.clipboard.writeText(data.auth.token); toast('Token copied'); } catch { toast('Copy failed: select the token and copy it by hand'); } };
 $('regen').onclick = async () => {
