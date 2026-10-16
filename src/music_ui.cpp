@@ -533,6 +533,14 @@ static void lyrics_sync_position(const music_ui_state_t * st, bool hold)
 void music_ui_set_connected(bool connected)
 {
     if(offline_banner) lv_obj_set_hidden(offline_banner, connected);
+    if(!connected && pos_playing) {
+        /* Nobody reports the position any more: stop our own clock, or the progress bar and the lyrics keep running
+         * on a song that may have stopped long ago. The next update after a reconnect restarts it. */
+        pos_base_ms = position_ms();
+        pos_tick    = lv_tick_get();
+        pos_playing = false;
+        show_playing(false);
+    }
 }
 
 /* Show only the controls the service can drive (the flex row reflows on its own); without seek the
