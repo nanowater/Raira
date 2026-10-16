@@ -17,6 +17,16 @@
 
 namespace {
 
+/* The UI bitmask mirrors MediaCapability (media_source.h): these asserts keep the two lists in sync. */
+static_assert(MUSIC_UI_CAP_SEEK == MEDIA_CAP_SEEK, "UI capability bits must match media_source.h");
+static_assert(MUSIC_UI_CAP_SHUFFLE == MEDIA_CAP_SHUFFLE, "UI capability bits must match media_source.h");
+static_assert(MUSIC_UI_CAP_REPEAT == MEDIA_CAP_REPEAT, "UI capability bits must match media_source.h");
+static_assert(MUSIC_UI_CAP_PREV_NEXT == MEDIA_CAP_PREV_NEXT, "UI capability bits must match media_source.h");
+
+/* Capabilities of the current service, set in media_poller_start before the threads start; read
+ * afterwards by the poller thread (happens-before via thread creation) to skip unsupported commands. */
+uint32_t g_caps = 0;
+
 /* Background threads must not call LVGL (lv_async_call is not thread-safe: it creates a timer in
  * LVGL's global list). They queue work here instead; a timer on the LVGL thread runs it. */
 std::mutex g_ui_mu;
@@ -332,6 +342,9 @@ void poll_loop(std::unique_ptr<MediaSource> source)
 
 void media_poller_start(std::unique_ptr<MediaSource> source)
 {
+    /* capabilities() runs on the creating thread here, before the source moves over to the poller. */
+    g_caps = source->capabilities();
+    music_ui_set_capabilities(g_caps); /* hide the controls this service cannot drive */
     music_ui_set_transport_cb(on_transport);
     music_ui_set_seek_cb(on_seek);
     lv_timer_create(drain_ui_queue, 20, nullptr); /* runs queued UI work on the LVGL thread */
@@ -343,6 +356,7 @@ void media_poller_volume_step(int delta)
 {
     {
         std::lock_guard<std::mutex> lk(g_mu);
+        if(!(g_caps & MEDIA_CAP_VOLUME)) return; /* the service has no volume to adjust */
         double base = g_vol_target >= 0 ? g_vol_target : g_vol_polled;
         if(base < 0 || delta == 0) return; /* volume not known yet */
         double v = std::round((base + delta * VOLUME_STEP) * 100.0) / 100.0;

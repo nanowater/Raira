@@ -51,6 +51,18 @@ void music_ui_set_transport_cb(music_ui_transport_cb_t cb);
 typedef void (*music_ui_seek_cb_t)(int seconds);
 void music_ui_set_seek_cb(music_ui_seek_cb_t cb);
 
+/* Which transport controls to show: services that cannot drive them are reflected here (unsupported
+ * ones are hidden). Bit values mirror MediaCapability in media_source.h (asserted in media_poller.cpp);
+ * MEDIA_CAP_VOLUME has no control in this UI, so it has no mirror here. */
+#define MUSIC_UI_CAP_SEEK      (1u << 0)
+#define MUSIC_UI_CAP_SHUFFLE   (1u << 2)
+#define MUSIC_UI_CAP_REPEAT    (1u << 3)
+#define MUSIC_UI_CAP_PREV_NEXT (1u << 4)
+
+/* Show only the transport controls the service supports (bitmask as above; bits not set hide their
+ * control). Call once, after music_ui_create(); LVGL thread only. */
+void music_ui_set_capabilities(unsigned caps);
+
 /* Show/hide the "connection lost" banner (hidden by default; only shown while disconnected).
  * LVGL thread only. */
 void music_ui_set_connected(bool connected);

@@ -19,7 +19,8 @@ void media_poller_start(std::unique_ptr<MediaSource> source);
 
 /* Raise (delta > 0) or lower (delta < 0) the volume by `delta` steps of 2 %. Thread-safe and
  * non-blocking; rapid calls are coalesced into one request per 80 ms. Does nothing until the
- * first poll has reported the current volume. This is the hook for the rotary encoder. */
+ * first poll has reported the current volume, or when the service reports no MEDIA_CAP_VOLUME.
+ * This is the hook for the rotary encoder. */
 void media_poller_volume_step(int delta);
 
 /* Switch the music service to another endpoint ("host[:port]"). Thread-safe, applied on the poller thread;

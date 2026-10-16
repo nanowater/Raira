@@ -93,7 +93,7 @@ Tier 3: browser players, YouTube videos, generic streams (likely a browser exten
 
 UI/service code should depend on a common normalized `MediaInfo`-like model, not on tidal-hifi JSON directly.
 
-**Adding a service** = one class implementing `MediaSource` (fill `MediaInfo`, map the commands, report `capabilities()`), created in `main()` / `app_main` and passed to `music_app_start()`. Nothing in the UI or poller changes. Per-service flash/RAM cost is small (tens of KB of code; the big buffers — cover, background, JPEG decode — are shared), so prefer one host-side bridge that normalizes several services into one protocol over per-service OAuth/TLS code on the ESP32. Capabilities are reported but not yet used to hide controls in the UI.
+**Adding a service** = one class implementing `MediaSource` (fill `MediaInfo`, map the commands, report `capabilities()`), created in `main()` / `app_main` and passed to `music_app_start()`. Nothing in the UI or poller changes. Per-service flash/RAM cost is small (tens of KB of code; the big buffers — cover, background, JPEG decode — are shared), so prefer one host-side bridge that normalizes several services into one protocol over per-service OAuth/TLS code on the ESP32. Capabilities reach the UI: unsupported controls are hidden (`music_ui_set_capabilities`, called by the poller at startup; without MEDIA_CAP_VOLUME the encoder/volume path is inert).
 
 ## Encoder UX (default)
 

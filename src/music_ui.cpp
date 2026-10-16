@@ -65,6 +65,12 @@ static int seek_target_sec = 0;
 static lv_obj_t * shuffle_label    = nullptr;
 static lv_obj_t * repeat_label     = nullptr;
 static lv_obj_t * repeat_one_label = nullptr; /* small "1" over the loop icon */
+static lv_obj_t * btn_shuffle      = nullptr; /* buttons around the *_label icons */
+static lv_obj_t * btn_prev         = nullptr;
+static lv_obj_t * btn_next         = nullptr;
+static lv_obj_t * btn_repeat       = nullptr;
+/* Which controls the service can drive; absent ones are hidden (bitmask in music_ui.h). */
+static unsigned supported_caps = ~0u; /* everything shown until music_ui_set_capabilities() */
 
 static void show_playing(bool playing)
 {
@@ -524,6 +530,27 @@ void music_ui_set_connected(bool connected)
     if(offline_banner) lv_obj_set_hidden(offline_banner, connected);
 }
 
+/* Show only the controls the service can drive (the flex row reflows on its own); without seek the
+ * progress bar keeps displaying position but stops reacting to touches. */
+void music_ui_set_capabilities(unsigned caps)
+{
+    supported_caps = caps;
+    if(progress_bar) lv_obj_set_clickable(progress_bar, supported_caps & MUSIC_UI_CAP_SEEK);
+    if(btn_shuffle) lv_obj_set_hidden(btn_shuffle, !(supported_caps & MUSIC_UI_CAP_SHUFFLE));
+    if(btn_repeat) lv_obj_set_hidden(btn_repeat, !(supported_caps & MUSIC_UI_CAP_REPEAT));
+    if(btn_prev) lv_obj_set_hidden(btn_prev, !(supported_caps & MUSIC_UI_CAP_PREV_NEXT));
+    if(btn_next) lv_obj_set_hidden(btn_next, !(supported_caps & MUSIC_UI_CAP_PREV_NEXT));
+
+    /* SPACE_BETWEEN pushes a lone button to the left edge: with only play/pause left, center it */
+    if(controls) {
+        int visible = 1; /* play/pause is always shown */
+        for(lv_obj_t * b : {btn_shuffle, btn_prev, btn_next, btn_repeat})
+            if(b && !lv_obj_is_hidden(b)) visible++;
+        lv_obj_set_flex_align(controls, visible <= 1 ? LV_FLEX_ALIGN_CENTER : LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER,
+                              LV_FLEX_ALIGN_CENTER);
+    }
+}
+
 void music_ui_set_seek_cb(music_ui_seek_cb_t cb)
 {
     seek_cb = cb;
@@ -547,7 +574,7 @@ static void on_progress_changed(lv_event_t *)
  * positions until they agree or the grace period ends. */
 static void on_progress_released(lv_event_t *)
 {
-    if(g_duration_sec <= 0) return;
+    if(g_duration_sec <= 0 || !(supported_caps & MUSIC_UI_CAP_SEEK)) return;
     int sec         = slider_to_seconds();
     seek_target_sec = sec;
     opt_seek.start();
@@ -985,14 +1012,21 @@ void music_ui_create(void)
     lv_obj_set_scrollable(controls, false);
 
     // 셔플 / 이전 / 재생 / 다음 / 반복 (한 줄, 크기는 레이아웃마다 다름: 작은 것 / 큰 것)
+    /* create_transport_button() returns the icon label; the button is its parent (see repeat's "1"). */
     shuffle_label = create_transport_button(controls, LV_SYMBOL_SHUFFLE, 40, &lv_font_montserrat_22, 52, &lv_font_montserrat_28,
                                             MUSIC_UI_CMD_SHUFFLE);
-    create_transport_button(controls, LV_SYMBOL_PREV, 48, &lv_font_montserrat_28, 62, &lv_font_montserrat_36, MUSIC_UI_CMD_PREVIOUS);
+    btn_shuffle = lv_obj_get_parent(shuffle_label);
+    lv_obj_t * prev_lbl = create_transport_button(controls, LV_SYMBOL_PREV, 48, &lv_font_montserrat_28, 62, &lv_font_montserrat_36,
+                                                  MUSIC_UI_CMD_PREVIOUS);
+    btn_prev = lv_obj_get_parent(prev_lbl);
     play_label = create_transport_button(controls, LV_SYMBOL_PLAY, 60, &lv_font_montserrat_36, 76, &lv_font_montserrat_44,
                                          MUSIC_UI_CMD_PLAY_PAUSE);
-    create_transport_button(controls, LV_SYMBOL_NEXT, 48, &lv_font_montserrat_28, 62, &lv_font_montserrat_36, MUSIC_UI_CMD_NEXT);
+    lv_obj_t * next_lbl = create_transport_button(controls, LV_SYMBOL_NEXT, 48, &lv_font_montserrat_28, 62, &lv_font_montserrat_36,
+                                                  MUSIC_UI_CMD_NEXT);
+    btn_next = lv_obj_get_parent(next_lbl);
     repeat_label = create_transport_button(controls, LV_SYMBOL_LOOP, 40, &lv_font_montserrat_22, 52, &lv_font_montserrat_28,
                                            MUSIC_UI_CMD_REPEAT);
+    btn_repeat = lv_obj_get_parent(repeat_label);
 
     repeat_one_label = lv_label_create(lv_obj_get_parent(repeat_label));
     lv_label_set_text(repeat_one_label, "1");
