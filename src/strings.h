@@ -9,6 +9,11 @@ namespace str {
 constexpr const char * CONNECTION_LOST = "Connection lost";
 constexpr const char * LOADING_LYRICS  = "Loading lyrics...";
 
+/* playlist / queue browser */
+constexpr const char * BROWSE_QUEUE     = "Queue";
+constexpr const char * BROWSE_PLAYLISTS = "Playlists";
+constexpr const char * BROWSE_EMPTY     = "Nothing here";
+
 /* settings: titles and rows */
 constexpr const char * SETTINGS        = "Settings";
 constexpr const char * WIFI            = "WiFi";

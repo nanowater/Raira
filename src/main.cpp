@@ -23,6 +23,7 @@
 #include "lib/simulator_settings.h"
 #include "music_app.h"
 #include "media_poller.h"
+#include "fake_browse.h"
 #include "tidal_client.h"
 #include "platform/settings.h"
 #include "platform/wifi.h"
@@ -31,6 +32,7 @@
 static void configure_simulator(int argc, char ** argv);
 static void install_volume_input(void);
 static TidalConfig tidal_cfg;
+static bool fake_browse = false; /* -F: canned playlists/queue behind the browse button */
 static bool host_from_cli = false; /* -s or TIDAL_HIFI_HOST given: wins over the saved setting */
 static void print_lvgl_version(void);
 static void print_usage(void);
@@ -64,10 +66,11 @@ static void print_lvgl_version(void)
 static void print_usage(void)
 {
     fprintf(stdout,
-            "\nlvglsim [-V] [-B] [-D] [-f] [-m] [-s host[:port]] [-b backend_name] [-W window_width] [-H window_height] [-R rotation]\n\n");
+            "\nlvglsim [-V] [-B] [-D] [-F] [-f] [-m] [-s host[:port]] [-b backend_name] [-W window_width] [-H window_height] [-R rotation]\n\n");
     fprintf(stdout, "-V print LVGL version\n");
     fprintf(stdout, "-B list supported backends\n");
     fprintf(stdout, "-D run the LVGL demo instead of the app UI\n");
+    fprintf(stdout, "-F fake playlists/queue behind the list button (no real provider yet)\n");
     fprintf(stdout, "-f fullscreen\n");
     fprintf(stdout, "-m maximize\n");
     fprintf(stdout, "-s tidal-hifi host[:port] (default localhost:47836, env TIDAL_HIFI_HOST)\n");
@@ -130,7 +133,7 @@ static void configure_simulator(int argc, char ** argv)
     settings.window_height = atoi(env_h ? env_h : "480");
 
     /* Parse the command-line options. */
-    while((opt = getopt(argc, argv, "b:fmW:H:R:s:BVDh")) != -1) {
+    while((opt = getopt(argc, argv, "b:fmW:H:R:s:BVDFh")) != -1) {
         switch(opt) {
             case 'h':
                 print_usage();
@@ -150,6 +153,9 @@ static void configure_simulator(int argc, char ** argv)
                 break;
             case 'D':
                 show_demo_screen = true;
+                break;
+            case 'F':
+                fake_browse = true;
                 break;
             case 'b':
                 if(driver_backends_is_supported(optarg) == 0) {
@@ -289,6 +295,7 @@ int main(int argc, char ** argv)
             return c.parse(spec);
         };
         music_app_start(std::move(deps));
+        if(fake_browse) fake_browse_install();
         install_volume_input();
     }
 

@@ -101,6 +101,7 @@ target_link_libraries(lvgl_linux PUBLIC ${LIBS})
 add_library(music_core STATIC
     src/music_app.cpp
     src/music_ui.cpp
+    src/browse_ui.cpp
     src/tidal_client.cpp
     src/media_poller.cpp
     src/cover_decoder.cpp
@@ -127,7 +128,7 @@ add_library(music_platform_sim STATIC
 target_include_directories(music_platform_sim PUBLIC src)
 target_link_libraries(music_platform_sim PUBLIC CURL::libcurl PkgConfig::TURBOJPEG)
 
-add_executable(lvglsim src/main.cpp)
+add_executable(lvglsim src/main.cpp src/fake_browse.cpp)
 target_link_libraries(lvglsim PUBLIC music_core music_platform_sim lvgl_linux ${EXTRA_LIBS})
 # .incbin is invisible to the dependency scanner, so declare the fonts as explicit dependencies
 set(NOTO_REGULAR "${CMAKE_CURRENT_LIST_DIR}/assets/fonts/NotoSansKR-Regular-subset.otf")

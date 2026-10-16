@@ -1,5 +1,6 @@
 #pragma once
 
+#include "browse_ui.h"
 #include "lvgl_compat.h"
 #include <stdbool.h>
 #include <stddef.h>
@@ -62,6 +63,12 @@ void music_ui_set_seek_cb(music_ui_seek_cb_t cb);
 /* Show only the transport controls the service supports (bitmask as above; bits not set hide their
  * control). Call once, after music_ui_create(); LVGL thread only. */
 void music_ui_set_capabilities(unsigned caps);
+
+/* Playlist/queue browsing: with a provider callback set, a button at the bottom right opens a panel in
+ * place of the lyrics (see browse_ui.h for the lists to feed and the events it reports). NULL removes the
+ * button. Not tied to the service capabilities yet: only the simulator's fake provider uses it so far.
+ * LVGL thread only. */
+void music_ui_set_browse_cb(browse_cb_t cb);
 
 /* Show/hide the "connection lost" banner (hidden by default; only shown while disconnected).
  * LVGL thread only. */

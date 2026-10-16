@@ -5,6 +5,7 @@
 #include <vector>
 #include "lvgl_compat.h"
 #include <src/misc/cache/instance/lv_image_cache.h>
+#include "browse_ui.h"
 #include "music_ui.h"
 #include "settings_ui.h"
 #include "strings.h"
@@ -212,6 +213,10 @@ static bool lyrics_synced = false;
 static int lyric_cur      = -1;
 static bool lyrics_available        = false; /* the current track has lyrics to show */
 static bool lyrics_hidden_by_user   = false; /* swiped the lyrics away: keep the lyrics-free layout */
+static bool browse_open             = false; /* the playlist/queue panel replaces the lyrics panel */
+static lv_obj_t * browse_panel      = nullptr;
+static lv_obj_t * browse_btn        = nullptr; /* toggles the panel; bottom right */
+static lv_obj_t * browse_btn_label  = nullptr;
 
 /* Playback position, interpolated between the 1 s polls so line changes feel on time. */
 static bool pos_playing    = false;
@@ -507,7 +512,7 @@ void music_ui_set_lyrics(const music_ui_lyric_line_t * lines, size_t count, bool
     lyrics_update_edge_fade();
     if(lyrics_synced) lyrics_tick_cb(nullptr);
     lyrics_available = true;
-    request_layout(lyrics_hidden_by_user ? LAYOUT_NOW_PLAYING : LAYOUT_LYRICS);
+    request_layout(lyrics_hidden_by_user && !browse_open ? LAYOUT_NOW_PLAYING : LAYOUT_LYRICS);
 }
 
 static void lyrics_sync_position(const music_ui_state_t * st, bool hold)
@@ -757,7 +762,14 @@ static const Geo GEO[2] = {
     /* NOW_PLAYING */ {30, 40, 400, 470, 300, 114, 54, 172, 224, 52, 286, 80},
 };
 
-/* Column = everything that is not the cover: title, artists, progress, controls, lyrics panel. */
+/* The right-hand area (LYRICS layout only) shows either the lyrics or the playlist/queue panel. */
+static void update_right_panels(int mode)
+{
+    lv_obj_set_hidden(lyrics_panel, mode != LAYOUT_LYRICS || browse_open);
+    if(browse_panel) lv_obj_set_hidden(browse_panel, mode != LAYOUT_LYRICS || !browse_open);
+}
+
+/* Column = everything that is not the cover: title, artists, progress, controls, lyrics/browse panel. */
 static void apply_column(int mode)
 {
     const Geo & g = GEO[mode];
@@ -783,13 +795,13 @@ static void apply_column(int mode)
         lv_obj_set_style_text_font(b.lbl, b.font[mode], 0);
     }
 
-    lv_obj_set_hidden(lyrics_panel, mode != LAYOUT_LYRICS);
+    update_right_panels(mode);
 }
 
 static void set_column_opa(int32_t opa)
 {
-    for(lv_obj_t * o : {title_box, artists, progress_panel, controls, lyrics_panel})
-        lv_obj_set_style_opa(o, (lv_opa_t)opa, 0);
+    for(lv_obj_t * o : {title_box, artists, progress_panel, controls, lyrics_panel, browse_panel})
+        if(o) lv_obj_set_style_opa(o, (lv_opa_t)opa, 0);
 }
 
 static void set_cover_geo(const Geo & a, const Geo & b, float t)
@@ -874,13 +886,32 @@ static void request_layout(int mode)
 void music_ui_set_no_lyrics(void)
 {
     music_ui_set_lyrics_message("");
-    request_layout(LAYOUT_NOW_PLAYING);
+    request_layout(browse_open ? LAYOUT_LYRICS : LAYOUT_NOW_PLAYING); /* the browse panel needs the narrow cover */
+}
+
+/* Open/close the playlist/queue panel in place of the lyrics. Opening forces the LYRICS layout (small
+ * cover, right-hand area); closing returns to whatever the lyrics situation calls for. */
+static void set_browse_open(bool open)
+{
+    if(open == browse_open || !browse_panel) return;
+    browse_open = open;
+    if(browse_btn_label) lv_label_set_text(browse_btn_label, open ? LV_SYMBOL_CLOSE : LV_SYMBOL_LIST);
+
+    const int target = open ? LAYOUT_LYRICS : (lyrics_available && !lyrics_hidden_by_user ? LAYOUT_LYRICS : LAYOUT_NOW_PLAYING);
+    const int current = layout_animating ? layout_to : layout_mode;
+    if(target == current) update_right_panels(current); /* no layout change: swap the panels directly */
+    else request_layout(target); /* the panels swap when the column is rearranged */
+    if(open) browse_ui_opened();
 }
 
 /* Tapping the cover shows or hides the lyrics. The choice sticks across tracks; tracks without
- * lyrics always use the lyrics-free layout. */
+ * lyrics always use the lyrics-free layout. With the browse panel open it just closes the panel. */
 static void on_cover_clicked(lv_event_t *)
 {
+    if(browse_open) {
+        set_browse_open(false);
+        return;
+    }
     const int current = layout_animating ? layout_to : layout_mode;
     if(current == LAYOUT_LYRICS) {
         lyrics_hidden_by_user = true;
@@ -1053,6 +1084,10 @@ void music_ui_create(void)
     lv_obj_add_event_cb(lyrics_panel, lyrics_scroll_cb, LV_EVENT_SCROLL, nullptr);
     music_ui_set_lyrics_message("");
     lv_timer_create(lyrics_tick_cb, 100, nullptr);
+
+    // 플레이리스트/큐 패널 (가사 영역 자리에 대신 표시, 오른쪽 아래 버튼이 열고 닫음)
+    browse_panel = browse_ui_create(screen, 420, 372);
+    lv_obj_set_pos(browse_panel, 350, 24);
     apply_layout_now(LAYOUT_LYRICS);
     /* A short tap toggles the lyrics. LVGL sends CLICKED even after a long press, SHORT_CLICKED only
      * for a short one, so a long press can open the settings without also toggling the layout. */
@@ -1088,4 +1123,29 @@ void music_ui_create(void)
     /* Tapping the banner is the way to fix the connection: it opens the settings. */
     lv_obj_add_event_cb(offline_banner, [](lv_event_t *) { settings_ui_open(); }, LV_EVENT_CLICKED, nullptr);
     lv_obj_set_hidden(offline_banner, true); /* shown only while the host is unreachable */
+
+    /* Browse toggle: bottom right, free in both layouts. Hidden until a provider exists. */
+    browse_btn = lv_obj_create(screen);
+    lv_obj_set_size(browse_btn, 52, 52);
+    lv_obj_set_pos(browse_btn, 718, 408);
+    lv_obj_set_style_radius(browse_btn, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(browse_btn, lv_color_hex(0x1F2937), 0);
+    lv_obj_set_style_bg_opa(browse_btn, LV_OPA_90, 0);
+    lv_obj_set_style_border_width(browse_btn, 0, 0);
+    lv_obj_set_style_pad_all(browse_btn, 0, 0);
+    lv_obj_set_scrollable(browse_btn, false);
+    browse_btn_label = lv_label_create(browse_btn);
+    lv_label_set_text(browse_btn_label, LV_SYMBOL_LIST);
+    lv_obj_set_style_text_font(browse_btn_label, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_color(browse_btn_label, lv_color_white(), 0);
+    lv_obj_center(browse_btn_label);
+    lv_obj_add_event_cb(browse_btn, [](lv_event_t *) { set_browse_open(!browse_open); }, LV_EVENT_CLICKED, nullptr);
+    lv_obj_set_hidden(browse_btn, !browse_ui_has_cb());
+}
+
+void music_ui_set_browse_cb(browse_cb_t cb)
+{
+    browse_ui_set_cb(cb);
+    if(browse_btn) lv_obj_set_hidden(browse_btn, cb == nullptr);
+    if(!cb) set_browse_open(false);
 }
