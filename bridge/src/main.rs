@@ -2,6 +2,7 @@ mod auth;
 mod cover;
 mod hub;
 mod model;
+mod tidal;
 mod mpris;
 
 use std::sync::Arc;
@@ -107,7 +108,13 @@ async fn main() {
         tracing::warn!("listening on {bind} WITHOUT an access token: anyone on the network can control the players");
     }
 
-    let hub = Hub::new().await.expect("cannot connect to the D-Bus session bus");
+    // tidal-hifi's own API fills what its MPRIS lacks (shuffle, repeat, quality); on by default, harmless when absent
+    let tidal = if flag("--no-tidal-hifi") {
+        None
+    } else {
+        tidal::Tidal::new(&arg("--tidal-hifi").unwrap_or_else(|| "127.0.0.1:47836".into()))
+    };
+    let hub = Hub::new(tidal).await.expect("cannot connect to the D-Bus session bus");
     let app = Router::new()
         .route("/v0/info", get(info))
         .route("/v0/players", get(players))

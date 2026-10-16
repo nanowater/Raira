@@ -11,6 +11,7 @@ use axum::response::{IntoResponse, Response};
 use crate::cover;
 use crate::model::*;
 use crate::mpris::{Command, Mpris, Raw};
+use crate::tidal::Tidal;
 
 pub struct ApiError {
     status: StatusCode,
@@ -55,6 +56,7 @@ struct Inner {
 pub struct Hub {
     mpris: Mpris,
     inner: Mutex<Inner>,
+    tidal: Option<Tidal>,
 }
 
 struct Snapshot {
@@ -142,8 +144,13 @@ fn capabilities(raw: &Raw) -> Vec<&'static str> {
 }
 
 impl Hub {
-    pub async fn new() -> zbus::Result<Arc<Self>> {
-        Ok(Arc::new(Self { mpris: Mpris::connect().await?, inner: Mutex::new(Inner::default()) }))
+    pub async fn new(tidal: Option<Tidal>) -> zbus::Result<Arc<Self>> {
+        Ok(Arc::new(Self { mpris: Mpris::connect().await?, inner: Mutex::new(Inner::default()), tidal }))
+    }
+
+    /// The tidal-hifi supplement, for the player it belongs to.
+    fn tidal_for(&self, raw: &Raw) -> Option<&Tidal> {
+        if raw.identity.eq_ignore_ascii_case("tidal-hifi") { self.tidal.as_ref() } else { None }
     }
 
     /// Read every player and settle the selection (explicit choice > still playing > newest playing > last).
@@ -231,6 +238,39 @@ impl Hub {
             self.inner.lock().unwrap().cover_urls.insert(key.clone(), url.clone());
             key
         });
+
+        // Supplement: fills what the MPRIS player lacks. It never overrides MPRIS, and a supplement that does not
+        // answer only takes its own capabilities away.
+        let sup = match self.tidal_for(raw) {
+            Some(t) => t.current().await,
+            None => None,
+        };
+        let mut caps = capabilities(raw);
+        let mut shuffle = raw.shuffle;
+        let mut repeat = raw.loop_status.as_deref().map(|l| match l {
+            "Playlist" => "all",
+            "Track" => "single",
+            _ => "off",
+        });
+        let mut quality = None;
+        if let Some(s) = sup {
+            if raw.shuffle.is_none() && s.shuffle.is_some() {
+                shuffle = s.shuffle;
+                caps.push("shuffle");
+            }
+            if raw.loop_status.is_none() && s.repeat.is_some() {
+                repeat = s.repeat;
+                caps.push("repeat");
+            }
+            // tidal-hifi can lag behind MPRIS right after a skip: the quality belongs to *its* track
+            if s.title.trim() == raw.meta.title.trim() {
+                quality = s.quality.map(|(label, badge)| Quality { label, badge });
+                if quality.is_some() {
+                    caps.push("quality");
+                }
+            }
+        }
+
         Ok(State {
             player: id.clone(),
             status: status_of(raw),
@@ -246,14 +286,10 @@ impl Hub {
             position_at_ms: now_ms(),
             rate: raw.rate,
             volume: raw.volume,
-            shuffle: raw.shuffle,
-            repeat: raw.loop_status.as_deref().map(|l| match l {
-                "Playlist" => "all",
-                "Track" => "single",
-                _ => "off",
-            }),
-            quality: None,
-            capabilities: capabilities(raw),
+            shuffle,
+            repeat,
+            quality,
+            capabilities: caps,
         })
     }
 
@@ -273,14 +309,23 @@ impl Hub {
             Cmd::Volume(v) if raw.volume.is_some() => Command::Volume(v.clamp(0.0, 1.0)),
             Cmd::Volume(_) => return Err(unsupported("volume")),
             Cmd::Shuffle(on) if raw.shuffle.is_some() => Command::Shuffle(on),
-            Cmd::Shuffle(_) => return Err(unsupported("shuffle")),
+            Cmd::Shuffle(on) => {
+                let Some(t) = self.tidal_for(raw) else { return Err(unsupported("shuffle")) };
+                return t.set_shuffle(on).await.map_err(|e| ApiError::new(StatusCode::BAD_GATEWAY, "upstream_failed", e));
+            }
             Cmd::Repeat(mode) if raw.loop_status.is_some() => Command::Loop(match mode.as_str() {
                 "off" => "None",
                 "all" => "Playlist",
                 "single" => "Track",
                 _ => return Err(ApiError::new(StatusCode::BAD_REQUEST, "bad_request", "mode must be off, all or single")),
             }),
-            Cmd::Repeat(_) => return Err(unsupported("repeat")),
+            Cmd::Repeat(mode) => {
+                if !matches!(mode.as_str(), "off" | "all" | "single") {
+                    return Err(ApiError::new(StatusCode::BAD_REQUEST, "bad_request", "mode must be off, all or single"));
+                }
+                let Some(t) = self.tidal_for(raw) else { return Err(unsupported("repeat")) };
+                return t.set_repeat(&mode).await.map_err(|e| ApiError::new(StatusCode::BAD_GATEWAY, "upstream_failed", e));
+            }
             Cmd::Open(uri) if !raw.uri_schemes.is_empty() => Command::OpenUri(uri),
             Cmd::Open(_) => return Err(unsupported("open_uri")),
         };
