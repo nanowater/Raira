@@ -267,7 +267,21 @@ void HubSource::on_text(WsConnId id, const std::string & text)
         } else if(s.ready) {
             if(t == "players") handle_players(s, j);
             else if(t == "state") handle_state(s, j);
-            else if(t == "cover_err") {
+            else if(t == "lyrics") {
+                auto w = lyrics_waits_.find((uint32_t)j.value("id", 0));
+                if(w != lyrics_waits_.end()) {
+                    Lyrics l;
+                    l.synced = j.value("synced", false);
+                    auto lines = j.find("lines");
+                    if(j.value("found", false) && lines != j.end() && lines->is_array())
+                        for(const auto & e : *lines)
+                            if(e.is_object()) l.lines.push_back({(int)e.value("ms", 0), str_of(e, "text")});
+                    w->second.found  = !l.lines.empty();
+                    w->second.lyrics = std::move(l);
+                    w->second.done   = true;
+                    cv_.notify_all();
+                }
+            } else if(t == "cover_err") {
                 auto w = cover_waits_.find((uint32_t)j.value("id", 0));
                 if(w != cover_waits_.end()) {
                     w->second.done = true;
@@ -424,6 +438,43 @@ bool HubSource::get_cover(const MediaInfo & info, int want_px, std::vector<unsig
     cover_waits_.erase(req);
     if(!w.done || !w.ok || w.data.empty()) return false;
     out.assign(w.data.begin(), w.data.end());
+    return true;
+}
+
+bool HubSource::request_lyrics(const MediaInfo & info, Lyrics & out, const std::function<bool()> & cancelled)
+{
+    WsConnId conn = 0;
+    uint32_t req  = 0;
+    std::string player;
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        Src * src   = nullptr;
+        Player * pl = nullptr;
+        std::string key;
+        if(focus_locked(conn, src, pl, key) && src->features.count("lyrics")) {
+            player = pl->id;
+            req    = next_id_++;
+            lyrics_waits_[req] = LyricsWait{};
+        } else {
+            conn = 0;
+        }
+    }
+    if(!conn) return lyrics_fetch(info, out, cancelled); /* nobody to ask (or a bridge without the feature) */
+
+    json r = {{"t", "lyrics_req"}, {"id", req}, {"player", player}, {"track_id", info.track_id}, {"title", info.title},
+              {"artists", info.artists}, {"album", info.album}, {"duration_ms", (int64_t)info.duration_sec * 1000}};
+    bool ok = send_json(conn, r.dump());
+
+    std::unique_lock<std::mutex> lk(mu_);
+    const auto deadline = clk::now() + std::chrono::seconds(25); /* the source may be waiting for LRCLIB (rate limit back-off) */
+    while(ok && !lyrics_waits_[req].done && srcs_.find(conn) != srcs_.end() && clk::now() < deadline) {
+        if(cancelled && cancelled()) break;
+        cv_.wait_for(lk, std::chrono::milliseconds(100));
+    }
+    LyricsWait w = lyrics_waits_[req];
+    lyrics_waits_.erase(req);
+    if(!w.done || !w.found) return false;
+    out = std::move(w.lyrics);
     return true;
 }
 

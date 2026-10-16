@@ -27,6 +27,7 @@ static_assert(MUSIC_UI_CAP_BROWSE == MEDIA_CAP_BROWSE, "UI capability bits must 
 /* Capabilities of the current service: set in media_poller_start, then updated by the poller thread
  * when a poll reports different ones (MediaInfo::caps). Guarded by g_mu once the threads run. */
 uint32_t g_caps = 0;
+LyricsProvider g_lyrics_provider; /* set in media_poller_start before the lyrics thread runs; empty = LRCLIB directly */
 media_browse_mode_t g_browse_mode = MEDIA_BROWSE_NONE;
 
 /* The browse bit also depends on whether a browse provider exists at all. */
@@ -219,7 +220,8 @@ void lyrics_loop()
         auto r  = std::make_shared<LyricsResult>();
         r->gen  = req.gen;
         uint64_t gen     = req.gen;
-        r->found         = lyrics_fetch(req.info, r->lyrics, [gen] { return g_lyr_gen.load() != gen; });
+        auto cancelled   = [gen] { return g_lyr_gen.load() != gen; };
+        r->found         = g_lyrics_provider ? g_lyrics_provider(req.info, r->lyrics, cancelled) : lyrics_fetch(req.info, r->lyrics, cancelled);
         post_to_ui([r] { apply_lyrics(r.get()); });
     }
 }
@@ -419,6 +421,7 @@ void media_post_to_ui(std::function<void()> fn)
 void media_poller_start(std::unique_ptr<MediaSource> source, media_browse_mode_t browse)
 {
     g_browse_mode = browse;
+    g_lyrics_provider = source->lyrics_provider();
     /* capabilities() runs on the creating thread here, before the source moves over to the poller. */
     g_caps = with_browse_mode(source->capabilities());
     music_ui_set_capabilities(g_caps); /* hide the controls this service cannot drive */

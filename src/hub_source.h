@@ -72,6 +72,11 @@ public:
     bool set_volume(double level) override;
     bool seek_absolute(int seconds) override;
 
+    LyricsProvider lyrics_provider() override
+    {
+        return [this](const MediaInfo & info, Lyrics & out, const std::function<bool()> & cancelled) { return request_lyrics(info, out, cancelled); };
+    }
+
     bool can_select_player() const override { return true; }
     bool list_players(std::vector<PlayerInfo> & out, std::string & service_pick) override;
     void set_player(const std::string & id) override;
@@ -98,6 +103,10 @@ private:
         std::string last_focus_sent = "?"; /* what we last told this source */
         int auth_failures = 0;
     };
+    struct LyricsWait {
+        bool done = false, found = false;
+        Lyrics lyrics;
+    };
     struct CoverWait {
         bool done = false, ok = false;
         std::string data;
@@ -114,6 +123,8 @@ private:
     std::string key_of(const Src & s, const Player & p) const { return s.id + "/" + p.id; }
     /* The (conn, source, player) shown now, or nulls. Needs mu_. */
     bool focus_locked(WsConnId & conn, Src *& src, Player *& pl, std::string & key);
+    /* The focused source looks the lyrics up (it announced the "lyrics" feature), else we fetch from LRCLIB ourselves. */
+    bool request_lyrics(const MediaInfo & info, Lyrics & out, const std::function<bool()> & cancelled);
     bool command(const char * op, const std::string & args_json); /* args_json: a JSON object ("" = none) */
     bool send_json(WsConnId id, const std::string & text);
 
@@ -129,6 +140,7 @@ private:
     std::string auto_focus_;  /* what automatic chose last (kept while nothing else starts playing) */
     uint32_t next_id_ = 1;
     std::map<uint32_t, CoverWait> cover_waits_;
+    std::map<uint32_t, LyricsWait> lyrics_waits_;
 
     std::string pair_code_;
     std::chrono::steady_clock::time_point pair_until_;

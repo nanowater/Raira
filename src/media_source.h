@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "cover_decoder.h"
+#include "lyrics.h"
 #include "media_info.h"
 
 /* What a music service looks like to the app. The core (poller, UI) only talks to this interface, so
@@ -32,6 +33,10 @@ struct PlayerInfo {
     std::string service; /* short key: spotify, tidal, browser, other */
     std::string status;  /* playing / paused / stopped */
 };
+
+/* How lyrics for a track are obtained. Called from the lyrics thread (not the poller thread), so it must be thread-safe;
+ * return false when nothing was found, the lookup failed or `cancelled` turned true. */
+using LyricsProvider = std::function<bool(const MediaInfo &, Lyrics &, const std::function<bool()> & cancelled)>;
 
 class MediaSource {
 public:
@@ -71,6 +76,10 @@ public:
     virtual bool can_select_player() const { return false; }
     virtual bool list_players(std::vector<PlayerInfo> & out, std::string & service_pick) { (void)out; (void)service_pick; return false; }
     virtual void set_player(const std::string & id) { (void)id; }
+
+    /* A source that can look lyrics up itself (the hub: the PC does it, so the device needs no HTTPS) returns the function
+     * to use; empty = the device fetches them from LRCLIB directly (lyrics.cpp). Asked once, in media_poller_start(). */
+    virtual LyricsProvider lyrics_provider() { return nullptr; }
 
     virtual bool uses_token() const { return false; }
     virtual void set_token(const std::string & token) { (void)token; }
