@@ -8,7 +8,7 @@
 #include <mutex>
 #include <thread>
 #include <vector>
-#include <lvgl/lvgl.h>
+#include "lvgl_compat.h"
 #include "cover_decoder.h"
 #include "lyrics.h"
 #include "media_poller.h"

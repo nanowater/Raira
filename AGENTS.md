@@ -16,7 +16,7 @@ The device is a *controller*, not a player: it displays now-playing metadata and
 
 ## Software stack
 
-- UI framework: **LVGL 9.2**.
+- UI framework: **LVGL**, the `lvgl/` directory in this repo (vendored; `.gitmodules` lists it but git tracks it as a plain tree), currently **10.0.0-dev** (`build/bin/lvglsim -V`). The code uses its newer setters (`lv_obj_set_hidden`, `lv_obj_set_clickable`, `lv_obj_set_scrollable`); do not assume 9.2 APIs.
 - Dev/simulator: this repo's `lv_port_linux` base (SDL2 window, Kconfig-driven, CMake). Used for prototyping the UI.
 - Final target: port UI onto ESP32-S3 (ESP-IDF). Treat the Linux simulator as the *reference UI* during development; keep UI code portable (avoid Linux-only calls in `src/music_ui.*`).
 - Service bridge: host PC runs **tidal-hifi** (TIDAL, 1st target) which exposes a local HTTP API on `http://<host>:47836`. Device talks to it over WiFi.
@@ -26,9 +26,10 @@ The device is a *controller*, not a player: it displays now-playing metadata and
 - `src/main.cpp` — entry point; CLI/env config (`-s host[:port]`, `TIDAL_HIFI_HOST`), starts the UI and the poller.
 - `src/music_ui.h` / `src/music_ui.cpp` — LVGL UI (cover, title/artists, seekable progress bar + times + quality, shuffle/prev/play/next/repeat row, lyrics panel, full-screen cover-derived ambient background, "connection lost" banner). Two layouts, switched by `apply_layout()`: LYRICS (250 px cover + info on the left, lyrics on the right) and NOW_PLAYING (400 px cover on the left, bigger title/artists/progress/controls on the right, no lyrics) — NOW_PLAYING is shown automatically when no lyrics are found (`music_ui_set_no_lyrics`) and LYRICS as soon as lyrics arrive; tapping the cover toggles the lyrics manually (the choice sticks across tracks; tracks without lyrics always get NOW_PLAYING). Switching animates (`request_layout`): the cover glides/scales, the rest fades out, is rearranged and fades back in (~0.4 s). LVGL gestures (swipes) did not fire reliably from simulated mouse drags, hence the tap. Pure LVGL, no networking; fed through `music_ui_update`, `music_ui_set_lyrics*`, `music_ui_set_album_art_*`; reports button presses via `music_ui_set_transport_cb` and progress-bar seeks via `music_ui_set_seek_cb`.
 - `src/media_info.h` — service-agnostic now-playing model (`MediaInfo`).
-- `src/tidal_client.*` — blocking tidal-hifi client (libcurl, one reused handle): `/current`, cover download, transport POSTs. The only place that knows tidal-hifi JSON.
-- `src/lyrics.*` — LRCLIB lookup, candidate ranking, LRC parsing.
-- `src/cover_decoder.*` — JPEG → 400×400 XRGB8888 (turbojpeg; the widget scales it to 250 or 400) and the ambient background (`cover_background`: blurred color grid stretched to 800×480, dithered RGB565) so the UI only receives pixels.
+- `src/tidal_client.*` — blocking tidal-hifi client (through the `HttpClient` interface, one reused connection): `/current`, cover download, transport POSTs. The only place that knows tidal-hifi JSON.
+- `src/lyrics.*` — LRCLIB lookup, candidate ranking, LRC parsing (HTTP through `HttpClient`).
+- `src/platform/` — interfaces the core needs from the OS: `http.h` (`HttpClient`), `jpeg.h` (`jpeg_decode_bgrx`). `src/platform_sim/` — their simulator implementations (libcurl, libjpeg-turbo). `src/music_app.*` — portable entry `music_app_start()`; `src/lvgl_compat.h` — the one place that includes LVGL. See `docs/PORTING.md` for the ESP32 plan, memory budget and open items.
+- `src/cover_decoder.*` — JPEG → 400×400 XRGB8888 (via `jpeg_decode_bgrx`; the widget scales it to 250 or 400) and the ambient background (`cover_background`: blurred color grid stretched to 800×480, dithered RGB565) so the UI only receives pixels.
 - `src/media_poller.*` — background threads (poll `/current` every 500 ms + lyrics fetch), the UI mailbox that hands results to the LVGL thread, and the volume logic (`media_poller_volume_step`).
 - `src/fonts/` — `font_mono_16.c` (DejaVu Sans Mono, digits and ":", via lv_font_conv) and `noto_sans_kr.c` (embeds the Noto Sans KR subsets with `.incbin`). Font files and regeneration commands: `assets/fonts/README.md`.
 - `src/lib/` — LVGL display/input backends (SDL/DRM/FB/Wayland/X11/GLFW).
@@ -98,7 +99,7 @@ UI/service code should depend on a common normalized `MediaInfo`-like model, not
 
 ## Conventions for edits
 
-- LVGL API version is 9.x (`lv_screen_active`, `lv_obj_get_child`, etc.).
+- LVGL API is the 9.x/10.0-dev style (`lv_screen_active`, `lv_obj_get_child`, `lv_obj_set_hidden`, etc.).
 - `music_ui_create()` is the single UI entry point called from `main.cpp` (extern "C").
 - Keep UI functions pure LVGL; no HTTP/blocking calls on the LVGL thread. Run transport/polling in a separate task/thread.
 - **Never call LVGL (including `lv_async_call`, which creates a timer) from a background thread.** Post closures to the mutex-protected queue in `media_poller.cpp` (`post_to_ui`); a 20 ms LVGL timer runs them on the LVGL thread.
@@ -106,7 +107,7 @@ UI/service code should depend on a common normalized `MediaInfo`-like model, not
 - Use the dedicated LVGL 9 setters (`lv_obj_set_scrollable`, `lv_obj_set_hidden`) — `lv_obj_add_flag`/`remove_flag` are deprecated here.
 - LVGL's `anim_duration` for scrolling labels is the *total* travel time; derive it from text width for a constant speed (see `TITLE_SCROLL_PX_PER_S`).
 - Fonts: text uses Noto Sans KR via LVGL TinyTTF from data embedded with `.incbin` (Regular for UI, Bold for lyrics; glyphs: Latin, kana, Hangul, ~7k Han from KS X 1001 + JIS X 0208, no simplified-only Chinese). Times use the generated mono bitmap font. Both subsets are the KR face, so Japanese kanji show Korean glyph variants.
-- HTTP/JSON parsing: JSON uses `nlohmann/json`; HTTP is libcurl on the sim. For ESP32 the HTTP, JPEG and thread pieces (`tidal_client`, `lyrics`, `cover_decoder`, `media_poller`) need ESP-IDF equivalents behind the same interfaces. tidal-hifi itself is plain HTTP; LRCLIB and the TIDAL image CDN are HTTPS.
+- HTTP/JSON parsing: JSON uses `nlohmann/json`; HTTP and JPEG go through `src/platform/` (libcurl / libjpeg-turbo on the sim, ESP-IDF equivalents later). Keep `curl`/`turbojpeg` includes out of the core files (`music_core` target); new OS dependencies get an interface in `src/platform/` first. tidal-hifi itself is plain HTTP; LRCLIB and the TIDAL image CDN are HTTPS.
 - Update `docs/tidal-hifi-swagger.json` if tidal-hifi version changes.
 
 ## Known constraints / do-not-do

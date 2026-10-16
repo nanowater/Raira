@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "media_info.h"
+#include "platform/http.h"
 
 struct TidalConfig {
     std::string host = "localhost";
@@ -15,10 +16,10 @@ struct TidalConfig {
 };
 
 /* Blocking client for the tidal-hifi local HTTP API. Never call from the LVGL thread.
- * Keeps one curl handle so connections are reused (keep-alive); use it from a single thread. */
+ * Owns one HttpClient so connections can be reused (keep-alive): use an instance from a single thread. */
 class TidalClient {
 public:
-    explicit TidalClient(TidalConfig cfg) : cfg_(std::move(cfg)) {}
+    explicit TidalClient(TidalConfig cfg) : cfg_(std::move(cfg)), http_(http_client_create()) {}
 
     bool get_current(MediaInfo & out);
     /* Raw encoded image bytes (JPEG/PNG) of the current cover. */
@@ -41,5 +42,5 @@ private:
     bool http_send(const char * method, const std::string & path);
     bool http_get(const std::string & path, std::string & body);
     TidalConfig cfg_;
-    std::shared_ptr<void> curl_; /* CURL *, created on first use */
+    std::unique_ptr<HttpClient> http_;
 };

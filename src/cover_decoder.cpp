@@ -1,42 +1,17 @@
 #include "cover_decoder.h"
 #include <algorithm>
 #include <cmath>
-#include <turbojpeg.h>
+#include "platform/jpeg.h"
 
 bool cover_decode(const std::vector<unsigned char> & encoded, uint32_t size, CoverPixels & out)
 {
     if(encoded.empty() || size == 0) return false;
 
-    tjhandle tj = tjInitDecompress();
-    if(!tj) return false;
-
-    int w = 0, h = 0, subsamp = 0, colorspace = 0;
-    if(tjDecompressHeader3(tj, encoded.data(), encoded.size(), &w, &h, &subsamp, &colorspace) != 0 || w <= 0 ||
-       h <= 0) {
-        tjDestroy(tj);
-        return false;
-    }
-
-    /* Let libjpeg do the cheap power-of-two downscale (e.g. 1280 -> 320),
-     * keeping the result at least `size` so the final resample only shrinks. */
-    int n_factors                 = 0;
-    tjscalingfactor * factors     = tjGetScalingFactors(&n_factors);
-    int dw                        = w;
-    int dh                        = h;
-    for(int i = 0; i < n_factors; i++) {
-        int sw = TJSCALED(w, factors[i]);
-        int sh = TJSCALED(h, factors[i]);
-        if(sw >= (int)size && sh >= (int)size && sw * sh < dw * dh) {
-            dw = sw;
-            dh = sh;
-        }
-    }
-
-    std::vector<uint8_t> scaled((size_t)dw * dh * 4);
-    int rc = tjDecompress2(tj, encoded.data(), encoded.size(), scaled.data(), dw, dw * 4, dh, TJPF_BGRX,
-                           TJFLAG_FASTDCT);
-    tjDestroy(tj);
-    if(rc != 0) return false;
+    RawImage raw;
+    if(!jpeg_decode_bgrx(encoded.data(), encoded.size(), size, raw)) return false;
+    const int dw                 = (int)raw.w;
+    const int dh                 = (int)raw.h;
+    const std::vector<uint8_t> & scaled = raw.data;
 
     /* Box-filter resample to size x size (center-crop to square first). */
     int side = dw < dh ? dw : dh;

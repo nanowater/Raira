@@ -2,56 +2,31 @@
 #include <algorithm>
 #include <chrono>
 #include <thread>
-#include <curl/curl.h>
+#include "platform/http.h"
 #include <nlohmann/json.hpp>
 
 using nlohmann::json;
 
-static size_t write_cb(void * ptr, size_t size, size_t nmemb, void * stream)
-{
-    static_cast<std::string *>(stream)->append(static_cast<char *>(ptr), size * nmemb);
-    return size * nmemb;
-}
-
 using CancelFn = std::function<bool()>;
 
-static int xfer_cb(void * clientp, curl_off_t, curl_off_t, curl_off_t, curl_off_t)
-{
-    const CancelFn * c = static_cast<const CancelFn *>(clientp);
-    return (c && *c && (*c)()) ? 1 : 0; /* non-zero aborts the transfer */
-}
-
-static bool http_get_once(const std::string & url, std::string & body, long & code, const CancelFn & cancelled)
-{
-    CURL * curl = curl_easy_init();
-    if(!curl) return false;
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "music-controller/0.1 (https://github.com/nanowater)");
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 4L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
-    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
-    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, xfer_cb);
-    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &cancelled);
-    CURLcode rc = curl_easy_perform(curl);
-    code        = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
-    curl_easy_cleanup(curl);
-    return rc == CURLE_OK && code == 200 && !body.empty();
-}
-
 /* LRCLIB answers 429 when requests come in bursts; back off and retry a couple of times. */
-static bool http_get_url(const std::string & url, std::string & body, const CancelFn & cancelled)
+static bool http_get_url(HttpClient & http, const std::string & url, std::string & body, const CancelFn & cancelled)
 {
+    HttpRequest req;
+    req.url               = url;
+    req.user_agent        = "music-controller/0.1 (https://github.com/nanowater)";
+    req.connect_timeout_s = 4;
+    req.timeout_s         = 10;
+    req.cancelled         = cancelled;
+
     for(int attempt = 0; attempt < 3; attempt++) {
         if(cancelled && cancelled()) return false;
-        long code = 0;
-        body.clear();
-        if(http_get_once(url, body, code, cancelled)) return true;
-        if(code != 429) return false;
+        HttpResponse res = http.perform(req);
+        if(res.ok() && !res.body.empty()) {
+            body = std::move(res.body);
+            return true;
+        }
+        if(res.status != 429) return false;
         /* back off in short slices so a cancel is noticed quickly */
         for(int waited = 0; waited < 1500 * (attempt + 1); waited += 100) {
             if(cancelled && cancelled()) return false;
@@ -63,10 +38,7 @@ static bool http_get_url(const std::string & url, std::string & body, const Canc
 
 static std::string escape(const std::string & s)
 {
-    char * e = curl_easy_escape(nullptr, s.c_str(), (int)s.size());
-    std::string out = e ? e : "";
-    curl_free(e);
-    return out;
+    return url_escape(s);
 }
 
 static std::string trim(const std::string & s)
@@ -311,6 +283,7 @@ bool lyrics_fetch(const MediaInfo & info, Lyrics & out, const std::function<bool
 {
     if(info.title.empty()) return false;
     const std::string base = "https://lrclib.net/api/";
+    auto http              = http_client_create();
 
     /* Candidates: the exact lookup (title/artist/album/duration must match closely) plus a
      * free-text search like the LRCLIB website, which also finds entries filed under another
@@ -322,7 +295,7 @@ bool lyrics_fetch(const MediaInfo & info, Lyrics & out, const std::function<bool
     std::string get = base + "get?track_name=" + escape(info.title) + "&artist_name=" + escape(info.artists);
     if(!info.album.empty()) get += "&album_name=" + escape(info.album);
     if(info.duration_sec > 0) get += "&duration=" + std::to_string(info.duration_sec);
-    if(http_get_url(get, body, cancelled)) {
+    if(http_get_url(*http, get, body, cancelled)) {
         json j = json::parse(body, nullptr, false);
         if(j.is_object()) {
             cands.push_back(std::move(j));
@@ -332,7 +305,7 @@ bool lyrics_fetch(const MediaInfo & info, Lyrics & out, const std::function<bool
 
     body.clear();
     std::string q = strip_suffix(info.title) + " " + first_artist(info.artists);
-    if(http_get_url(base + "search?q=" + escape(q), body, cancelled)) {
+    if(http_get_url(*http, base + "search?q=" + escape(q), body, cancelled)) {
         json arr = json::parse(body, nullptr, false);
         if(arr.is_array()) {
             for(auto & item : arr) {

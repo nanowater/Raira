@@ -1,5 +1,4 @@
 #include "tidal_client.h"
-#include <curl/curl.h>
 #include <nlohmann/json.hpp>
 
 using nlohmann::json;
@@ -30,45 +29,13 @@ std::string TidalConfig::base_url() const
     return "http://" + host + ":" + std::to_string(port);
 }
 
-static size_t write_cb(void * ptr, size_t size, size_t nmemb, void * stream)
-{
-    static_cast<std::string *>(stream)->append(static_cast<char *>(ptr), size * nmemb);
-    return size * nmemb;
-}
-
-/* Reset the shared handle for a fresh request; curl keeps the open connections across the reset. */
-static CURL * prepare(std::shared_ptr<void> & holder)
-{
-    if(!holder) {
-        CURL * c = curl_easy_init();
-        if(!c) return nullptr;
-        holder = std::shared_ptr<void>(c, [](void * p) { curl_easy_cleanup(static_cast<CURL *>(p)); });
-    } else {
-        curl_easy_reset(static_cast<CURL *>(holder.get()));
-    }
-    return static_cast<CURL *>(holder.get());
-}
-
-static bool http_get_url(std::shared_ptr<void> & holder, const std::string & url, std::string & body)
-{
-    CURL * curl = prepare(holder);
-    if(!curl) return false;
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 2L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
-    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-    CURLcode rc = curl_easy_perform(curl);
-    long code   = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
-    return rc == CURLE_OK && code == 200 && !body.empty();
-}
-
 bool TidalClient::http_get(const std::string & path, std::string & body)
 {
-    return http_get_url(curl_, cfg_.base_url() + path, body);
+    HttpRequest req;
+    req.url = cfg_.base_url() + path;
+    HttpResponse res = http_->perform(req);
+    body             = std::move(res.body);
+    return res.ok() && !body.empty();
 }
 
 bool TidalClient::set_volume(double level)
@@ -93,23 +60,10 @@ bool TidalClient::http_put(const std::string & path)
 /* Body-less request; the parameters of the tidal-hifi player API travel in the query string. */
 bool TidalClient::http_send(const char * method, const std::string & path)
 {
-    CURL * curl = prepare(curl_);
-    if(!curl) return false;
-    std::string url = cfg_.base_url() + path;
-    std::string sink;
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_POST, 1L);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "");
-    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &sink);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 2L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
-    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-    CURLcode rc = curl_easy_perform(curl);
-    long code   = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
-    return rc == CURLE_OK && code == 200;
+    HttpRequest req;
+    req.method = method;
+    req.url    = cfg_.base_url() + path;
+    return http_->perform(req).ok();
 }
 
 static std::string str_of(const json & j, const char * key)
@@ -195,9 +149,11 @@ bool TidalClient::get_current(MediaInfo & out)
 
 bool TidalClient::get_cover_from_url(const std::string & url, std::vector<unsigned char> & out)
 {
-    std::string body;
-    if(!http_get_url(curl_, url, body)) return false;
-    out.assign(body.begin(), body.end());
+    HttpRequest req;
+    req.url          = url;
+    HttpResponse res = http_->perform(req);
+    if(!res.ok() || res.body.empty()) return false;
+    out.assign(res.body.begin(), res.body.end());
     return true;
 }
 

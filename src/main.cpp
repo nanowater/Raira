@@ -21,7 +21,7 @@
 #include "lib/driver_backends.h"
 #include "lib/simulator_util.h"
 #include "lib/simulator_settings.h"
-#include "music_ui.h"
+#include "music_app.h"
 #include "media_poller.h"
 
 /* Internal functions */
@@ -265,8 +265,7 @@ int main(int argc, char ** argv)
         show_demo();
     }
     else {
-        music_ui_create();
-        media_poller_start(tidal_cfg);
+        music_app_start(tidal_cfg);
         install_volume_input();
     }
 

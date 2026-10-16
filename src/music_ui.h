@@ -1,6 +1,6 @@
 #pragma once
 
-#include <lvgl/lvgl.h>
+#include "lvgl_compat.h"
 #include <stdbool.h>
 #include <stddef.h>
 

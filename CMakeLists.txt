@@ -96,27 +96,42 @@ list(APPEND LIBS lvgl::examples)
 endif()
 
 target_link_libraries(lvgl_linux PUBLIC ${LIBS})
-add_executable(lvglsim
-    src/main.cpp
+# ---- App core: everything that is the same on the simulator and on the ESP32 ----
+# Depends only on LVGL, nlohmann_json and the interfaces in src/platform/ (http.h, jpeg.h).
+add_library(music_core STATIC
+    src/music_app.cpp
     src/music_ui.cpp
     src/tidal_client.cpp
     src/media_poller.cpp
     src/cover_decoder.cpp
     src/lyrics.cpp
+    src/http_util.cpp
     src/fonts/font_mono_16.c
     src/fonts/noto_sans_kr.c
 )
+target_include_directories(music_core PUBLIC src)
+target_link_libraries(music_core PUBLIC lvgl_linux)
+
+# ---- Simulator platform layer: libcurl for HTTP, libjpeg-turbo for JPEG ----
 find_package(CURL REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(TURBOJPEG REQUIRED IMPORTED_TARGET libturbojpeg)
-target_link_libraries(lvglsim PUBLIC lvgl_linux ${EXTRA_LIBS} CURL::libcurl PkgConfig::TURBOJPEG)
+add_library(music_platform_sim STATIC
+    src/platform_sim/http_curl.cpp
+    src/platform_sim/jpeg_turbo.cpp
+)
+target_include_directories(music_platform_sim PUBLIC src)
+target_link_libraries(music_platform_sim PUBLIC CURL::libcurl PkgConfig::TURBOJPEG)
+
+add_executable(lvglsim src/main.cpp)
+target_link_libraries(lvglsim PUBLIC music_core music_platform_sim lvgl_linux ${EXTRA_LIBS})
 # .incbin is invisible to the dependency scanner, so declare the fonts as explicit dependencies
 set(NOTO_REGULAR "${CMAKE_CURRENT_LIST_DIR}/assets/fonts/NotoSansKR-Regular-subset.otf")
 set(NOTO_BOLD "${CMAKE_CURRENT_LIST_DIR}/assets/fonts/NotoSansKR-Bold-subset.otf")
 set_source_files_properties(src/fonts/noto_sans_kr.c PROPERTIES
     COMPILE_DEFINITIONS "NOTO_SANS_KR_PATH=\"${NOTO_REGULAR}\";NOTO_SANS_KR_BOLD_PATH=\"${NOTO_BOLD}\""
     OBJECT_DEPENDS "${NOTO_REGULAR};${NOTO_BOLD}")
-target_compile_definitions(lvglsim PRIVATE LV_LABEL_SCROLL_DELAY=2000 LV_LABEL_WAIT_CHAR_COUNT=8)
+target_compile_definitions(music_core PRIVATE LV_LABEL_SCROLL_DELAY=2000 LV_LABEL_WAIT_CHAR_COUNT=8)
 
 if(CONFIG_LV_USE_DEMO_TRUCK)
     target_compile_definitions(lvglsim PUBLIC CONFIG_LV_USE_DEMO_TRUCK)

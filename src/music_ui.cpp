@@ -3,7 +3,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
-#include <lvgl/lvgl.h>
+#include "lvgl_compat.h"
 #include <src/misc/cache/instance/lv_image_cache.h>
 #include "music_ui.h"
 
