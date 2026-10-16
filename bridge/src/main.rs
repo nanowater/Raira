@@ -1,3 +1,4 @@
+mod auth;
 mod cover;
 mod hub;
 mod model;
@@ -74,6 +75,10 @@ async fn cover_img(AxState(h): Shared, Path(key): Path<String>, Query(q): Query<
     Ok(([(header::CONTENT_TYPE, "image/jpeg")], jpeg.as_ref().clone()))
 }
 
+fn flag(name: &str) -> bool {
+    std::env::args().any(|a| a == name)
+}
+
 fn arg(name: &str) -> Option<String> {
     let args: Vec<String> = std::env::args().collect();
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1).cloned())
@@ -85,6 +90,22 @@ async fn main() {
 
     let bind = arg("--bind").unwrap_or_else(|| "0.0.0.0".into());
     let port = arg("--port").unwrap_or_else(|| "47900".into());
+
+    // Access: --no-auth = open, --token X = that token, otherwise a stored token, required unless bound to loopback.
+    let required: auth::Required = if flag("--no-auth") {
+        None
+    } else if let Some(t) = arg("--token") {
+        Some(Arc::new(t))
+    } else if auth::is_loopback(&bind) {
+        None
+    } else {
+        let (t, path) = auth::load_or_create();
+        tracing::info!("access token required: {t}  (stored in {})", path.display());
+        Some(Arc::new(t))
+    };
+    if required.is_none() && !auth::is_loopback(&bind) {
+        tracing::warn!("listening on {bind} WITHOUT an access token: anyone on the network can control the players");
+    }
 
     let hub = Hub::new().await.expect("cannot connect to the D-Bus session bus");
     let app = Router::new()
@@ -103,6 +124,7 @@ async fn main() {
         .route("/v0/cmd/repeat", post(repeat))
         .route("/v0/cmd/open", post(open))
         .route("/v0/cover/{key}", get(cover_img))
+        .layer(axum::middleware::from_fn_with_state(required, auth::check))
         .with_state(hub);
 
     let addr = format!("{bind}:{port}");
