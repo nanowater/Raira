@@ -151,13 +151,15 @@ static void lyric_scroll_anim_cb(void * var, int32_t v);
 
 static void lyrics_clear_labels()
 {
+    /* Forget the labels before deleting them: lv_obj_clean() scrolls the panel back while it removes
+     * children, and the scroll handler walks lyric_labels, which must not hold deleted objects. */
+    lyric_labels.clear();
+    lyric_times.clear();
+    lyric_cur = -1;
     if(lyrics_panel) {
         lv_anim_delete(lyrics_panel, lyric_scroll_anim_cb); /* a glide for the previous lyrics must not carry over */
         lv_obj_clean(lyrics_panel);
     }
-    lyric_labels.clear();
-    lyric_times.clear();
-    lyric_cur = -1;
 }
 
 /* Fade lines out near the top and bottom edge of the panel instead of cutting them off, so the
