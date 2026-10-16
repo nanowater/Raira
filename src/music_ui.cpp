@@ -203,6 +203,10 @@ static lv_obj_t * lyrics_panel       = nullptr;
 static const lv_font_t * lyrics_font = nullptr;
 static std::vector<lv_obj_t *> lyric_labels;
 static std::vector<int> lyric_times;
+static std::vector<bool> lyric_gap; /* entry is an instrumental gap: a blank spacer, never highlighted */
+static lv_obj_t * intro_gap_spacer = nullptr; /* leading intro spacer that pulses */
+static lv_obj_t * intro_gap_dots[3]  = {nullptr, nullptr, nullptr};
+static bool intro_dots_pulsing       = false; /* the dots currently run their pulse animation */
 static bool lyrics_synced = false;
 static int lyric_cur      = -1;
 static bool lyrics_available        = false; /* the current track has lyrics to show */
@@ -229,8 +233,12 @@ static void lyrics_clear_labels()
 {
     /* Forget the labels before deleting them: lv_obj_clean() scrolls the panel back while it removes
      * children, and the scroll handler walks lyric_labels, which must not hold deleted objects. */
-    lyric_labels.clear();
-    lyric_times.clear();
+     lyric_labels.clear();
+     lyric_times.clear();
+     lyric_gap.clear();
+     intro_gap_spacer = nullptr;
+     intro_dots_pulsing = false;
+     for(int k = 0; k < 3; k++) intro_gap_dots[k] = nullptr;
     lyric_cur = -1;
     if(lyrics_panel) {
         lv_anim_delete(lyrics_panel, lyric_scroll_anim_cb); /* a glide for the previous lyrics must not carry over */
@@ -317,19 +325,28 @@ static void glide_lyrics_to(int32_t y)
 static void lyrics_highlight(int idx)
 {
     if(idx == lyric_cur) return;
-    if(lyric_cur >= 0 && lyric_cur < (int)lyric_labels.size() && lyric_labels[lyric_cur])
+    if(lyric_cur >= 0 && lyric_cur < (int)lyric_labels.size() && !lyric_gap[lyric_cur])
         animate_lyric_color(lyric_labels[lyric_cur], false);
     lyric_cur = idx;
 
-    const int n = (int)lyric_labels.size();
-    lv_obj_t * focus = (idx >= 0 && idx < n) ? lyric_labels[idx] : nullptr;
+    const int n      = (int)lyric_labels.size();
+    bool leading_intro = (idx == 0 && n > 1 && !lyric_gap.empty() && lyric_gap[0] &&
+                          lyric_times.size() > 1 && lyric_times[0] == 0 && lyric_times[1] > 0);
+    lv_obj_t * focus = (idx >= 0 && idx < n && !lyric_gap[idx]) ? lyric_labels[idx] : nullptr;
+    if(leading_intro) {
+        /* Intro: keep the pulsing dots on top, don't highlight the upcoming line yet. */
+        glide_lyrics_to(0);
+        return;
+    }
     if(focus) {
         animate_lyric_color(focus, true);
     } else {
         /* gap / before the first line: aim at the next line that will be sung; after the last line
          * there is none, so stay on the last line (also when seeking into the outro) */
-        for(int i = idx + 1; i < n && !focus; i++) focus = lyric_labels[i];
-        for(int i = n - 1; i >= 0 && !focus; i--) focus = lyric_labels[i];
+        for(int i = idx + 1; i < n && !focus; i++)
+            if(!lyric_gap[i]) focus = lyric_labels[i];
+        for(int i = n - 1; i >= 0 && !focus; i--)
+            if(!lyric_gap[i]) focus = lyric_labels[i];
         if(!focus) return;
     }
 
@@ -337,6 +354,66 @@ static void lyrics_highlight(int idx)
     /* lv_obj_get_y() is relative to the content area (below the top padding), so scrolling by it
      * leaves the line at LYRICS_ANCHOR_Y from the panel top. */
     glide_lyrics_to(lv_obj_get_y(focus));
+}
+
+/* ---- Intro dots: three round dots pulsing in sequence while the song has not started singing ---- */
+static void intro_gap_opa_cb(void * var, int32_t v)
+{
+    lv_obj_set_style_opa(static_cast<lv_obj_t *>(var), (lv_opa_t)v, 0);
+}
+
+static lv_obj_t * intro_dots_create()
+{
+    lv_obj_t * row = lv_obj_create(lyrics_panel);
+    lv_obj_set_size(row, lv_pct(100), 40); /* one lyric line tall */
+    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(row, 0, 0);
+    lv_obj_set_style_pad_all(row, 0, 0);
+    lv_obj_set_style_pad_column(row, 12, 0);
+    lv_obj_set_scrollable(row, false);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    for(int k = 0; k < 3; k++) {
+        lv_obj_t * dot = lv_obj_create(row);
+        lv_obj_set_size(dot, 12, 12);
+        lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(dot, lv_color_white(), 0);
+        lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(dot, 0, 0);
+        lv_obj_set_style_opa(dot, (lv_opa_t)120, 0);
+        lv_obj_set_scrollable(dot, false);
+        intro_gap_dots[k] = dot;
+    }
+    intro_gap_spacer = row;
+    return row;
+}
+
+/* Starts/stops the pulse: only in the intro, only while playing. The resting opacity (a little brighter
+ * while paused inside the intro, dim once the singing started) is set by lyrics_tick_cb. */
+static void intro_dots_pulse(bool pulse)
+{
+    if(!intro_gap_dots[0]) {
+        intro_dots_pulsing = false;
+        return;
+    }
+    if(pulse == intro_dots_pulsing) return;
+    intro_dots_pulsing = pulse;
+    for(int k = 0; k < 3; k++) {
+        lv_obj_t * dot = intro_gap_dots[k];
+        lv_anim_delete(dot, intro_gap_opa_cb);
+        if(pulse) {
+            lv_anim_t a;
+            lv_anim_init(&a);
+            lv_anim_set_var(&a, dot);
+            lv_anim_set_values(&a, 90, 255);
+            lv_anim_set_duration(&a, 800);
+            lv_anim_set_reverse_duration(&a, 800);
+            lv_anim_set_delay(&a, k * 300);
+            lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
+            lv_anim_set_exec_cb(&a, intro_gap_opa_cb);
+            lv_anim_start(&a);
+        }
+    }
 }
 
 static void lyrics_tick_cb(lv_timer_t *)
@@ -350,6 +427,10 @@ static void lyrics_tick_cb(lv_timer_t *)
         else
             break;
     }
+    /* The dots stay in the list like a normal line; they pulse only during the intro while playing. */
+    intro_dots_pulse(idx == 0 && pos_playing);
+    if(intro_gap_dots[0] && !intro_dots_pulsing) /* still: brighter while paused in the intro, dim afterwards */
+        for(int k = 0; k < 3; k++) lv_obj_set_style_opa(intro_gap_dots[k], (lv_opa_t)(idx == 0 ? 200 : 120), 0);
     lyrics_highlight(idx);
 }
 
@@ -376,21 +457,50 @@ void music_ui_set_lyrics(const music_ui_lyric_line_t * lines, size_t count, bool
     lyrics_synced = synced && count > 0;
     lv_obj_scroll_to_y(lyrics_panel, 0, LV_ANIM_OFF);
 
-    for(size_t i = 0; i < count; i++) {
-        /* Empty text = timing-only gap entry (intro, interlude, after the last line): no label. */
-        if(synced && (!lines[i].text || !lines[i].text[0])) {
-            lyric_labels.push_back(nullptr);
-            lyric_times.push_back(lines[i].time_ms);
+    /* Inject a leading intro gap when the first sung line starts well after the track begins, so the
+     * opening instrumental is shown as a pulsing dotted line instead of immediately highlighting. */
+    std::vector<music_ui_lyric_line_t> all;
+    if(synced && count > 0 && lines[0].time_ms >= 4000) {
+        music_ui_lyric_line_t g{};
+        g.text    = nullptr;
+        g.time_ms = 0;
+        all.push_back(g);
+    }
+    for(size_t i = 0; i < count; i++) all.push_back(lines[i]);
+
+    for(size_t i = 0; i < all.size(); i++) {
+        /* Empty text = timing-only gap entry (intro, interlude, after the last line). It is shown as
+         * one blank line so the lyrics visibly pause there; consecutive gaps share that spacer. */
+        if(synced && (!all[i].text || !all[i].text[0])) {
+            lv_obj_t * spacer = nullptr;
+            if(!lyric_gap.empty() && lyric_gap.back()) {
+                spacer = lyric_labels.back();
+            } else {
+                if(i == 0) {
+                    /* Intro gap: three dots pulsing in sequence, occupying one line. */
+                    spacer = intro_dots_create();
+                } else {
+                    spacer = lv_label_create(lyrics_panel);
+                    lv_obj_set_width(spacer, lv_pct(100));
+                    lv_obj_set_style_text_font(spacer, lyrics_font, 0);
+                    lv_obj_set_style_text_color(spacer, lv_color_white(), 0);
+                    lv_label_set_text(spacer, " ");
+                }
+            }
+            lyric_labels.push_back(spacer);
+            lyric_times.push_back(all[i].time_ms);
+            lyric_gap.push_back(true);
             continue;
         }
         lv_obj_t * l = lv_label_create(lyrics_panel);
         lv_obj_set_width(l, lv_pct(100));
         lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_WRAP);
-        lv_label_set_text(l, lines[i].text ? lines[i].text : "");
+        lv_label_set_text(l, all[i].text ? all[i].text : "");
         lv_obj_set_style_text_font(l, lyrics_font, 0);
         lv_obj_set_style_text_color(l, lv_color_hex(synced ? LYRIC_COLOR_DIM : 0xD1D5DB), 0);
         lyric_labels.push_back(l);
-        lyric_times.push_back(lines[i].time_ms);
+        lyric_times.push_back(all[i].time_ms);
+        lyric_gap.push_back(false);
     }
     lv_obj_update_layout(lyrics_panel);
     lyrics_update_edge_fade();
