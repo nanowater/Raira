@@ -1,6 +1,6 @@
 # Hub protocol (draft v1): the device is the hub
 
-Status: **draft, first version implemented** (2026-10-17): the simulator is the hub (`lvglsim -S <port>`, `src/hub_source.*` on `src/platform/ws_server.h`, libwebsockets in `platform_sim`) and the bridge is a source (`bridge/src/hubclient.rs`). Working: `hello`/`auth`/`pair`, `players` and `state` push, `focus`, `cmd`/`ack`, `cover_req` with the binary reply. mDNS discovery works too (simulator: `platform_sim/mdns_responder.cpp`; bridge: `discovery.rs` with `mdns-sd`). **Not yet:** `lyrics_req` (lyrics are still fetched on the device), the ESP32 server (`esp_http_server`), TLS. Written 2026-10-17. It replaces the direction of
+Status: **draft, first version implemented** (2026-10-17): the simulator is the hub (`lvglsim -S <port>`, `src/hub_source.*` on `src/platform/ws_server.h`, libwebsockets in `platform_sim`) and the bridge is a source (`bridge/src/hubclient.rs`). Working: `hello`/`auth`/`pair`, `players` and `state` push, `focus`, `cmd`/`ack`, `cover_req` with the binary reply. mDNS discovery works too (simulator: `platform_sim/mdns_responder.cpp`; bridge: `discovery.rs` with `mdns-sd`). `lyrics_req`/`lyrics` work too: the bridge announces the `lyrics` feature and does the LRCLIB lookup (`bridge/src/lyrics.rs`, a port of `src/lyrics.cpp` with a disk cache); a source without the feature makes the device fetch from LRCLIB itself. **Not yet:** the ESP32 server (`esp_http_server`), TLS. Written 2026-10-17. It replaces the direction of
 `BRIDGE_PROTOCOL.md` (v0: the device polls a server on the PC, implemented in `bridge/` and `BridgeSource`) while keeping
 its vocabulary: players, `state`, capabilities, commands. v0 stays working until v1 can take over. Everything about
 ESP32 load is an estimate, not a measurement (no hardware yet).
@@ -73,7 +73,7 @@ secret and the code can be sniffed by someone on the same network (TLS/PAKE is a
 | `players` | `players`: `[{"id","name","service","status"}]`, `selected` (the source's own pick: an id, or `null`) | the complete list, sent when it changes (a player appears, disappears, starts/stops, or the pick changes) |
 | `state` | one player's state, see below | sent when anything but the position changes, and when the position jumps (seek, track change) |
 | `ack` | `id`, `ok` (bool), `error` (`unsupported`, `no_player`, `upstream_failed`, `bad_request`) | answer to a `cmd` |
-| `lyrics` | `id`, `found`, `synced`, `lines`: `[{"ms","text"}]` | answer to `lyrics_req` (`ms` is absent for unsynced lyrics) |
+| `lyrics` | `id`, `found`, `synced`, `lines`: `[{"ms","text"}]`, optional `error` | answer to `lyrics_req`. `ms` is 0 for unsynced lyrics; a line with an empty `text` is an instrumental gap (the end marker after the last line is already included); the list is cut to fit 64 KB; `found: false` + `error: "upstream_failed"` means the source could not find out (not remembered as "no lyrics") |
 | `cover_err` | `id` | no cover for that request (a successful one is a binary frame) |
 
 ### `state` (per player)
@@ -121,7 +121,8 @@ is valid *when the message arrives*.
 - **Covers**: re-encodes to baseline JPEG at the requested size (as the v0 bridge does), so the ESP32 never meets a
   progressive JPEG, PNG or WebP. One reply per request; the device caches by `key`.
 - **Lyrics**: the lookup (LRCLIB, ranking, LRC parsing, TLS) moves to the source, which has the CPU, the TLS stack and a
-  place to cache. The ESP32 then needs no HTTPS at all. A source without the `lyrics` feature gets no `lyrics_req` and the
+  place to cache. The bridge runs one lookup at a time (LRCLIB answers 429 to bursts), drops a lookup when a newer `lyrics_req` arrives, keeps found lyrics in
+  `~/.cache/music-bridge/lyrics/` and remembers "nothing found" for a week (a failed lookup is not remembered). The ESP32 then needs no HTTPS at all. A source without the `lyrics` feature gets no `lyrics_req` and the
   device shows no lyrics for its players.
 - Keeps its pairing secrets and its `source_id` in its own config; may be paired with several devices and connects to each.
 
