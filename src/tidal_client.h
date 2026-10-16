@@ -32,9 +32,12 @@ public:
     bool previous() { return http_post("/player/previous"); }
     bool toggle_shuffle() { return http_post("/player/shuffle/toggle"); }
     bool toggle_repeat() { return http_post("/player/repeat/toggle"); }
+    bool seek_absolute(int seconds) { return http_put("/player/seek/absolute?seconds=" + std::to_string(seconds)); }
 
 private:
     bool http_post(const std::string & path);
+    bool http_put(const std::string & path);
+    bool http_send(const char * method, const std::string & path);
     bool http_get(const std::string & path, std::string & body);
     TidalConfig cfg_;
     std::shared_ptr<void> curl_; /* CURL *, created on first use */

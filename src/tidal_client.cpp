@@ -73,6 +73,17 @@ bool TidalClient::http_get(const std::string & path, std::string & body)
 
 bool TidalClient::http_post(const std::string & path)
 {
+    return http_send("POST", path);
+}
+
+bool TidalClient::http_put(const std::string & path)
+{
+    return http_send("PUT", path);
+}
+
+/* Body-less request; the parameters of the tidal-hifi player API travel in the query string. */
+bool TidalClient::http_send(const char * method, const std::string & path)
+{
     CURL * curl = prepare(curl_);
     if(!curl) return false;
     std::string url = cfg_.base_url() + path;
@@ -80,6 +91,7 @@ bool TidalClient::http_post(const std::string & path)
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_POST, 1L);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "");
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &sink);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 2L);

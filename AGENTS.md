@@ -24,7 +24,7 @@ The device is a *controller*, not a player: it displays now-playing metadata and
 ## Repository layout
 
 - `src/main.cpp` — entry point; CLI/env config (`-s host[:port]`, `TIDAL_HIFI_HOST`), starts the UI and the poller.
-- `src/music_ui.h` / `src/music_ui.cpp` — LVGL UI (cover, title/artists, progress + times, shuffle/prev/play/next/repeat row, lyrics panel). Pure LVGL, no networking; fed through `music_ui_update`, `music_ui_set_lyrics*`, `music_ui_set_album_art_*`; reports button presses via `music_ui_set_transport_cb`.
+- `src/music_ui.h` / `src/music_ui.cpp` — LVGL UI (cover, title/artists, seekable progress bar + times, shuffle/prev/play/next/repeat row, lyrics panel). Pure LVGL, no networking; fed through `music_ui_update`, `music_ui_set_lyrics*`, `music_ui_set_album_art_*`; reports button presses via `music_ui_set_transport_cb` and progress-bar seeks via `music_ui_set_seek_cb`.
 - `src/media_info.h` — service-agnostic now-playing model (`MediaInfo`).
 - `src/tidal_client.*` — blocking tidal-hifi client (libcurl, one reused handle): `/current`, cover download, transport POSTs. The only place that knows tidal-hifi JSON.
 - `src/lyrics.*` — LRCLIB lookup, candidate ranking, LRC parsing.
@@ -66,8 +66,8 @@ Read now-playing:
 Playback control:
 - `POST /player/next`, `/player/previous`, `/player/play`, `/player/pause`, `/player/playpause`,
 - `POST /player/shuffle/toggle`, `/player/repeat/toggle` (repeat cycles off → all → single),
-- `PUT /player/seek/absolute`, `/player/seek/relative`,
-- `PUT /player/volume` (0.0–1.0; request body format is not documented in the swagger — check before use).
+- `PUT /player/seek/absolute?seconds=N`, `/player/seek/relative?seconds=±N` (query parameter, no body; absolute seek is wired to the progress bar),
+- `PUT /player/volume?volume=0.5` (0.0–1.0, query parameter, no body).
 - Legacy `GET` variants exist (`/next`, `/play`, etc.) but prefer `POST`.
 - The swagger summary of `/player/shuffle/toggle` ("Play the previous song") looks like a copy-paste error.
 
@@ -121,7 +121,7 @@ UI/service code should depend on a common normalized `MediaInfo`-like model, not
 1. Port strategy from Linux sim (SDL) to ESP-IDF (device) — which LVGL ESP port, display driver (RGB panel / MIPI-DSI), touch driver. The sim draws a mouse cursor via `lv_indev_set_cursor` in the SDL backend; the touch indev on device has none.
 2. ESP32 specifics: HTTPS for LRCLIB/CDN (mbedTLS, certificates, RAM), JPEG decoding (does the ESP decoder handle the progressive JPEGs TIDAL serves? else fetch a baseline size), the two ~3.7 MB font subsets in flash (16 MB flash; weigh against OTA partitions).
 3. WiFi / settings page (SSID list, password with on-screen keyboard, tidal-hifi host) with NVS storage.
-4. Volume + encoder UX once the hardware arrives (needs the `PUT /player/volume` body format).
+4. Volume + encoder UX once the hardware arrives (`PUT /player/volume?volume=`; `/current` also reports `volume`).
 5. Transport priority order after WiFi (serial vs BLE) and framing for serial.
 6. Host discovery for tidal-hifi (mDNS vs static config).
 7. Battery/charge path and sleep/screen-off timer.

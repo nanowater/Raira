@@ -46,6 +46,16 @@ struct Update {
 std::mutex g_mu;
 std::condition_variable g_cv;
 std::deque<music_ui_cmd_t> g_cmds;
+int g_seek_sec = -1; /* latest requested seek position, -1 = none (only the newest matters) */
+
+void on_seek(int seconds)
+{
+    {
+        std::lock_guard<std::mutex> lk(g_mu);
+        g_seek_sec = seconds;
+    }
+    g_cv.notify_one();
+}
 
 void on_transport(music_ui_cmd_t cmd)
 {
@@ -154,10 +164,13 @@ void poll_loop(TidalClient client)
     while(true) {
         /* Sleep until the next poll, or wake early for a transport command. */
         std::deque<music_ui_cmd_t> cmds;
+        int seek_sec = -1;
         {
             std::unique_lock<std::mutex> lk(g_mu);
-            g_cv.wait_for(lk, std::chrono::milliseconds(POLL_INTERVAL_MS), [] { return !g_cmds.empty(); });
+            g_cv.wait_for(lk, std::chrono::milliseconds(POLL_INTERVAL_MS), [] { return !g_cmds.empty() || g_seek_sec >= 0; });
             cmds.swap(g_cmds);
+            seek_sec   = g_seek_sec;
+            g_seek_sec = -1;
         }
         for(music_ui_cmd_t c : cmds) {
             switch(c) {
@@ -168,6 +181,8 @@ void poll_loop(TidalClient client)
                 case MUSIC_UI_CMD_REPEAT: client.toggle_repeat(); break;
             }
         }
+
+        if(seek_sec >= 0) client.seek_absolute(seek_sec);
 
         MediaInfo info;
         if(client.get_current(info)) {
@@ -218,6 +233,7 @@ void poll_loop(TidalClient client)
 void media_poller_start(const TidalConfig & cfg)
 {
     music_ui_set_transport_cb(on_transport);
+    music_ui_set_seek_cb(on_seek);
     lv_timer_create(drain_ui_queue, 20, nullptr); /* runs queued UI work on the LVGL thread */
     std::thread(lyrics_loop).detach();
     std::thread(poll_loop, TidalClient(cfg)).detach();

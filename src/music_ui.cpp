@@ -27,12 +27,14 @@ static lv_obj_t * title_box                 = nullptr;
 static lv_obj_t * title                     = nullptr;
 static lv_obj_t * artists                   = nullptr;
 static lv_obj_t * progress_panel            = nullptr;
-static lv_obj_t * progress_bar              = nullptr;
+static lv_obj_t * progress_bar              = nullptr; /* lv_slider: shows progress, drag/tap to seek */
 static lv_obj_t * current_time_lbl          = nullptr;
 static lv_obj_t * duration_time_lbl         = nullptr;
 static lv_timer_t * title_scroll_timer      = nullptr;
 static lv_obj_t * play_label                = nullptr;
 static music_ui_transport_cb_t transport_cb = nullptr;
+static music_ui_seek_cb_t seek_cb           = nullptr;
+static int g_duration_sec                   = 0;
 
 /* After a click the icon flips right away; polled status is ignored until it agrees or the
  * grace period ends (tidal-hifi reports the old state for a moment). */
@@ -59,7 +61,8 @@ struct Optimistic {
 static bool shown_playing  = false;
 static bool shown_shuffle  = false;
 static int shown_repeat    = MUSIC_UI_REPEAT_OFF;
-static Optimistic opt_play, opt_shuffle, opt_repeat;
+static Optimistic opt_play, opt_shuffle, opt_repeat, opt_seek;
+static int seek_target_sec = 0;
 static lv_obj_t * shuffle_label    = nullptr;
 static lv_obj_t * repeat_label     = nullptr;
 static lv_obj_t * repeat_one_label = nullptr; /* small "1" over the loop icon */
@@ -316,8 +319,12 @@ void music_ui_set_lyrics(const music_ui_lyric_line_t * lines, size_t count, bool
     if(lyrics_synced) lyrics_tick_cb(nullptr);
 }
 
-static void lyrics_sync_position(const music_ui_state_t * st)
+static void lyrics_sync_position(const music_ui_state_t * st, bool hold)
 {
+    if(hold) { /* a seek is in flight: keep our own position until the polled one catches up */
+        pos_playing = st->playing;
+        return;
+    }
     int32_t reported = st->current_sec * 1000 + 500; /* polls report whole seconds */
     bool keep        = pos_playing && st->playing && std::abs(position_ms() - reported) <= 1000;
     pos_playing      = st->playing;
@@ -325,6 +332,39 @@ static void lyrics_sync_position(const music_ui_state_t * st)
         pos_base_ms = reported;
         pos_tick    = lv_tick_get();
     }
+}
+
+void music_ui_set_seek_cb(music_ui_seek_cb_t cb)
+{
+    seek_cb = cb;
+}
+
+static int slider_to_seconds()
+{
+    return (int)((int64_t)lv_slider_get_value(progress_bar) * g_duration_sec / 1000);
+}
+
+/* While dragging, preview the target time next to the bar. */
+static void on_progress_changed(lv_event_t *)
+{
+    if(g_duration_sec <= 0 || !lv_slider_is_dragged(progress_bar)) return;
+    char buf[16];
+    fmt_time(slider_to_seconds(), buf, sizeof(buf));
+    lv_label_set_text(current_time_lbl, buf);
+}
+
+/* Let go: send the seek, move our own clock (progress, lyrics) right away and ignore polled
+ * positions until they agree or the grace period ends. */
+static void on_progress_released(lv_event_t *)
+{
+    if(g_duration_sec <= 0) return;
+    int sec         = slider_to_seconds();
+    seek_target_sec = sec;
+    opt_seek.start();
+    pos_base_ms = sec * 1000 + 500;
+    pos_tick    = lv_tick_get();
+    lyrics_tick_cb(nullptr);
+    if(seek_cb) seek_cb(sec);
 }
 
 void music_ui_set_transport_cb(music_ui_transport_cb_t cb)
@@ -373,7 +413,10 @@ static lv_obj_t * create_transport_button(lv_obj_t * parent, const char * symbol
 void music_ui_update(const music_ui_state_t * st)
 {
     if(!st) return;
-    lyrics_sync_position(st);
+    g_duration_sec = st->duration_sec;
+    const bool dragging  = progress_bar && lv_slider_is_dragged(progress_bar);
+    const bool hold_seek = dragging || opt_seek.holds(std::abs(st->current_sec - seek_target_sec) <= 2);
+    lyrics_sync_position(st, hold_seek);
     if(!opt_play.holds(st->playing == shown_playing)) show_playing(st->playing);
     if(!opt_shuffle.holds(st->shuffle == shown_shuffle)) show_shuffle(st->shuffle);
     if(!opt_repeat.holds(st->repeat == shown_repeat)) show_repeat(st->repeat);
@@ -389,19 +432,21 @@ void music_ui_update(const music_ui_state_t * st)
     }
     set_label_if_changed(artists, new_artists);
 
-    if(progress_bar) {
+    if(progress_bar && !hold_seek) {
         int v = 0;
         if(st->duration_sec > 0) {
             v = (int)(((int64_t)st->current_sec * 1000) / st->duration_sec);
             if(v < 0) v = 0;
             if(v > 1000) v = 1000;
         }
-        lv_bar_set_value(progress_bar, v, LV_ANIM_OFF);
+        lv_slider_set_value(progress_bar, v, LV_ANIM_OFF);
     }
 
     char buf[16];
-    fmt_time(st->current_sec, buf, sizeof(buf));
-    set_label_if_changed(current_time_lbl, buf);
+    if(!hold_seek) {
+        fmt_time(st->current_sec, buf, sizeof(buf));
+        set_label_if_changed(current_time_lbl, buf);
+    }
     fmt_time(st->duration_sec, buf, sizeof(buf));
     set_label_if_changed(duration_time_lbl, buf);
 }
@@ -524,15 +569,25 @@ void music_ui_create(void)
     lv_obj_set_scrollable(progress_panel, false);
 
     // 재생바: 패널 전체 폭
-    progress_bar = lv_bar_create(progress_panel);
+    progress_bar = lv_slider_create(progress_panel);
     lv_obj_set_size(progress_bar, 250, 8);
     lv_obj_align(progress_bar, LV_ALIGN_TOP_MID, 0, 8);
-    lv_bar_set_range(progress_bar, 0, 1000);
+    lv_obj_set_ext_click_area(progress_bar, 14); /* the bar is thin: make it easy to hit with a finger */
+    lv_slider_set_range(progress_bar, 0, 1000);
     lv_obj_set_style_bg_color(progress_bar, lv_color_white(), LV_PART_INDICATOR);
     lv_obj_set_style_bg_opa(progress_bar, LV_OPA_COVER, LV_PART_INDICATOR);
     lv_obj_set_style_bg_color(progress_bar, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(progress_bar, LV_OPA_30, LV_PART_MAIN);
-    lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
+    /* knob only while touched */
+    lv_obj_set_style_bg_color(progress_bar, lv_color_white(), LV_PART_KNOB);
+    lv_obj_set_style_bg_opa(progress_bar, LV_OPA_TRANSP, LV_PART_KNOB);
+    lv_obj_set_style_bg_opa(progress_bar, LV_OPA_COVER, (lv_style_selector_t)LV_PART_KNOB | LV_STATE_PRESSED);
+    lv_obj_set_style_pad_all(progress_bar, 6, LV_PART_KNOB);
+    lv_obj_set_style_shadow_width(progress_bar, 0, LV_PART_KNOB);
+    lv_obj_set_style_border_width(progress_bar, 0, LV_PART_KNOB);
+    lv_obj_add_event_cb(progress_bar, on_progress_changed, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_add_event_cb(progress_bar, on_progress_released, LV_EVENT_RELEASED, nullptr);
+    lv_slider_set_value(progress_bar, 0, LV_ANIM_OFF);
 
     // 시간: 바 아래, 고정폭(monospace) 폰트
     current_time_lbl = lv_label_create(progress_panel);

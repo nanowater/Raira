@@ -41,6 +41,11 @@ typedef enum {
 typedef void (*music_ui_transport_cb_t)(music_ui_cmd_t cmd);
 void music_ui_set_transport_cb(music_ui_transport_cb_t cb);
 
+/* Called on the LVGL thread when the user drags/taps the progress bar and lets go; `seconds` is the
+ * chosen position in the track. Must not block. */
+typedef void (*music_ui_seek_cb_t)(int seconds);
+void music_ui_set_seek_cb(music_ui_seek_cb_t cb);
+
 typedef struct {
     const char * text;
     int time_ms; /* ignored when the lyrics are not synced */
