@@ -77,6 +77,32 @@ static std::string trim(const std::string & s)
     return s.substr(a, b - a + 1);
 }
 
+/* LRCLIB text sometimes carries invisible direction/zero-width marks (e.g. U+200E). The font has no
+ * glyph for them, so they would show up as boxes: drop them. */
+static std::string strip_invisible(const std::string & s)
+{
+    std::string out;
+    out.reserve(s.size());
+    for(size_t i = 0; i < s.size();) {
+        unsigned char c = (unsigned char)s[i];
+        if(c == 0xE2 && i + 2 < s.size()) {
+            unsigned char b = (unsigned char)s[i + 1], d = (unsigned char)s[i + 2];
+            bool zero_width_or_dir = (b == 0x80 && ((d >= 0x8B && d <= 0x8F) || (d >= 0xAA && d <= 0xAE))) || /* U+200B-200F, 202A-202E */
+                                     (b == 0x81 && d == 0xA0);                                               /* U+2060 */
+            if(zero_width_or_dir) {
+                i += 3;
+                continue;
+            }
+        }
+        if(c == 0xEF && i + 2 < s.size() && (unsigned char)s[i + 1] == 0xBB && (unsigned char)s[i + 2] == 0xBF) { /* U+FEFF */
+            i += 3;
+            continue;
+        }
+        out += s[i++];
+    }
+    return out;
+}
+
 Lyrics lyrics_parse_lrc(const std::string & lrc)
 {
     Lyrics out;
@@ -108,7 +134,7 @@ Lyrics lyrics_parse_lrc(const std::string & lrc)
             i = close + 1;
         }
         if(stamps.empty()) continue;
-        std::string text = trim(line.substr(i));
+        std::string text = trim(strip_invisible(line.substr(i)));
         for(int t : stamps) out.lines.push_back({t, text});
     }
     std::stable_sort(out.lines.begin(), out.lines.end(),
@@ -122,7 +148,7 @@ Lyrics lyrics_parse_plain(const std::string & text)
     size_t pos = 0;
     while(pos <= text.size()) {
         size_t nl        = text.find('\n', pos);
-        std::string line = trim(text.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos));
+        std::string line = trim(strip_invisible(text.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos)));
         pos              = nl == std::string::npos ? text.size() + 1 : nl + 1;
         if(!line.empty()) out.lines.push_back({0, line});
     }

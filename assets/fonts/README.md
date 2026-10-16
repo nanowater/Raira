@@ -1,7 +1,7 @@
 # Fonts
 
 `NotoSansKR-Regular-subset.otf` — Noto Sans CJK KR Regular (SIL OFL 1.1), subset to Latin,
-punctuation, kana, Hangul jamo/syllables, and ~7k Han characters (KS X 1001 hanja + JIS X 0208 kanji). Embedded via `src/fonts/noto_sans_kr.c` and rendered
+punctuation, kana, Hangul jamo/syllables, fullwidth forms (！？～…), Latin Extended, Greek, Cyrillic, arrows, geometric shapes and misc symbols (★♪♡), and ~7k Han characters (KS X 1001 hanja + JIS X 0208 kanji). Embedded via `src/fonts/noto_sans_kr.c` and rendered
 with LVGL TinyTTF at runtime (any size, one file).
 
 Regenerate (needs `pip install fonttools`). The Han code points are every CJK ideograph that decodes
@@ -9,7 +9,7 @@ in Python's `euc_kr` (lead bytes 0xCA-0xFD) or `shift_jis` (lead bytes 0x88-0x9F
 appended to the unicode list below:
 
     pyftsubset NotoSansCJK-Regular.ttc --font-number=1 \
-      --unicodes="U+0020-007E,U+00A0-00FF,U+2000-206F,U+3000-303F,U+3040-30FF,U+3130-318F,U+AC00-D7A3,<han...>" \
+      --unicodes="U+0020-007E,U+00A0-00FF,U+0100-024F,U+0370-03FF,U+0400-04FF,U+2000-206F,U+2190-21FF,U+25A0-25FF,U+2600-26FF,U+3000-303F,U+3040-30FF,U+3130-318F,U+AC00-D7A3,U+FF00-FFEF,<han...>" \
       --layout-features='' --output-file=NotoSansKR-Regular-subset.otf
 
 `NotoSansKR-Bold-subset.otf` is the same glyph set from `NotoSansCJK-Bold.ttc` (used for lyrics);
