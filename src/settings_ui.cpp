@@ -7,7 +7,7 @@
 
 namespace {
 
-enum Page { PAGE_MAIN, PAGE_WIFI, PAGE_PASSWORD, PAGE_SERVER, PAGE_TOKEN, PAGE_PLAYER, PAGE_COUNT };
+enum Page { PAGE_MAIN, PAGE_WIFI, PAGE_PASSWORD, PAGE_SERVER, PAGE_TOKEN, PAGE_PLAYER, PAGE_SOURCES, PAGE_COUNT };
 
 const uint32_t COLOR_BG      = 0x12151B;
 const uint32_t COLOR_ROW     = 0x1F2937;
@@ -36,6 +36,14 @@ lv_obj_t * player_value  = nullptr;
 lv_obj_t * player_status = nullptr;
 lv_obj_t * player_list   = nullptr;
 std::vector<PlayerInfo> player_infos;
+
+/* sources page (hub): pairing code and the list of sources */
+lv_obj_t * sources_value   = nullptr;
+lv_obj_t * sources_btn_lbl = nullptr;
+lv_obj_t * sources_code    = nullptr;
+lv_obj_t * sources_secs    = nullptr;
+lv_obj_t * sources_list    = nullptr;
+std::string sources_sig;   /* what the list shows now: rebuilt only when this changes */
 
 /* wifi page */
 lv_obj_t * wifi_status = nullptr;
@@ -146,6 +154,7 @@ const char * page_title(int p)
         case PAGE_SERVER: return str::SERVER_TITLE;
         case PAGE_TOKEN: return str::TOKEN_TITLE;
         case PAGE_PLAYER: return str::PLAYER_TITLE;
+        case PAGE_SOURCES: return str::SOURCES_TITLE;
         default: return str::SETTINGS;
     }
 }
@@ -164,6 +173,15 @@ void refresh_main()
     lv_label_set_text(wifi_value, wifi_text.c_str());
     std::string server = svc.get_server ? svc.get_server() : "";
     lv_label_set_text(server_value, server.empty() ? str::NOT_SET : server.c_str());
+    if(sources_value && svc.hub) {
+        int connected = 0, paired = 0;
+        for(const HubSourceInfo & s : svc.hub->sources()) {
+            connected += s.connected && s.paired;
+            paired += s.paired;
+        }
+        std::string text = paired == 0 ? str::NOT_SET : std::to_string(connected) + " / " + std::to_string(paired) + " connected";
+        lv_label_set_text(sources_value, text.c_str());
+    }
     if(player_value) {
         const std::string id = svc.get_player ? svc.get_player() : "";
         std::string text     = id.empty() ? str::PLAYER_AUTO : id;
@@ -284,6 +302,83 @@ void on_open_player(lv_event_t *)
     });
 }
 
+/* ---- sources page ---- */
+
+void add_source_row(const HubSourceInfo & s)
+{
+    lv_obj_t * r = lv_obj_create(sources_list);
+    lv_obj_set_size(r, lv_pct(100), 60);
+    lv_obj_set_style_radius(r, 12, 0);
+    lv_obj_set_style_bg_color(r, lv_color_hex(COLOR_ROW), 0);
+    lv_obj_set_style_bg_opa(r, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(r, 0, 0);
+    lv_obj_set_style_pad_hor(r, 20, 0);
+    lv_obj_set_scrollable(r, false);
+
+    std::string label = s.name.empty() ? s.id : s.name;
+    if(!s.os.empty()) label += "  (" + s.os + ")";
+    lv_obj_t * n = make_label(r, label.c_str(), 22, 0xFFFFFF);
+    lv_obj_align(n, LV_ALIGN_LEFT_MID, 0, 0);
+
+    const char * tag = !s.paired ? str::SOURCES_WAITING : s.connected ? str::TAG_CONNECTED : str::NOT_CONNECTED;
+    const uint32_t color = !s.paired ? COLOR_ACCENT : s.connected ? COLOR_GOOD : COLOR_DIM;
+    lv_obj_t * t = make_label(r, tag, 18, color);
+    lv_obj_align(t, LV_ALIGN_RIGHT_MID, s.paired ? -120 : 0, 0);
+    if(s.paired) {
+        auto * id = new std::string(s.id);
+        lv_obj_t * rm = make_button(
+            r, str::SOURCES_REMOVE, 108, 44, 0x7F1D1D,
+            [](lv_event_t * e) {
+                if(svc.hub) svc.hub->remove_source(*static_cast<std::string *>(lv_event_get_user_data(e)));
+                sources_sig.clear(); /* the list is rebuilt on the next tick, after this click is handled */
+            },
+            id);
+        lv_obj_add_event_cb(rm, [](lv_event_t * e) { delete static_cast<std::string *>(lv_event_get_user_data(e)); }, LV_EVENT_DELETE, id);
+        lv_obj_align(rm, LV_ALIGN_RIGHT_MID, 0, 0);
+    }
+}
+
+void refresh_sources()
+{
+    if(!svc.hub || !sources_list) return;
+    const std::string code = svc.hub->pairing_code();
+    lv_label_set_text(sources_btn_lbl, code.empty() ? str::SOURCES_PAIR : str::SOURCES_CANCEL);
+    if(code.empty()) {
+        lv_label_set_text(sources_code, "");
+        lv_label_set_text(sources_secs, "");
+    } else {
+        lv_label_set_text(sources_code, (code.substr(0, 3) + " " + code.substr(3)).c_str()); /* 123 456 */
+        const int left = svc.hub->pairing_seconds_left();
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%d:%02d", left / 60, left % 60);
+        lv_label_set_text(sources_secs, buf);
+    }
+
+    const std::vector<HubSourceInfo> list = svc.hub->sources();
+    std::string sig;
+    for(const HubSourceInfo & s : list) sig += s.id + "|" + s.name + "|" + s.os + (s.paired ? "P" : "-") + (s.connected ? "C" : "-") + ";";
+    if(sig == sources_sig) return;
+    sources_sig = sig;
+    lv_obj_clean(sources_list);
+    if(list.empty()) make_label(sources_list, str::SOURCES_NONE, 20, COLOR_DIM);
+    for(const HubSourceInfo & s : list) add_source_row(s);
+}
+
+void on_toggle_pairing(lv_event_t *)
+{
+    if(!svc.hub) return;
+    if(svc.hub->pairing_code().empty()) svc.hub->start_pairing();
+    else svc.hub->stop_pairing();
+    refresh_sources();
+}
+
+void on_open_sources(lv_event_t *)
+{
+    sources_sig.clear();
+    show_page(PAGE_SOURCES);
+    refresh_sources();
+}
+
 void start_scan()
 {
     if(!svc.wifi) return;
@@ -293,8 +388,11 @@ void start_scan()
     set_status(wifi_status, str::SCANNING, COLOR_DIM);
 }
 
+void refresh_sources();
+
 void poll_cb(lv_timer_t *)
 {
+    if(page_now == PAGE_SOURCES) refresh_sources(); /* the code counts down and sources come and go */
     if(!svc.wifi) return;
     if(page_now == PAGE_WIFI && scan_was_running && !svc.wifi->scan_running()) {
         scan_was_running = false;
@@ -328,7 +426,8 @@ void on_back(lv_event_t *)
         case PAGE_WIFI:
         case PAGE_SERVER:
         case PAGE_TOKEN:
-        case PAGE_PLAYER: show_page(PAGE_MAIN); break;
+        case PAGE_PLAYER:
+        case PAGE_SOURCES: show_page(PAGE_MAIN); break;
         default:
             lv_obj_set_hidden(root, true);
             if(poll_timer) lv_timer_pause(poll_timer);
@@ -495,10 +594,19 @@ void settings_ui_init(SettingsServices services)
     /* main page */
     if(svc.wifi) wifi_row = make_row(pages[PAGE_MAIN], 16, "WiFi", &wifi_value, on_open_wifi);
     else wifi_value = lv_label_create(pages[PAGE_MAIN]);
-    lv_obj_t * server_row = make_row(pages[PAGE_MAIN], 108, str::SERVER_ROW, &server_value, on_open_server);
-    (void)server_row;
-    if(svc.get_player) make_row(pages[PAGE_MAIN], 292, str::PLAYER_ROW, &player_value, on_open_player);
-    if(svc.get_token) token_row = make_row(pages[PAGE_MAIN], 200, str::TOKEN_ROW, &token_value, on_open_token);
+    /* one row below the other; which rows exist depends on what the music service needs (tidal-hifi: server;
+     * bridge: server + token + player; hub: player + sources) */
+    int row_y = svc.wifi ? 108 : 16;
+    auto next_y = [&] { int y = row_y; row_y += 92; return y; };
+    if(!svc.hub) {
+        make_row(pages[PAGE_MAIN], next_y(), str::SERVER_ROW, &server_value, on_open_server);
+    } else {
+        server_value = lv_label_create(pages[PAGE_MAIN]); /* refresh_main() writes to it; the hub has no address */
+        lv_obj_set_hidden(server_value, true);
+    }
+    if(svc.get_token) token_row = make_row(pages[PAGE_MAIN], next_y(), str::TOKEN_ROW, &token_value, on_open_token);
+    if(svc.get_player) make_row(pages[PAGE_MAIN], next_y(), str::PLAYER_ROW, &player_value, on_open_player);
+    if(svc.hub) make_row(pages[PAGE_MAIN], next_y(), str::SOURCES_ROW, &sources_value, on_open_sources);
 
     /* wifi page */
     wifi_status = make_label(pages[PAGE_WIFI], "", 22, COLOR_DIM);
@@ -514,6 +622,29 @@ void settings_ui_init(SettingsServices services)
     lv_obj_set_style_pad_row(wifi_list, 10, 0);
     lv_obj_set_flex_flow(wifi_list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_scrollbar_mode(wifi_list, LV_SCROLLBAR_MODE_OFF);
+
+    /* sources page */
+    if(svc.hub) {
+        lv_obj_t * pair = make_button(pages[PAGE_SOURCES], str::SOURCES_PAIR, 250, 56, 0x2563EB, on_toggle_pairing);
+        lv_obj_set_pos(pair, 30, 12);
+        sources_btn_lbl = lv_obj_get_child(pair, 0);
+        sources_code    = make_label(pages[PAGE_SOURCES], "", 28, 0xFFFFFF);
+        lv_obj_set_style_text_font(sources_code, &lv_font_montserrat_44, 0);
+        lv_obj_set_pos(sources_code, 310, 8);
+        sources_secs = make_label(pages[PAGE_SOURCES], "", 22, COLOR_DIM);
+        lv_obj_set_pos(sources_secs, 590, 24);
+        lv_obj_t * hint = make_label(pages[PAGE_SOURCES], str::SOURCES_HINT, 18, COLOR_DIM);
+        lv_obj_set_pos(hint, 30, 76);
+        sources_list = lv_obj_create(pages[PAGE_SOURCES]);
+        lv_obj_set_size(sources_list, 740, 416 - 112 - 8);
+        lv_obj_set_pos(sources_list, 30, 112);
+        lv_obj_set_style_bg_opa(sources_list, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(sources_list, 0, 0);
+        lv_obj_set_style_pad_all(sources_list, 0, 0);
+        lv_obj_set_style_pad_row(sources_list, 10, 0);
+        lv_obj_set_flex_flow(sources_list, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_scrollbar_mode(sources_list, LV_SCROLLBAR_MODE_OFF);
+    }
 
     /* player page */
     player_status = make_label(pages[PAGE_PLAYER], "", 22, COLOR_DIM);

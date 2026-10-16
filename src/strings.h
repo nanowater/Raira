@@ -24,6 +24,8 @@ constexpr const char * TOKEN_ROW       = "Access token";
 constexpr const char * TOKEN_TITLE     = "Access token";
 constexpr const char * PLAYER_ROW      = "Player";
 constexpr const char * PLAYER_TITLE    = "Player";
+constexpr const char * SOURCES_ROW     = "Sources";
+constexpr const char * SOURCES_TITLE   = "Sources";
 constexpr const char * NOT_SET         = "Not set";
 
 /* settings: player choice */
@@ -32,6 +34,14 @@ constexpr const char * PLAYER_AUTO_SUB = "Follows what is playing";
 constexpr const char * PLAYER_LOADING  = "Looking for players...";
 constexpr const char * PLAYER_NONE     = "No player is running on the PC";
 constexpr const char * PLAYER_FAILED   = "Cannot reach the bridge";
+
+/* settings: sources (programs on a PC that connect to this device) */
+constexpr const char * SOURCES_PAIR    = "Pair a source";
+constexpr const char * SOURCES_CANCEL  = "Cancel";
+constexpr const char * SOURCES_HINT    = "Type the code into the bridge on your PC (settings page > Devices)";
+constexpr const char * SOURCES_NONE    = "No source yet. Start the bridge on your PC.";
+constexpr const char * SOURCES_WAITING = "Waiting for a code";
+constexpr const char * SOURCES_REMOVE  = "Remove";
 
 /* settings: WiFi */
 constexpr const char * NOT_CONNECTED   = "Not connected";

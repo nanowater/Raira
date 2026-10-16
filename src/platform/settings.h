@@ -8,6 +8,9 @@
 struct AppSettings {
     std::string server;        /* music service endpoint, "host[:port]" (tidal-hifi or the host bridge on the PC) */
     std::string player;        /* chosen player of the host bridge (its id), "" = automatic */
+    std::string hub_device_id;   /* the hub's identity, generated on first use */
+    std::string hub_device_name; /* what sources show in their device list */
+    std::string hub_sources;     /* paired sources as JSON [{id,name,secret}] (secrets: keep the file private) */
     std::string bridge_token;  /* access token of the host bridge, "" = none (plain text like the WiFi password) */
     std::string wifi_ssid;     /* last network the user connected to */
     std::string wifi_password;

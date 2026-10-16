@@ -3,6 +3,7 @@
 #include "media_poller.h"
 #include "music_ui.h"
 #include "settings_ui.h"
+#include <nlohmann/json.hpp>
 
 namespace {
 /* The app lives for the whole run; these are touched from the LVGL thread only. */
@@ -21,6 +22,18 @@ void music_app_start(MusicAppDeps deps)
 
     const bool uses_token = deps.source->uses_token();
     const bool picks_player = deps.source->can_select_player();
+    HubSource * deps_hub = deps.hub;
+    if(deps_hub) {
+        /* the hub reports changes from its server thread: persist them on the LVGL thread */
+        deps_hub->set_paired_changed_cb([](const std::vector<PairedSource> & list) {
+            nlohmann::json j = nlohmann::json::array();
+            for(const PairedSource & p : list) j.push_back({{"id", p.id}, {"name", p.name}, {"secret", p.secret}});
+            media_post_to_ui([text = j.dump()] {
+                g_settings.hub_sources = text;
+                if(g_store) g_store->save(g_settings);
+            });
+        });
+    }
     music_ui_create();
     const media_browse_mode_t browse_mode =
         !deps.browse ? MEDIA_BROWSE_NONE : deps.browse->always_available() ? MEDIA_BROWSE_ALWAYS : MEDIA_BROWSE_WHEN_REPORTED;
@@ -29,6 +42,7 @@ void music_app_start(MusicAppDeps deps)
 
     SettingsServices svc;
     svc.wifi       = g_wifi.get();
+    svc.hub        = deps_hub;
     svc.get_server = [] { return g_settings.server; };
     svc.set_server = [](const std::string & spec) {
         if(spec.empty() || (g_validate && !g_validate(spec))) return false;

@@ -3,12 +3,14 @@
 #include <functional>
 #include <string>
 #include "lvgl_compat.h"
+#include "hub_source.h"
 #include "media_poller.h"
 #include "platform/wifi.h"
 
 /* Settings overlay: WiFi (scan, pick a network, password with an on-screen keyboard) and the address of
  * the music service. Pure LVGL; it talks to the outside only through this struct. */
 struct SettingsServices {
+    HubSource * hub = nullptr;    /* not owned: sources can pair with this device; adds the Sources page */
     WifiManager * wifi = nullptr; /* not owned; may be null (the WiFi row is then hidden) */
     std::function<std::string()> get_server;                     /* current endpoint, "host[:port]" */
     std::function<bool(const std::string &)> set_server;         /* validate + apply + persist; false = invalid */

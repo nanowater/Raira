@@ -104,6 +104,7 @@ add_library(music_core STATIC
     src/browse_ui.cpp
     src/tidal_client.cpp
     src/bridge_client.cpp
+    src/hub_source.cpp
     src/browse_worker.cpp
     src/media_poller.cpp
     src/cover_decoder.cpp
@@ -121,14 +122,16 @@ target_link_libraries(music_core PUBLIC lvgl_linux)
 find_package(CURL REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(TURBOJPEG REQUIRED IMPORTED_TARGET libturbojpeg)
+pkg_check_modules(LWS REQUIRED IMPORTED_TARGET libwebsockets)
 add_library(music_platform_sim STATIC
     src/platform_sim/http_curl.cpp
     src/platform_sim/jpeg_turbo.cpp
     src/platform_sim/settings_file.cpp
     src/platform_sim/wifi_mock.cpp
+    src/platform_sim/ws_server_lws.cpp
 )
 target_include_directories(music_platform_sim PUBLIC src)
-target_link_libraries(music_platform_sim PUBLIC CURL::libcurl PkgConfig::TURBOJPEG)
+target_link_libraries(music_platform_sim PUBLIC CURL::libcurl PkgConfig::TURBOJPEG PkgConfig::LWS)
 
 add_executable(lvglsim src/main.cpp src/fake_browse.cpp)
 target_link_libraries(lvglsim PUBLIC music_core music_platform_sim lvgl_linux ${EXTRA_LIBS})

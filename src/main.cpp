@@ -24,7 +24,10 @@
 #include "music_app.h"
 #include "media_poller.h"
 #include "fake_browse.h"
+#include <nlohmann/json.hpp>
+#include <random>
 #include "bridge_client.h"
+#include "hub_source.h"
 #include "tidal_client.h"
 #include "platform/settings.h"
 #include "platform/wifi.h"
@@ -33,6 +36,7 @@
 static void configure_simulator(int argc, char ** argv);
 static void install_volume_input(void);
 static TidalConfig tidal_cfg;
+static int hub_port = 0; /* -S <port>: be the hub, sources (the PC bridge) connect to this port */
 static std::string cli_token;  /* -T or MUSIC_BRIDGE_TOKEN: the host bridge's access token */
 static std::string cli_server; /* the raw -s value: the bridge has another default port than tidal-hifi */
 static bool use_bridge = false; /* -P: talk to the host bridge instead of tidal-hifi */
@@ -70,12 +74,13 @@ static void print_lvgl_version(void)
 static void print_usage(void)
 {
     fprintf(stdout,
-            "\nlvglsim [-V] [-B] [-D] [-F] [-P] [-f] [-m] [-s host[:port]] [-T token] [-b backend_name] [-W window_width] [-H window_height] [-R rotation]\n\n");
+            "\nlvglsim [-V] [-B] [-D] [-F] [-P] [-f] [-m] [-s host[:port]] [-T token] [-S port] [-b backend_name] [-W window_width] [-H window_height] [-R rotation]\n\n");
     fprintf(stdout, "-V print LVGL version\n");
     fprintf(stdout, "-B list supported backends\n");
     fprintf(stdout, "-D run the LVGL demo instead of the app UI\n");
     fprintf(stdout, "-P use the host bridge (bridge/, default localhost:47900) instead of tidal-hifi; -s then addresses the bridge\n");
     fprintf(stdout, "-T access token of the host bridge (env MUSIC_BRIDGE_TOKEN; saved setting otherwise)\n");
+    fprintf(stdout, "-S port: be the hub on this port (e.g. 47900): sources such as the PC bridge connect to it and pair with a code shown in Settings > Sources\n");
     fprintf(stdout, "-F fake playlists/queue behind the list button (replaces the bridge's browse data)\n");
     fprintf(stdout, "-f fullscreen\n");
     fprintf(stdout, "-m maximize\n");
@@ -139,7 +144,7 @@ static void configure_simulator(int argc, char ** argv)
     settings.window_height = atoi(env_h ? env_h : "480");
 
     /* Parse the command-line options. */
-    while((opt = getopt(argc, argv, "b:fmW:H:R:s:T:BVDFPh")) != -1) {
+    while((opt = getopt(argc, argv, "b:fmW:H:R:s:T:S:BVDFPh")) != -1) {
         switch(opt) {
             case 'h':
                 print_usage();
@@ -160,6 +165,10 @@ static void configure_simulator(int argc, char ** argv)
                 break;
             case 'T':
                 cli_token = optarg;
+                break;
+            case 'S':
+                hub_port = atoi(optarg);
+                if(hub_port < 1024 || hub_port > 65535) die("Invalid -S port '%s'\n", optarg);
                 break;
             case 'D':
                 show_demo_screen = true;
@@ -298,7 +307,29 @@ int main(int argc, char ** argv)
         deps.store = settings_store_create();
         AppSettings saved;
         std::unique_ptr<MediaSource> source;
-        if(use_bridge) {
+        if(hub_port > 0) {
+            deps.store->load(saved);
+            std::random_device rd;
+            auto hex = [&](int bytes) {
+                static const char H[] = "0123456789abcdef";
+                std::string s;
+                for(int i = 0; i < bytes; i++) { unsigned v = rd() & 0xFF; s += H[v >> 4]; s += H[v & 15]; }
+                return s;
+            };
+            if(saved.hub_device_id.empty()) saved.hub_device_id = hex(8);
+            if(saved.hub_device_name.empty()) saved.hub_device_name = "Music Controller (simulator)";
+            deps.store->save(saved); /* keeps the generated identity */
+            std::vector<PairedSource> paired;
+            nlohmann::json list = nlohmann::json::parse(saved.hub_sources.empty() ? "[]" : saved.hub_sources, nullptr, false);
+            if(list.is_array())
+                for(const auto & e : list)
+                    if(e.is_object() && e.value("id", "") != "")
+                        paired.push_back({e.value("id", ""), e.value("name", ""), e.value("secret", "")});
+            auto hub = std::make_unique<HubSource>(ws_server_create(), HubIdentity{saved.hub_device_id, saved.hub_device_name}, paired);
+            if(!hub->start((uint16_t)hub_port)) die("Cannot listen on port %d (is another hub or the bridge using it?)\n", hub_port);
+            deps.hub = hub.get();
+            source   = std::move(hub);
+        } else if(use_bridge) {
             /* -s or the default only: the saved server address is tidal-hifi's (the settings page would
              * overwrite it while testing the bridge) */
             deps.store->load(saved);
