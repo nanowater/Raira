@@ -238,7 +238,7 @@ async fn session(me: &Arc<HubClients>, addr: &str, pair_rx: &mut mpsc::Unbounded
 
     let _ = out_tx.send(text(json!({
         "t": "hello", "proto": 1, "source_id": me.source_id, "name": me.source_name,
-        "os": std::env::consts::OS, "version": env!("CARGO_PKG_VERSION"), "features": ["cover"],
+        "os": std::env::consts::OS, "version": env!("CARGO_PKG_VERSION"), "features": ["cover", "lyrics"],
     })));
     if let Some(secret) = me.secret_of(addr) {
         let _ = out_tx.send(text(json!({ "t": "auth", "secret": secret })));
@@ -248,6 +248,7 @@ async fn session(me: &Arc<HubClients>, addr: &str, pair_rx: &mut mpsc::Unbounded
     let mut pushed_players = String::new();
     let mut pushed: HashMap<String, Pushed> = HashMap::new();
     let mut ticker = tokio::time::interval(TICK);
+    let mut lyrics_task: Option<tokio::task::JoinHandle<()>> = None; // only the newest lookup matters
 
     loop {
         tokio::select! {
@@ -300,6 +301,13 @@ async fn session(me: &Arc<HubClients>, addr: &str, pair_rx: &mut mpsc::Unbounded
                             "cmd" if ready => {
                                 let (me2, tx) = (me.clone(), out_tx.clone());
                                 tokio::spawn(async move { tx.send(text(handle_cmd(&me2, &v).await)).ok(); });
+                            }
+                            "lyrics_req" if ready => {
+                                if let Some(old) = lyrics_task.take() {
+                                    old.abort(); // the track changed again: that lookup is moot
+                                }
+                                let tx = out_tx.clone();
+                                lyrics_task = Some(tokio::spawn(async move { tx.send(text(handle_lyrics(&v).await)).ok(); }));
                             }
                             "cover_req" if ready => {
                                 let (me2, tx) = (me.clone(), out_tx.clone());
@@ -378,6 +386,25 @@ async fn handle_cmd(me: &HubClients, v: &Value) -> Value {
     match me.hub.command(Some(player), cmd).await {
         Ok(()) => json!({ "t": "ack", "id": id, "ok": true }),
         Err(e) => json!({ "t": "ack", "id": id, "ok": false, "error": e.code() }),
+    }
+}
+
+/// `lyrics` reply to a `lyrics_req`: found or not, synced or plain, the lines (an empty text is a gap).
+async fn handle_lyrics(v: &Value) -> Value {
+    let id = v["id"].clone();
+    let track = crate::lyrics::Track {
+        title: v["title"].as_str().unwrap_or("").to_string(),
+        artists: v["artists"].as_str().unwrap_or("").to_string(),
+        album: v["album"].as_str().unwrap_or("").to_string(),
+        duration_sec: v["duration_ms"].as_i64().unwrap_or(0) / 1000,
+    };
+    match crate::lyrics::lookup(&track).await {
+        Ok(Some(l)) => {
+            let l = crate::lyrics::for_device(l);
+            json!({ "t": "lyrics", "id": id, "found": true, "synced": l.synced, "lines": l.lines })
+        }
+        Ok(None) => json!({ "t": "lyrics", "id": id, "found": false }),
+        Err(()) => json!({ "t": "lyrics", "id": id, "found": false, "error": "upstream_failed" }),
     }
 }
 
