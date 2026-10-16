@@ -119,7 +119,7 @@ impl HubClients {
         {
             let mut c = self.cfg.lock().unwrap();
             if !c.devices.iter().any(|d| d.addr == addr) {
-                c.devices.push(DeviceCfg { addr: addr.clone(), name: None, secret: None });
+                c.devices.push(DeviceCfg { addr: addr.clone(), name: None, device_id: None, secret: None });
                 let _ = config::save(&c);
             }
         }
@@ -140,6 +140,30 @@ impl HubClients {
     /// Hand a pairing code (typed by the user from the device's screen) to that device's connection.
     pub fn pair(&self, addr: &str, code: &str) -> bool {
         self.tasks.lock().unwrap().get(addr).is_some_and(|t| t.pair_tx.send(code.to_string()).is_ok())
+    }
+
+    /// A device announced itself over mDNS. If we know it by id and it moved, follow it to the new address.
+    pub fn on_discovered(self: &Arc<Self>, device_id: &str, addr: &str) {
+        let old = {
+            let mut c = self.cfg.lock().unwrap();
+            let Some(d) = c.devices.iter_mut().find(|d| d.device_id.as_deref() == Some(device_id)) else { return };
+            if d.addr == addr {
+                return;
+            }
+            let old = std::mem::replace(&mut d.addr, addr.to_string());
+            let _ = config::save(&c);
+            old
+        };
+        tracing::info!("device {device_id} moved from {old} to {addr}");
+        if let Some(t) = self.tasks.lock().unwrap().remove(&old) {
+            t.handle.abort();
+        }
+        self.status.lock().unwrap().remove(&old);
+        self.spawn(addr);
+    }
+
+    pub fn configured(&self) -> Vec<DeviceCfg> {
+        self.cfg.lock().unwrap().devices.clone()
     }
 
     pub fn statuses(&self) -> Vec<DeviceStatus> {
@@ -240,8 +264,11 @@ async fn session(me: &Arc<HubClients>, addr: &str, pair_rx: &mut mpsc::Unbounded
                         let Ok(v) = serde_json::from_str::<Value>(t.as_str()) else { continue };
                         match v["t"].as_str().unwrap_or("") {
                             "welcome" => {
-                                let name = v["name"].as_str().map(str::to_string);
-                                me.update_device(addr, |d| d.name = name);
+                                let (name, id) = (v["name"].as_str().map(str::to_string), v["device_id"].as_str().map(str::to_string));
+                                me.update_device(addr, |d| {
+                                    d.name = name;
+                                    d.device_id = id;
+                                });
                             }
                             "pairing_required" => {
                                 if me.secret_of(addr).is_none() {
@@ -295,7 +322,7 @@ async fn session(me: &Arc<HubClients>, addr: &str, pair_rx: &mut mpsc::Unbounded
 /// Send the player list and the states that changed (or whose position drifted) since the last push.
 async fn push(me: &HubClients, out: &mpsc::UnboundedSender<Message>, players_sent: &mut String, pushed: &mut HashMap<String, Pushed>) {
     let (players, states) = me.hub.all_states().await;
-    let list = json!({ "t": "players", "players": players.players }).to_string();
+    let list = json!({ "t": "players", "selected": players.selected, "players": players.players }).to_string();
     if list != *players_sent {
         out.send(Message::Text(list.clone().into())).ok();
         *players_sent = list;

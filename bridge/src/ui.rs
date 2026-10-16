@@ -18,6 +18,7 @@ use serde_json::{Value, json};
 use crate::auth::Access;
 use crate::config::{self, Config};
 use crate::hub::{ApiError, Hub};
+use crate::discovery::Discovery;
 use crate::hubclient::HubClients;
 use crate::tidal::Tidal;
 
@@ -29,6 +30,7 @@ pub struct UiState {
     pub port: u16,
     pub config: Arc<Mutex<Config>>,
     pub clients: Arc<HubClients>,
+    pub discovery: Arc<Discovery>,
 }
 
 pub type Ui = Arc<UiState>;
@@ -50,7 +52,7 @@ pub async fn page() -> Html<&'static str> {
 }
 
 /// The address a device on the same network would use: the IP of the interface the default route leaves by.
-fn lan_ip() -> Option<String> {
+pub fn lan_ip() -> Option<String> {
     let s = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
     s.connect("192.0.2.1:9").ok()?; // no packet is sent: this only picks the outgoing interface
     Some(s.local_addr().ok()?.ip().to_string())
@@ -86,6 +88,7 @@ pub async fn status(State(s): State<Ui>) -> Json<Value> {
         "players": players,
         "now": now.map(|n| json!({ "title": n.track.title, "artists": n.track.artists, "status": n.status, "player": n.player })),
         "devices": s.clients.statuses(),
+        "nearby": s.discovery.nearby(&s.clients.configured()),
         "tidal": { "enabled": tidal.is_some(), "addr": tidal.as_ref().map(|t| t.0.clone()), "reachable": tidal.map(|t| t.1).unwrap_or(false) },
         "config": {
             "path": config::path().display().to_string(),

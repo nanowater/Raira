@@ -59,6 +59,7 @@
     <h2>Devices</h2>
     <div class="dim small">Music controllers this PC reports to. Press <b>Pair a source</b> in the device's Settings &rarr; Sources, then type the code it shows.</div>
     <div id="devices"></div>
+    <div id="nearby"></div>
     <div class="row" style="margin-top:10px">
       <input type="text" id="newdev" class="grow" placeholder="Device address, e.g. 192.168.0.40 or music-controller.local">
       <button id="adddev">Add device</button>
@@ -83,6 +84,7 @@
 
   <section>
     <h2>Players</h2>
+    <div class="dim small">The one you pick is what a device on <i>Automatic</i> shows, even if another player (a browser video) starts later. A device can still pin its own choice.</div>
     <div id="players"></div>
     <div class="note dim" id="now"></div>
   </section>
@@ -152,8 +154,23 @@ function renderDevices(list) {
   if (focused) { const el = box.querySelector('input[data-addr="' + CSS.escape(focused) + '"]'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
 }
 
+function renderNearby(list) {
+  const box = $('nearby'); box.replaceChildren();
+  if (!list.length) return;
+  box.append(Object.assign(document.createElement('div'), { className: 'dim small', style: 'margin-top:10px', textContent: 'Found on your network:' }));
+  for (const f of list) {
+    const row = document.createElement('div'); row.className = 'dev';
+    const name = document.createElement('span'); name.className = 'grow';
+    name.append(Object.assign(document.createElement('b'), { textContent: f.name }), ' ', Object.assign(document.createElement('span'), { className: 'dim small', textContent: f.addr }));
+    const go = Object.assign(document.createElement('button'), { textContent: 'Connect', className: 'primary' });
+    go.onclick = async () => { try { await api('/ui/devices/add', 'POST', { addr: f.addr }); refresh(); } catch (e) { toast(e.message); } };
+    row.append(name, go); box.append(row);
+  }
+}
+
 function render(d) {
   data = d;
+  renderNearby(d.nearby || []);
   renderDevices(d.devices || []);
   $('ver').textContent = 'v' + d.version;
   const host = d.lan_ip || '<this PC\'s IP>';

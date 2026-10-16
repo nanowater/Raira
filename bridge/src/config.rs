@@ -24,6 +24,9 @@ pub struct DeviceCfg {
     /// "host:port"
     pub addr: String,
     pub name: Option<String>,
+    /// the device's own id (from its welcome / mDNS record): lets us follow it when its address changes
+    #[serde(default)]
+    pub device_id: Option<String>,
     /// from pairing; stays on this PC
     pub secret: Option<String>,
 }

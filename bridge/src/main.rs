@@ -1,6 +1,7 @@
 mod auth;
 mod config;
 mod cover;
+mod discovery;
 mod hub;
 mod hubclient;
 mod model;
@@ -141,7 +142,8 @@ async fn main() {
     let extra: Vec<String> = std::env::args().zip(std::env::args().skip(1)).filter(|(a, _)| a == "--device").map(|(_, v)| v).collect();
     let clients = hubclient::HubClients::start(hub.clone(), cfg.clone(), extra);
 
-    let ui_state: ui::Ui = Arc::new(ui::UiState { hub: hub.clone(), access: access.clone(), bind: bind.clone(), port, config: cfg, clients });
+    let discovery = discovery::Discovery::start(clients.clone());
+    let ui_state: ui::Ui = Arc::new(ui::UiState { hub: hub.clone(), access: access.clone(), bind: bind.clone(), port, config: cfg, clients, discovery });
     let settings = Router::new()
         .route("/", get(ui::page))
         .route("/ui/status", get(ui::status))
