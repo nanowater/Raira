@@ -32,6 +32,7 @@ public:
     bool previous() { return http_post("/player/previous"); }
     bool toggle_shuffle() { return http_post("/player/shuffle/toggle"); }
     bool toggle_repeat() { return http_post("/player/repeat/toggle"); }
+    bool set_volume(double level); /* 0.0..1.0 */
     bool seek_absolute(int seconds) { return http_put("/player/seek/absolute?seconds=" + std::to_string(seconds)); }
 
 private:

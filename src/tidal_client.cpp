@@ -71,6 +71,15 @@ bool TidalClient::http_get(const std::string & path, std::string & body)
     return http_get_url(curl_, cfg_.base_url() + path, body);
 }
 
+bool TidalClient::set_volume(double level)
+{
+    if(level < 0) level = 0;
+    if(level > 1) level = 1;
+    char q[48];
+    snprintf(q, sizeof(q), "/player/volume?volume=%.2f", level);
+    return http_put(q);
+}
+
 bool TidalClient::http_post(const std::string & path)
 {
     return http_send("POST", path);
@@ -169,6 +178,8 @@ bool TidalClient::get_current(MediaInfo & out)
         if(sh != pl->end() && sh->is_boolean()) m.shuffle = sh->get<bool>();
         m.repeat = str_of(*pl, "repeat");
     }
+    auto vol = j.find("volume");
+    if(vol != j.end() && vol->is_number()) m.volume = vol->get<double>();
     m.image_url = str_of(j, "image");
     m.track_id  = str_of(j, "url");
     if(m.track_id.empty()) m.track_id = m.title;

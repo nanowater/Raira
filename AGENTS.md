@@ -29,7 +29,7 @@ The device is a *controller*, not a player: it displays now-playing metadata and
 - `src/tidal_client.*` — blocking tidal-hifi client (libcurl, one reused handle): `/current`, cover download, transport POSTs. The only place that knows tidal-hifi JSON.
 - `src/lyrics.*` — LRCLIB lookup, candidate ranking, LRC parsing.
 - `src/cover_decoder.*` — JPEG → 250×250 XRGB8888 (turbojpeg) so the UI only receives pixels.
-- `src/media_poller.*` — background threads (poll `/current` every 500 ms + lyrics fetch) and the UI mailbox that hands results to the LVGL thread.
+- `src/media_poller.*` — background threads (poll `/current` every 500 ms + lyrics fetch), the UI mailbox that hands results to the LVGL thread, and the volume logic (`media_poller_volume_step`).
 - `src/fonts/` — `font_mono_16.c` (DejaVu Sans Mono, digits and ":", via lv_font_conv) and `noto_sans_kr.c` (embeds the Noto Sans KR subsets with `.incbin`). Font files and regeneration commands: `assets/fonts/README.md`.
 - `src/lib/` — LVGL display/input backends (SDL/DRM/FB/Wayland/X11/GLFW).
 - `docs/tidal-hifi-swagger.json` — tidal-hifi local API spec (OpenAPI 3.1.0, v8.1.3, 28 paths). **Use this, not the old official TIDAL OAS**, for integration work.
@@ -92,7 +92,7 @@ UI/service code should depend on a common normalized `MediaInfo`-like model, not
 
 ## Encoder UX (default)
 
-- Turn: volume up/down (`PUT /player/volume`).
+- Turn: volume up/down. Implemented as `media_poller_volume_step(delta)` (2 % per step, thread-safe, coalesced to one `PUT /player/volume?volume=` per 80 ms, optimistic target that falls back to the polled `volume` after 2 s). **No volume UI on purpose** (the TIDAL mobile app has none either). The simulator feeds it from the mouse wheel (up = louder) and Up/Down arrow keys via `install_volume_input()` in `main.cpp`; the device's encoder driver should call `media_poller_volume_step()` directly.
 - Click: play/pause (`POST /player/playpause`).
 - Long-press / touch reserved for skip / seek / source switching (TBD).
 
@@ -121,7 +121,7 @@ UI/service code should depend on a common normalized `MediaInfo`-like model, not
 1. Port strategy from Linux sim (SDL) to ESP-IDF (device) — which LVGL ESP port, display driver (RGB panel / MIPI-DSI), touch driver. The sim draws a mouse cursor via `lv_indev_set_cursor` in the SDL backend; the touch indev on device has none.
 2. ESP32 specifics: HTTPS for LRCLIB/CDN (mbedTLS, certificates, RAM), JPEG decoding (does the ESP decoder handle the progressive JPEGs TIDAL serves? else fetch a baseline size), the two ~3.7 MB font subsets in flash (16 MB flash; weigh against OTA partitions).
 3. WiFi / settings page (SSID list, password with on-screen keyboard, tidal-hifi host) with NVS storage.
-4. Volume + encoder UX once the hardware arrives (`PUT /player/volume?volume=`; `/current` also reports `volume`).
+4. Encoder driver on the device (step feed, direction/debounce, acceleration, long-press = mute?) — the volume logic itself is done.
 5. Transport priority order after WiFi (serial vs BLE) and framing for serial.
 6. Host discovery for tidal-hifi (mDNS vs static config).
 7. Battery/charge path and sleep/screen-off timer.

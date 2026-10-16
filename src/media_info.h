@@ -13,6 +13,7 @@ struct MediaInfo {
     std::string status;  /* "playing" / "paused" / ... */
     std::string track_id; /* stable key for change detection (url, else title) */
     std::string image_url; /* cover URL; changes when the artwork changes */
+    double volume = -1;   /* 0.0..1.0, -1 when the service did not report it */
     int current_sec  = 0;
     int duration_sec = 0;
 };

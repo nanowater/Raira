@@ -26,6 +26,7 @@
 
 /* Internal functions */
 static void configure_simulator(int argc, char ** argv);
+static void install_volume_input(void);
 static TidalConfig tidal_cfg;
 static void print_lvgl_version(void);
 static void print_usage(void);
@@ -192,6 +193,42 @@ static void configure_simulator(int argc, char ** argv)
     }
 }
 
+/* Simulator stand-in for the rotary encoder: mouse wheel (scroll up = louder) and the Up/Down
+ * arrow keys step the volume. The wheel is an LVGL encoder indev, which only delivers LEFT/RIGHT
+ * keys to a focused object of its group in edit mode, so give the screen that role. The real
+ * device will call media_poller_volume_step() straight from its encoder driver. */
+static void volume_key_cb(lv_event_t * e)
+{
+    switch(lv_event_get_key(e)) {
+        case LV_KEY_UP:
+        case LV_KEY_LEFT: /* wheel up */
+            media_poller_volume_step(+1);
+            break;
+        case LV_KEY_DOWN:
+        case LV_KEY_RIGHT: /* wheel down */
+            media_poller_volume_step(-1);
+            break;
+        default:
+            break;
+    }
+}
+
+static void install_volume_input(void)
+{
+    lv_group_t * g = lv_group_create();
+    lv_group_set_default(g);
+    for(lv_indev_t * i = lv_indev_get_next(NULL); i; i = lv_indev_get_next(i)) {
+        lv_indev_type_t t = lv_indev_get_type(i);
+        if(t == LV_INDEV_TYPE_ENCODER || t == LV_INDEV_TYPE_KEYPAD) lv_indev_set_group(i, g);
+    }
+    lv_obj_t * scr = lv_screen_active();
+    lv_group_add_obj(g, scr);
+    lv_group_set_editing(g, true);
+    /* no focus outline around the whole screen */
+    lv_obj_set_style_outline_width(scr, 0, (lv_style_selector_t)LV_STATE_FOCUSED | LV_STATE_FOCUS_KEY | LV_STATE_EDITED);
+    lv_obj_add_event_cb(scr, volume_key_cb, LV_EVENT_KEY, NULL);
+}
+
 /**
  * @brief entry point
  * @description start the app UI (or the demo with -D)
@@ -230,6 +267,7 @@ int main(int argc, char ** argv)
     else {
         music_ui_create();
         media_poller_start(tidal_cfg);
+        install_volume_input();
     }
 
     while(1) {

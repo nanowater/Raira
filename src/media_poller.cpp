@@ -1,4 +1,5 @@
 #include <atomic>
+#include <cmath>
 #include <chrono>
 #include <condition_variable>
 #include <deque>
@@ -46,7 +47,26 @@ struct Update {
 std::mutex g_mu;
 std::condition_variable g_cv;
 std::deque<music_ui_cmd_t> g_cmds;
+/* Volume: steps update g_vol_target at once (the UI has nothing to show, but a fast turn must build
+ * on the previous step, not on the stale polled value); the newest target is sent at most every 80 ms. */
+const double VOLUME_STEP         = 0.02;
+const int VOLUME_SEND_INTERVAL_MS = 80;
+const int VOLUME_FOLLOW_MS        = 2000; /* after the last step, trust the polled volume again */
+double g_vol_polled = -1;                  /* last volume reported by /current */
+double g_vol_target = -1;                  /* wanted volume, -1 = just follow the polled one */
+bool g_vol_dirty    = false;               /* g_vol_target not sent yet */
+std::chrono::steady_clock::time_point g_vol_last_send, g_vol_last_step;
 int g_seek_sec = -1; /* latest requested seek position, -1 = none (only the newest matters) */
+
+void volume_sync_polled(double polled)
+{
+    std::lock_guard<std::mutex> lk(g_mu);
+    g_vol_polled = polled;
+    if(g_vol_target >= 0 && !g_vol_dirty &&
+       (std::abs(polled - g_vol_target) < 0.005 ||
+        std::chrono::steady_clock::now() - g_vol_last_step > std::chrono::milliseconds(VOLUME_FOLLOW_MS)))
+        g_vol_target = -1;
+}
 
 void on_seek(int seconds)
 {
@@ -161,16 +181,31 @@ void poll_loop(TidalClient client)
 {
     std::string cover_for;  /* cover key (image URL) the displayed cover belongs to */
     std::string lyrics_for; /* metadata key lyrics were requested for */
+    auto last_poll = std::chrono::steady_clock::now() - std::chrono::milliseconds(POLL_INTERVAL_MS);
     while(true) {
-        /* Sleep until the next poll, or wake early for a transport command. */
+        /* Sleep until the next poll, or wake early for a transport command, a seek or a volume step. */
         std::deque<music_ui_cmd_t> cmds;
-        int seek_sec = -1;
+        int seek_sec     = -1;
+        double volume    = -1; /* >= 0: send this level */
         {
+            using clk = std::chrono::steady_clock;
             std::unique_lock<std::mutex> lk(g_mu);
-            g_cv.wait_for(lk, std::chrono::milliseconds(POLL_INTERVAL_MS), [] { return !g_cmds.empty() || g_seek_sec >= 0; });
+            g_cv.wait_until(lk, last_poll + std::chrono::milliseconds(POLL_INTERVAL_MS),
+                            [] { return !g_cmds.empty() || g_seek_sec >= 0 || g_vol_dirty; });
             cmds.swap(g_cmds);
             seek_sec   = g_seek_sec;
             g_seek_sec = -1;
+            if(g_vol_dirty) {
+                auto ready = g_vol_last_send + std::chrono::milliseconds(VOLUME_SEND_INTERVAL_MS);
+                if(clk::now() < ready) {
+                    lk.unlock(); /* too soon after the previous request: let more steps pile up first */
+                    std::this_thread::sleep_until(ready);
+                    lk.lock();
+                }
+                volume          = g_vol_target;
+                g_vol_dirty     = false;
+                g_vol_last_send = clk::now();
+            }
         }
         for(music_ui_cmd_t c : cmds) {
             switch(c) {
@@ -183,9 +218,16 @@ void poll_loop(TidalClient client)
         }
 
         if(seek_sec >= 0) client.seek_absolute(seek_sec);
+        if(volume >= 0) client.set_volume(volume);
+
+        /* Poll when due, or right after a command/seek (volume steps alone must not trigger a poll each). */
+        const bool force = !cmds.empty() || seek_sec >= 0;
+        if(!force && std::chrono::steady_clock::now() < last_poll + std::chrono::milliseconds(POLL_INTERVAL_MS)) continue;
+        last_poll = std::chrono::steady_clock::now();
 
         MediaInfo info;
         if(client.get_current(info)) {
+            if(info.volume >= 0) volume_sync_polled(info.volume);
             /* Key on the fields the lookup uses, not just the track URL: while skipping, tidal-hifi can
              * report the new URL before title/artist/duration catch up, and a lookup made from that
              * half-updated state would show the previous song's lyrics. */
@@ -237,4 +279,18 @@ void media_poller_start(const TidalConfig & cfg)
     lv_timer_create(drain_ui_queue, 20, nullptr); /* runs queued UI work on the LVGL thread */
     std::thread(lyrics_loop).detach();
     std::thread(poll_loop, TidalClient(cfg)).detach();
+}
+
+void media_poller_volume_step(int delta)
+{
+    {
+        std::lock_guard<std::mutex> lk(g_mu);
+        double base = g_vol_target >= 0 ? g_vol_target : g_vol_polled;
+        if(base < 0 || delta == 0) return; /* volume not known yet */
+        double v = std::round((base + delta * VOLUME_STEP) * 100.0) / 100.0;
+        g_vol_target    = v < 0 ? 0 : v > 1 ? 1 : v;
+        g_vol_dirty     = true;
+        g_vol_last_step = std::chrono::steady_clock::now();
+    }
+    g_cv.notify_one();
 }
