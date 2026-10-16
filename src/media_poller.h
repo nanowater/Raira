@@ -3,6 +3,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 #include "media_source.h"
 
 /* Whether the poller reaches the music service, as seen in its own poll loop. UNKNOWN is the window
@@ -40,6 +41,16 @@ void media_poller_set_endpoint(const std::string & spec);
 /* Give the music service another access token (see MediaSource::set_token). Thread-safe, applied on the poller
  * thread; the next poll uses it and the connection state goes UNKNOWN until that poll decides. */
 void media_poller_set_token(const std::string & token);
+
+/* Which player of the service to show and control ("" = automatic). Thread-safe, applied on the poller thread;
+ * the next poll uses it. Only meaningful for services that can_select_player(). */
+void media_poller_set_player(const std::string & id);
+
+/* Ask the service for its players. The poller thread does the (blocking) request and `done` is then called on
+ * the LVGL thread: ok = false when the service could not be reached; `service_pick` is the service's own choice
+ * (what "automatic" means right now). Only the newest pending request is answered. */
+typedef std::function<void(bool ok, const std::vector<PlayerInfo> & players, const std::string & service_pick)> media_players_cb_t;
+void media_poller_list_players(media_players_cb_t done);
 
 /* Called on the LVGL thread when the connection state changes (also once right after the endpoint was
  * switched, with UNKNOWN). Set once, e.g. by the settings page; default: none. */

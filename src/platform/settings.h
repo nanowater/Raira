@@ -7,6 +7,7 @@
  * ESP32: NVS. Values are plain strings so the storage layer stays trivial. */
 struct AppSettings {
     std::string server;        /* music service endpoint, "host[:port]" (tidal-hifi or the host bridge on the PC) */
+    std::string player;        /* chosen player of the host bridge (its id), "" = automatic */
     std::string bridge_token;  /* access token of the host bridge, "" = none (plain text like the WiFi password) */
     std::string wifi_ssid;     /* last network the user connected to */
     std::string wifi_password;

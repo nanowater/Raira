@@ -4,7 +4,10 @@
 
 using nlohmann::json;
 
-BridgeSource::BridgeSource(const std::string & spec, const std::string & token) : http_(http_client_create()), token_(token)
+static std::string str_of(const json & j, const char * key);
+
+BridgeSource::BridgeSource(const std::string & spec, const std::string & token, const std::string & player)
+    : http_(http_client_create()), token_(token), player_(player)
 {
     cfg_.port = DEFAULT_PORT;
     if(!spec.empty()) cfg_.parse(spec);
@@ -28,12 +31,37 @@ std::string BridgeSource::endpoint() const
     return cfg_.port == DEFAULT_PORT ? cfg_.host : cfg_.host + ":" + std::to_string(cfg_.port);
 }
 
+std::string BridgeSource::player_query() const
+{
+    return player_.empty() ? "" : "?player=" + url_escape(player_);
+}
+
+bool BridgeSource::list_players(std::vector<PlayerInfo> & out, std::string & service_pick)
+{
+    HttpRequest req;
+    req.bearer_token = token_;
+    req.url          = url("/players");
+    HttpResponse res = http_->perform(req);
+    if(!res.ok() || res.body.empty()) return false;
+    json j = json::parse(res.body, nullptr, false);
+    if(j.is_discarded() || !j.is_object()) return false;
+    service_pick = j.contains("selected") && j["selected"].is_string() ? j["selected"].get<std::string>() : "";
+    out.clear();
+    auto list = j.find("players");
+    if(list == j.end() || !list->is_array()) return true;
+    for(const auto & p : *list) {
+        if(!p.is_object()) continue;
+        out.push_back({str_of(p, "id"), str_of(p, "name"), str_of(p, "service"), str_of(p, "status")});
+    }
+    return true;
+}
+
 bool BridgeSource::post(const std::string & path, const std::string & json_body)
 {
     HttpRequest req;
     req.bearer_token = token_;
     req.method = "POST";
-    req.url    = url(path);
+    req.url    = url(path) + player_query();
     if(!json_body.empty()) {
         req.body         = json_body;
         req.content_type = "application/json";
@@ -95,7 +123,7 @@ bool BridgeSource::get_current(MediaInfo & out)
 {
     HttpRequest req;
     req.bearer_token = token_;
-    req.url          = url("/state");
+    req.url          = url("/state") + player_query();
     HttpResponse res = http_->perform(req);
     if(!res.transport_ok) return false;
 

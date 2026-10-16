@@ -27,6 +27,7 @@ public:
         };
         get("server", out.server);
         get("bridge_token", out.bridge_token);
+        get("player", out.player);
         get("wifi_ssid", out.wifi_ssid);
         get("wifi_password", out.wifi_password);
         return true;
@@ -37,7 +38,7 @@ public:
         const std::string dir = settings_dir();
         mkdir((dir.substr(0, dir.rfind('/'))).c_str(), 0700); /* ~/.config */
         mkdir(dir.c_str(), 0700);
-        nlohmann::json j = {{"server", s.server}, {"bridge_token", s.bridge_token}, {"wifi_ssid", s.wifi_ssid}, {"wifi_password", s.wifi_password}};
+        nlohmann::json j = {{"server", s.server}, {"bridge_token", s.bridge_token}, {"player", s.player}, {"wifi_ssid", s.wifi_ssid}, {"wifi_password", s.wifi_password}};
         std::string path = dir + "/settings.json";
         std::ofstream f(path);
         if(!f) return false;

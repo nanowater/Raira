@@ -16,7 +16,7 @@ class BridgeSource : public MediaSource {
 public:
     static constexpr int DEFAULT_PORT = 47900;
 
-    BridgeSource(const std::string & spec, const std::string & token);
+    BridgeSource(const std::string & spec, const std::string & token, const std::string & player);
 
     const char * name() const override { return "bridge"; }
     uint32_t capabilities() const override; /* until the first poll: the basics */
@@ -34,15 +34,20 @@ public:
     bool set_endpoint(const std::string & spec) override;
     std::string endpoint() const override;
     bool uses_token() const override { return true; }
+    bool can_select_player() const override { return true; }
+    bool list_players(std::vector<PlayerInfo> & out, std::string & service_pick) override;
+    void set_player(const std::string & id) override { player_ = id; }
     void set_token(const std::string & token) override { token_ = token; }
 
 private:
     bool post(const std::string & path, const std::string & json_body);
     std::string url(const std::string & path) const { return cfg_.base_url() + "/v0" + path; }
+    std::string player_query() const; /* "?player=<id>", or "" for the bridge's own pick */
 
     TidalConfig cfg_;
     std::unique_ptr<HttpClient> http_;
     std::string token_;
+    std::string player_; /* "" = the bridge's own pick */
     bool shuffle_ = false;        /* last polled state: the bridge takes explicit values, not toggles */
     std::string repeat_ = "off";
 };

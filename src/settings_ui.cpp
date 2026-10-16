@@ -7,7 +7,7 @@
 
 namespace {
 
-enum Page { PAGE_MAIN, PAGE_WIFI, PAGE_PASSWORD, PAGE_SERVER, PAGE_TOKEN, PAGE_COUNT };
+enum Page { PAGE_MAIN, PAGE_WIFI, PAGE_PASSWORD, PAGE_SERVER, PAGE_TOKEN, PAGE_PLAYER, PAGE_COUNT };
 
 const uint32_t COLOR_BG      = 0x12151B;
 const uint32_t COLOR_ROW     = 0x1F2937;
@@ -30,6 +30,12 @@ lv_obj_t * server_value = nullptr;
 lv_obj_t * token_value  = nullptr;
 lv_obj_t * token_row    = nullptr;
 lv_obj_t * wifi_row    = nullptr;
+
+/* player page: the players the service reported last, the row for the current choice is highlighted */
+lv_obj_t * player_value  = nullptr;
+lv_obj_t * player_status = nullptr;
+lv_obj_t * player_list   = nullptr;
+std::vector<PlayerInfo> player_infos;
 
 /* wifi page */
 lv_obj_t * wifi_status = nullptr;
@@ -139,6 +145,7 @@ const char * page_title(int p)
         case PAGE_PASSWORD: return str::PASSWORD;
         case PAGE_SERVER: return str::SERVER_TITLE;
         case PAGE_TOKEN: return str::TOKEN_TITLE;
+        case PAGE_PLAYER: return str::PLAYER_TITLE;
         default: return str::SETTINGS;
     }
 }
@@ -157,6 +164,13 @@ void refresh_main()
     lv_label_set_text(wifi_value, wifi_text.c_str());
     std::string server = svc.get_server ? svc.get_server() : "";
     lv_label_set_text(server_value, server.empty() ? str::NOT_SET : server.c_str());
+    if(player_value) {
+        const std::string id = svc.get_player ? svc.get_player() : "";
+        std::string text     = id.empty() ? str::PLAYER_AUTO : id;
+        for(const PlayerInfo & p : player_infos)
+            if(!id.empty() && p.id == id) text = p.name;
+        lv_label_set_text(player_value, text.c_str());
+    }
     if(token_value) {
         const bool has_token = svc.get_token && !svc.get_token().empty();
         lv_label_set_text(token_value, has_token ? "********" : str::NOT_SET); /* never show the token itself */
@@ -209,6 +223,67 @@ void fill_wifi_list()
     }
 }
 
+void fill_player_list();
+
+/* One row of the player list: "Automatic" (id "") or a player of the service. */
+void add_player_row(const std::string & id, const std::string & name, const std::string & tag, bool selected)
+{
+    lv_obj_t * r = lv_obj_create(player_list);
+    lv_obj_set_size(r, lv_pct(100), 60);
+    lv_obj_set_style_radius(r, 12, 0);
+    lv_obj_set_style_bg_color(r, lv_color_hex(COLOR_ROW), 0);
+    lv_obj_set_style_bg_opa(r, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(r, lv_color_hex(COLOR_ROW_PRESSED), LV_STATE_PRESSED);
+    lv_obj_set_style_border_width(r, 0, 0);
+    lv_obj_set_style_pad_hor(r, 20, 0);
+    lv_obj_set_scrollable(r, false);
+    auto * idp = new std::string(id); /* travels with the row, freed on delete */
+    lv_obj_add_event_cb(
+        r,
+        [](lv_event_t * e) {
+            if(svc.set_player) svc.set_player(*static_cast<std::string *>(lv_event_get_user_data(e)));
+            /* the rows are rebuilt (to move the highlight) after this click has been handled */
+            lv_async_call([](void *) { if(root && page_now == PAGE_PLAYER) fill_player_list(); }, nullptr);
+        },
+        LV_EVENT_CLICKED, idp);
+    lv_obj_add_event_cb(r, [](lv_event_t * e) { delete static_cast<std::string *>(lv_event_get_user_data(e)); }, LV_EVENT_DELETE, idp);
+
+    lv_obj_t * n = make_label(r, name.c_str(), 22, 0xFFFFFF);
+    lv_obj_align(n, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_t * t = make_label(r, tag.c_str(), 16, COLOR_DIM);
+    lv_obj_align(t, LV_ALIGN_RIGHT_MID, 0, 0);
+    if(selected) {
+        lv_obj_set_style_border_width(r, 2, 0);
+        lv_obj_set_style_border_color(r, lv_color_hex(COLOR_GOOD), 0);
+    }
+}
+
+void fill_player_list()
+{
+    lv_obj_clean(player_list);
+    const std::string cur = svc.get_player ? svc.get_player() : "";
+    add_player_row("", str::PLAYER_AUTO, str::PLAYER_AUTO_SUB, cur.empty());
+    for(const PlayerInfo & p : player_infos) add_player_row(p.id, p.name, p.service + " - " + p.status, p.id == cur);
+}
+
+void on_open_player(lv_event_t *)
+{
+    lv_obj_clean(player_list);
+    set_status(player_status, str::PLAYER_LOADING, COLOR_DIM);
+    show_page(PAGE_PLAYER);
+    if(!svc.list_players) return;
+    svc.list_players([](bool ok, const std::vector<PlayerInfo> & players, const std::string &) {
+        if(!root) return;
+        if(!ok) {
+            set_status(player_status, str::PLAYER_FAILED, COLOR_BAD);
+            return;
+        }
+        player_infos = players;
+        set_status(player_status, players.empty() ? str::PLAYER_NONE : "", COLOR_DIM);
+        if(page_now == PAGE_PLAYER) fill_player_list();
+    });
+}
+
 void start_scan()
 {
     if(!svc.wifi) return;
@@ -252,7 +327,8 @@ void on_back(lv_event_t *)
         case PAGE_PASSWORD: show_page(PAGE_WIFI); break;
         case PAGE_WIFI:
         case PAGE_SERVER:
-        case PAGE_TOKEN: show_page(PAGE_MAIN); break;
+        case PAGE_TOKEN:
+        case PAGE_PLAYER: show_page(PAGE_MAIN); break;
         default:
             lv_obj_set_hidden(root, true);
             if(poll_timer) lv_timer_pause(poll_timer);
@@ -421,6 +497,7 @@ void settings_ui_init(SettingsServices services)
     else wifi_value = lv_label_create(pages[PAGE_MAIN]);
     lv_obj_t * server_row = make_row(pages[PAGE_MAIN], 108, str::SERVER_ROW, &server_value, on_open_server);
     (void)server_row;
+    if(svc.get_player) make_row(pages[PAGE_MAIN], 292, str::PLAYER_ROW, &player_value, on_open_player);
     if(svc.get_token) token_row = make_row(pages[PAGE_MAIN], 200, str::TOKEN_ROW, &token_value, on_open_token);
 
     /* wifi page */
@@ -437,6 +514,19 @@ void settings_ui_init(SettingsServices services)
     lv_obj_set_style_pad_row(wifi_list, 10, 0);
     lv_obj_set_flex_flow(wifi_list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_scrollbar_mode(wifi_list, LV_SCROLLBAR_MODE_OFF);
+
+    /* player page */
+    player_status = make_label(pages[PAGE_PLAYER], "", 22, COLOR_DIM);
+    lv_obj_set_pos(player_status, 30, 18);
+    player_list = lv_obj_create(pages[PAGE_PLAYER]);
+    lv_obj_set_size(player_list, 740, 480 - 64 - 70);
+    lv_obj_set_pos(player_list, 30, 64);
+    lv_obj_set_style_bg_opa(player_list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(player_list, 0, 0);
+    lv_obj_set_style_pad_all(player_list, 0, 0);
+    lv_obj_set_style_pad_row(player_list, 10, 0);
+    lv_obj_set_flex_flow(player_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_scrollbar_mode(player_list, LV_SCROLLBAR_MODE_OFF);
 
     /* password page */
     pw_ssid_lbl = make_label(pages[PAGE_PASSWORD], "", 26, COLOR_ACCENT);

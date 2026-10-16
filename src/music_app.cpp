@@ -20,6 +20,7 @@ void music_app_start(MusicAppDeps deps)
     g_validate = std::move(deps.validate_server);
 
     const bool uses_token = deps.source->uses_token();
+    const bool picks_player = deps.source->can_select_player();
     music_ui_create();
     const media_browse_mode_t browse_mode =
         !deps.browse ? MEDIA_BROWSE_NONE : deps.browse->always_available() ? MEDIA_BROWSE_ALWAYS : MEDIA_BROWSE_WHEN_REPORTED;
@@ -50,6 +51,15 @@ void music_app_start(MusicAppDeps deps)
             media_poller_set_token(token);
             browse_worker_set_token(token);
         };
+    }
+    if(picks_player) {
+        svc.get_player = [] { return g_settings.player; };
+        svc.set_player = [](const std::string & id) {
+            g_settings.player = id;
+            if(g_store) g_store->save(g_settings);
+            media_poller_set_player(id);
+        };
+        svc.list_players = [](media_players_cb_t done) { media_poller_list_players(std::move(done)); };
     }
     settings_ui_init(std::move(svc)); /* after the main UI so the overlay sits on top */
 }

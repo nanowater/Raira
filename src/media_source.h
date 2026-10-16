@@ -25,6 +25,14 @@ enum MediaCapability : uint32_t {
     MEDIA_CAP_BROWSE   = 1u << 5, /* playlists + play queue can be listed (needs a BrowseSource too) */
 };
 
+/* One player a service (the host bridge) can control, e.g. "Spotify" or "tidal-hifi" on a PC. */
+struct PlayerInfo {
+    std::string id;      /* what select/set_player take */
+    std::string name;    /* for display */
+    std::string service; /* short key: spotify, tidal, browser, other */
+    std::string status;  /* playing / paused / stopped */
+};
+
 class MediaSource {
 public:
     virtual ~MediaSource() = default;
@@ -56,6 +64,14 @@ public:
 
     /* An access token the service wants with every request (the host bridge outside the loopback). The settings
      * page only offers the token row when uses_token() is true. set_token() is called on the poller thread. */
+    /* Which player to show and control. The choice belongs to the device (so several devices do not fight over a
+     * shared "current player"): it is sent with every request. "" = automatic, the service decides (what plays).
+     * list_players() fills the players on offer and the service's own current pick; set_player() is called on the
+     * poller thread, like the other calls. Only services with several players implement them. */
+    virtual bool can_select_player() const { return false; }
+    virtual bool list_players(std::vector<PlayerInfo> & out, std::string & service_pick) { (void)out; (void)service_pick; return false; }
+    virtual void set_player(const std::string & id) { (void)id; }
+
     virtual bool uses_token() const { return false; }
     virtual void set_token(const std::string & token) { (void)token; }
 };

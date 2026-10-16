@@ -76,6 +76,7 @@ struct Update {
     CoverPixels cover;                /* empty data = unchanged */
     CoverPixels bg;                   /* full-screen ambient background for this cover, empty = none */
     std::vector<unsigned char> png;   /* fallback for covers that are not JPEG */
+    bool clear_cover = false;         /* nothing is playing any more: drop the old cover */
 };
 
 /* Commands from the LVGL thread; drained by the poll thread so UI never blocks on HTTP. */
@@ -94,6 +95,9 @@ std::chrono::steady_clock::time_point g_vol_last_send, g_vol_last_step;
 std::string g_endpoint; /* new service endpoint to apply on the poller thread, "" = none */
 std::string g_token;    /* new access token to apply on the poller thread */
 bool g_token_dirty = false;
+std::string g_player;   /* new player choice to apply on the poller thread */
+bool g_player_dirty = false;
+media_players_cb_t g_players_cb; /* pending list request: answered on the poller thread, delivered on the LVGL thread */
 int g_seek_sec = -1; /* latest requested seek position, -1 = none (only the newest matters) */
 
 void volume_sync_polled(double polled)
@@ -121,6 +125,16 @@ void set_token_pending(const std::string & token)
         std::lock_guard<std::mutex> lk(g_mu);
         g_token       = token;
         g_token_dirty = true;
+    }
+    g_cv.notify_one();
+}
+
+void set_player_pending(const std::string & id)
+{
+    {
+        std::lock_guard<std::mutex> lk(g_mu);
+        g_player       = id;
+        g_player_dirty = true;
     }
     g_cv.notify_one();
 }
@@ -250,6 +264,7 @@ void apply_update(const Update * u)
                         : u->info.repeat == "all"  ? MUSIC_UI_REPEAT_ALL
                                                    : MUSIC_UI_REPEAT_OFF};
     music_ui_update(&st);
+    if(u->clear_cover) music_ui_clear_album_art();
     if(!u->cover.data.empty())
         music_ui_set_album_art_raw(u->cover.data.data(), u->cover.w, u->cover.h, LV_COLOR_FORMAT_XRGB8888);
     else if(!u->png.empty())
@@ -270,12 +285,15 @@ void poll_loop(std::unique_ptr<MediaSource> source)
         std::string endpoint; /* non-empty: switch the source to this endpoint */
         bool new_token = false;
         std::string token;
+        bool new_player = false;
+        std::string player;
+        media_players_cb_t list_cb;
         double volume    = -1; /* >= 0: send this level */
         {
             using clk = std::chrono::steady_clock;
             std::unique_lock<std::mutex> lk(g_mu);
             g_cv.wait_until(lk, last_poll + std::chrono::milliseconds(POLL_INTERVAL_MS),
-                            [] { return !g_cmds.empty() || g_seek_sec >= 0 || g_vol_dirty || !g_endpoint.empty() || g_token_dirty; });
+                            [] { return !g_cmds.empty() || g_seek_sec >= 0 || g_vol_dirty || !g_endpoint.empty() || g_token_dirty || g_player_dirty || g_players_cb; });
             cmds.swap(g_cmds);
             seek_sec   = g_seek_sec;
             g_seek_sec = -1;
@@ -283,6 +301,10 @@ void poll_loop(std::unique_ptr<MediaSource> source)
             new_token    = g_token_dirty;
             token        = g_token;
             g_token_dirty = false;
+            new_player    = g_player_dirty;
+            player        = g_player;
+            g_player_dirty = false;
+            list_cb.swap(g_players_cb);
             if(g_vol_dirty) {
                 auto ready = g_vol_last_send + std::chrono::milliseconds(VOLUME_SEND_INTERVAL_MS);
                 if(clk::now() < ready) {
@@ -306,6 +328,13 @@ void poll_loop(std::unique_ptr<MediaSource> source)
         }
 
         if(new_token) source->set_token(token);
+        if(new_player) source->set_player(player);
+        if(list_cb) {
+            auto players = std::make_shared<std::vector<PlayerInfo>>();
+            auto pick    = std::make_shared<std::string>();
+            const bool ok = source->list_players(*players, *pick);
+            post_to_ui([list_cb, ok, players, pick] { list_cb(ok, *players, *pick); });
+        }
         if(!endpoint.empty()) source->set_endpoint(endpoint);
         if(!endpoint.empty() || new_token) {
             /* Judge the new address/token on its own polls; until one succeeds or fails for good, the
@@ -317,7 +346,7 @@ void poll_loop(std::unique_ptr<MediaSource> source)
         if(volume >= 0) source->set_volume(volume);
 
         /* Poll when due, or right after a command/seek (volume steps alone must not trigger a poll each). */
-        const bool force = !cmds.empty() || seek_sec >= 0 || !endpoint.empty() || new_token;
+        const bool force = !cmds.empty() || seek_sec >= 0 || !endpoint.empty() || new_token || new_player;
         if(!force && std::chrono::steady_clock::now() < last_poll + std::chrono::milliseconds(POLL_INTERVAL_MS)) continue;
         last_poll = std::chrono::steady_clock::now();
 
@@ -371,6 +400,10 @@ void poll_loop(std::unique_ptr<MediaSource> source)
                     if(ok) cover_for = cover_key;
                 }
             }
+            if(cover_key.empty() && !cover_for.empty()) { /* e.g. another player was picked and it has no track */
+                cover_for.clear();
+                u->clear_cover = true;
+            }
             post_to_ui([u] { apply_update(u.get()); });
         }
     }
@@ -419,6 +452,20 @@ void media_poller_set_endpoint(const std::string & spec)
 void media_poller_set_token(const std::string & token)
 {
     set_token_pending(token);
+}
+
+void media_poller_set_player(const std::string & id)
+{
+    set_player_pending(id);
+}
+
+void media_poller_list_players(media_players_cb_t done)
+{
+    {
+        std::lock_guard<std::mutex> lk(g_mu);
+        g_players_cb = std::move(done);
+    }
+    g_cv.notify_one();
 }
 
 void media_poller_set_connection_cb(void (*cb)(media_conn_state_t state))

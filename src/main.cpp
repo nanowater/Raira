@@ -306,7 +306,7 @@ int main(int argc, char ** argv)
                 if(const char * env_token = getenv("MUSIC_BRIDGE_TOKEN")) cli_token = env_token;
             }
             if(!cli_token.empty()) saved.bridge_token = cli_token; /* what actually runs, like the server address */
-            source = std::make_unique<BridgeSource>(cli_server, saved.bridge_token);
+            source = std::make_unique<BridgeSource>(cli_server, saved.bridge_token, saved.player);
         } else {
             if(deps.store->load(saved) && !host_from_cli && !saved.server.empty()) tidal_cfg.parse(saved.server);
             source = std::make_unique<TidalClient>(tidal_cfg);

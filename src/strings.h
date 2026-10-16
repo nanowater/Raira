@@ -22,7 +22,16 @@ constexpr const char * SERVER_TITLE    = "Server address";
 constexpr const char * SERVER_ROW      = "Server";
 constexpr const char * TOKEN_ROW       = "Access token";
 constexpr const char * TOKEN_TITLE     = "Access token";
+constexpr const char * PLAYER_ROW      = "Player";
+constexpr const char * PLAYER_TITLE    = "Player";
 constexpr const char * NOT_SET         = "Not set";
+
+/* settings: player choice */
+constexpr const char * PLAYER_AUTO     = "Automatic";
+constexpr const char * PLAYER_AUTO_SUB = "Follows what is playing";
+constexpr const char * PLAYER_LOADING  = "Looking for players...";
+constexpr const char * PLAYER_NONE     = "No player is running on the PC";
+constexpr const char * PLAYER_FAILED   = "Cannot reach the bridge";
 
 /* settings: WiFi */
 constexpr const char * NOT_CONNECTED   = "Not connected";
