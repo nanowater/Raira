@@ -1,6 +1,6 @@
 # Host bridge protocol (draft v0)
 
-Status: **draft**, nothing implements it yet. Written 2026-10-16 from the MPRIS probing described below and from `src/media_info.h` / `src/media_source.h`. Items marked **(unverified)** were not tested.
+Status: **draft**. The Linux bridge in `bridge/` (Rust, MPRIS) implements `/info`, `/players`, `/players/select`, `/state`, `/cmd/*` and `/cover/<key>`; browse (`/browse/*`, `/cmd/play_item`) and the TIDAL/Spotify supplements are not implemented, so `quality` is always `null` and the `browse_*` capabilities never appear. The device side is `BridgeSource` (`lvglsim -P`). Written 2026-10-16 from the MPRIS probing described below and from `src/media_info.h` / `src/media_source.h`. Items marked **(unverified)** were not tested.
 
 ## Why a bridge
 
@@ -34,7 +34,7 @@ Windows GSMTC **(unverified)**: now-playing, cover thumbnail, position, play/pau
 
 ## Transport and conventions
 
-- HTTP/1.1 + JSON (UTF-8), base `http://<host>:<port>/v0`. Same style as tidal-hifi so the device's `HttpClient` is enough. Default port: TBD (not 47836, that is tidal-hifi's).
+- HTTP/1.1 + JSON (UTF-8), base `http://<host>:<port>/v0`. Same style as tidal-hifi so the device's `HttpClient` is enough. Default port: 47900 (the bridge's `--port`; 47836 is tidal-hifi's).
 - Commands are `POST`; reads are `GET`. Bodies are small JSON objects.
 - Errors: non-2xx with `{"error": "<code>", "message": "<text>"}`. Codes: `no_player`, `unsupported`, `bad_request`, `upstream_failed`, `auth_required`.
 - Polling first (`GET /state` every ~500 ms like today). Optional later: `GET /events` as Server-Sent Events carrying the same payload as `/state`, so the device can stop polling. Not needed for v0.

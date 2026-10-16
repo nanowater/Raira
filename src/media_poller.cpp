@@ -23,8 +23,8 @@ static_assert(MUSIC_UI_CAP_SHUFFLE == MEDIA_CAP_SHUFFLE, "UI capability bits mus
 static_assert(MUSIC_UI_CAP_REPEAT == MEDIA_CAP_REPEAT, "UI capability bits must match media_source.h");
 static_assert(MUSIC_UI_CAP_PREV_NEXT == MEDIA_CAP_PREV_NEXT, "UI capability bits must match media_source.h");
 
-/* Capabilities of the current service, set in media_poller_start before the threads start; read
- * afterwards by the poller thread (happens-before via thread creation) to skip unsupported commands. */
+/* Capabilities of the current service: set in media_poller_start, then updated by the poller thread
+ * when a poll reports different ones (MediaInfo::caps). Guarded by g_mu once the threads run. */
 uint32_t g_caps = 0;
 
 /* Background threads must not call LVGL (lv_async_call is not thread-safe: it creates a timer in
@@ -305,6 +305,16 @@ void poll_loop(std::unique_ptr<MediaSource> source)
         }
         if(polled) {
             if(info.volume >= 0) volume_sync_polled(info.volume);
+            if(info.caps >= 0) {
+                const uint32_t caps = (uint32_t)info.caps;
+                bool changed;
+                {
+                    std::lock_guard<std::mutex> lk(g_mu);
+                    changed = caps != g_caps;
+                    g_caps  = caps;
+                }
+                if(changed) post_to_ui([caps] { music_ui_set_capabilities(caps); });
+            }
             /* Key on the fields the lookup uses, not just the track URL: while skipping, tidal-hifi can
              * report the new URL before title/artist/duration catch up, and a lookup made from that
              * half-updated state would show the previous song's lyrics. */

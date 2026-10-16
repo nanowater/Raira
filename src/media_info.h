@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 /* Service-agnostic now-playing model. UI/poller code depends on this,
@@ -18,4 +19,7 @@ struct MediaInfo {
     double volume = -1;   /* 0.0..1.0, -1 when the service did not report it */
     int current_sec  = 0;
     int duration_sec = 0;
+    /* MediaCapability bits the service supports right now, -1 = not reported (the source's capabilities()
+     * stands). A host bridge fills it: what the selected player can do changes when the player does. */
+    int64_t caps = -1;
 };

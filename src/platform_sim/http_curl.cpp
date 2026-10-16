@@ -37,10 +37,16 @@ public:
         curl_easy_setopt(curl_, CURLOPT_TIMEOUT, (long)req.timeout_s);
         curl_easy_setopt(curl_, CURLOPT_NOSIGNAL, 1L);
         if(!req.user_agent.empty()) curl_easy_setopt(curl_, CURLOPT_USERAGENT, req.user_agent.c_str());
-        if(req.method != "GET") { /* body-less POST/PUT */
+        curl_slist * headers = nullptr;
+        if(req.method != "GET") { /* POST/PUT, with or without a body */
             curl_easy_setopt(curl_, CURLOPT_POST, 1L);
-            curl_easy_setopt(curl_, CURLOPT_POSTFIELDS, "");
+            curl_easy_setopt(curl_, CURLOPT_POSTFIELDS, req.body.c_str()); /* req outlives perform() */
+            curl_easy_setopt(curl_, CURLOPT_POSTFIELDSIZE, (long)req.body.size());
             curl_easy_setopt(curl_, CURLOPT_CUSTOMREQUEST, req.method.c_str());
+            if(!req.body.empty() && !req.content_type.empty()) {
+                headers = curl_slist_append(headers, ("Content-Type: " + req.content_type).c_str());
+                curl_easy_setopt(curl_, CURLOPT_HTTPHEADER, headers);
+            }
         }
         if(req.cancelled) {
             curl_easy_setopt(curl_, CURLOPT_NOPROGRESS, 0L);
@@ -51,6 +57,7 @@ public:
         CURLcode rc = curl_easy_perform(curl_);
         long code   = 0;
         curl_easy_getinfo(curl_, CURLINFO_RESPONSE_CODE, &code);
+        curl_slist_free_all(headers);
         res.transport_ok = (rc == CURLE_OK);
         res.status       = code;
         return res;

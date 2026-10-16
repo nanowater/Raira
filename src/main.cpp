@@ -24,6 +24,7 @@
 #include "music_app.h"
 #include "media_poller.h"
 #include "fake_browse.h"
+#include "bridge_client.h"
 #include "tidal_client.h"
 #include "platform/settings.h"
 #include "platform/wifi.h"
@@ -32,6 +33,8 @@
 static void configure_simulator(int argc, char ** argv);
 static void install_volume_input(void);
 static TidalConfig tidal_cfg;
+static std::string cli_server; /* the raw -s value: the bridge has another default port than tidal-hifi */
+static bool use_bridge = false; /* -P: talk to the host bridge instead of tidal-hifi */
 static bool fake_browse = false; /* -F: canned playlists/queue behind the browse button */
 static bool host_from_cli = false; /* -s or TIDAL_HIFI_HOST given: wins over the saved setting */
 static void print_lvgl_version(void);
@@ -66,10 +69,11 @@ static void print_lvgl_version(void)
 static void print_usage(void)
 {
     fprintf(stdout,
-            "\nlvglsim [-V] [-B] [-D] [-F] [-f] [-m] [-s host[:port]] [-b backend_name] [-W window_width] [-H window_height] [-R rotation]\n\n");
+            "\nlvglsim [-V] [-B] [-D] [-F] [-P] [-f] [-m] [-s host[:port]] [-b backend_name] [-W window_width] [-H window_height] [-R rotation]\n\n");
     fprintf(stdout, "-V print LVGL version\n");
     fprintf(stdout, "-B list supported backends\n");
     fprintf(stdout, "-D run the LVGL demo instead of the app UI\n");
+    fprintf(stdout, "-P use the host bridge (bridge/, default localhost:47900) instead of tidal-hifi; -s then addresses the bridge\n");
     fprintf(stdout, "-F fake playlists/queue behind the list button (no real provider yet)\n");
     fprintf(stdout, "-f fullscreen\n");
     fprintf(stdout, "-m maximize\n");
@@ -133,7 +137,7 @@ static void configure_simulator(int argc, char ** argv)
     settings.window_height = atoi(env_h ? env_h : "480");
 
     /* Parse the command-line options. */
-    while((opt = getopt(argc, argv, "b:fmW:H:R:s:BVDFh")) != -1) {
+    while((opt = getopt(argc, argv, "b:fmW:H:R:s:BVDFPh")) != -1) {
         switch(opt) {
             case 'h':
                 print_usage();
@@ -150,12 +154,16 @@ static void configure_simulator(int argc, char ** argv)
             case 's':
                 if(!tidal_cfg.parse(optarg)) die("Invalid -s value '%s' (expected host[:port])\n", optarg);
                 host_from_cli = true;
+                cli_server    = optarg;
                 break;
             case 'D':
                 show_demo_screen = true;
                 break;
             case 'F':
                 fake_browse = true;
+                break;
+            case 'P':
+                use_bridge = true;
                 break;
             case 'b':
                 if(driver_backends_is_supported(optarg) == 0) {
@@ -284,8 +292,16 @@ int main(int argc, char ** argv)
         MusicAppDeps deps;
         deps.store = settings_store_create();
         AppSettings saved;
-        if(deps.store->load(saved) && !host_from_cli && !saved.server.empty()) tidal_cfg.parse(saved.server);
-        auto source           = std::make_unique<TidalClient>(tidal_cfg);
+        std::unique_ptr<MediaSource> source;
+        if(use_bridge) {
+            /* -s or the default only: the saved server address is tidal-hifi's (the settings page would
+             * overwrite it while testing the bridge) */
+            deps.store->load(saved);
+            source = std::make_unique<BridgeSource>(cli_server);
+        } else {
+            if(deps.store->load(saved) && !host_from_cli && !saved.server.empty()) tidal_cfg.parse(saved.server);
+            source = std::make_unique<TidalClient>(tidal_cfg);
+        }
         saved.server          = source->endpoint(); /* what actually runs, whichever way it was chosen */
         deps.settings         = saved;
         deps.source           = std::move(source);
