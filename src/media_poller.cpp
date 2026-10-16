@@ -40,6 +40,7 @@ void drain_ui_queue(lv_timer_t *)
 struct Update {
     MediaInfo info;
     CoverPixels cover;                /* empty data = unchanged */
+    CoverPixels bg;                   /* full-screen ambient background for this cover, empty = none */
     std::vector<unsigned char> png;   /* fallback for covers that are not JPEG */
 };
 
@@ -98,6 +99,7 @@ struct LyricsResult {
     Lyrics lyrics;
 };
 
+const uint32_t SCREEN_W = 800, SCREEN_H = 480; /* the background is rendered at the panel size */
 const int POLL_INTERVAL_MS = 500; /* /current is ~1 KB and answers in <1 ms locally */
 const int LYRICS_SETTLE_MS = 500;
 const int CONNECTION_LOST_AFTER_FAILS = 3;
@@ -196,6 +198,7 @@ void apply_update(const Update * u)
         music_ui_set_album_art_raw(u->cover.data.data(), u->cover.w, u->cover.h, LV_COLOR_FORMAT_XRGB8888);
     else if(!u->png.empty())
         music_ui_set_album_art_encoded(u->png.data(), u->png.size());
+    if(!u->bg.data.empty()) music_ui_set_background(u->bg.data.data(), u->bg.w, u->bg.h);
 }
 
 void poll_loop(TidalClient client)
@@ -273,7 +276,7 @@ void poll_loop(TidalClient client)
                 lyrics_for = lyrics_key;
                 request_lyrics(info);
             }
-            auto u = std::make_shared<Update>(Update{info, {}, {}});
+            auto u = std::make_shared<Update>(Update{info, {}, {}, {}});
             /* Key the cover by its image URL: consecutive tracks of one album keep the cover,
              * and a new URL means new artwork is due. */
             const std::string cover_key = info.image_url.empty() ? info.track_id : info.image_url;
@@ -294,6 +297,7 @@ void poll_loop(TidalClient client)
                 if(got) {
                     /* JPEG is decoded here, off the LVGL thread (LVGL's JPEG decoder only reads files). */
                     bool ok = cover_decode(img, MUSIC_UI_COVER_SIZE, u->cover);
+                    if(ok) cover_background(u->cover, SCREEN_W, SCREEN_H, MUSIC_UI_BG_BASE_COLOR, u->bg);
                     if(!ok && img.size() > 8 && img[0] == 0x89 && img[1] == 'P' && img[2] == 'N' && img[3] == 'G') {
                         u->png = std::move(img);
                         ok     = true;

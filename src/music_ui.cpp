@@ -88,6 +88,63 @@ static void show_repeat(int mode)
     if(repeat_one_label) lv_obj_set_hidden(repeat_one_label, mode != MUSIC_UI_REPEAT_SINGLE);
 }
 
+/* ---- Ambient background: two full-screen images; a new one fades in over the old one ---- */
+static const uint32_t BG_FADE_MS = 800;
+static lv_obj_t * bg_img[2]       = {nullptr, nullptr};
+static unsigned char * bg_buf[2]  = {nullptr, nullptr};
+static lv_image_dsc_t bg_dsc[2];
+static int bg_front = 0; /* the one currently on top / fully shown */
+
+static void bg_opa_anim_cb(void * var, int32_t v)
+{
+    lv_obj_set_style_opa(static_cast<lv_obj_t *>(var), (lv_opa_t)v, 0);
+}
+
+void music_ui_set_background(const void * rgb565, uint32_t w, uint32_t h)
+{
+    if(!bg_img[0] || !rgb565 || w == 0 || h == 0) return;
+    const size_t size = (size_t)w * h * 2;
+    unsigned char * copy = (unsigned char *)malloc(size);
+    if(!copy) return;
+    memcpy(copy, rgb565, size);
+
+    /* The hidden image takes the new pixels; its previous buffer is released first. */
+    const int back = 1 - bg_front;
+    lv_anim_delete(bg_img[back], bg_opa_anim_cb);
+    lv_obj_set_style_opa(bg_img[back], LV_OPA_TRANSP, 0);
+    lv_image_set_src(bg_img[back], nullptr);
+    if(bg_buf[back]) {
+        lv_image_cache_drop(&bg_dsc[back]);
+        free(bg_buf[back]);
+    }
+    bg_buf[back] = copy;
+    memset(&bg_dsc[back], 0, sizeof(bg_dsc[back]));
+    bg_dsc[back].header.magic  = LV_IMAGE_HEADER_MAGIC;
+    bg_dsc[back].header.cf     = LV_COLOR_FORMAT_RGB565;
+    bg_dsc[back].header.w      = w;
+    bg_dsc[back].header.h      = h;
+    bg_dsc[back].header.stride = w * 2;
+    bg_dsc[back].data_size     = (uint32_t)size;
+    bg_dsc[back].data          = bg_buf[back];
+    lv_image_set_src(bg_img[back], &bg_dsc[back]);
+    lv_obj_set_pos(bg_img[back], 0, 0);
+
+    /* new image above the old one (both stay below every widget), fading in; the old one stays
+     * fully opaque underneath until the new one covers it */
+    lv_obj_move_to_index(bg_img[bg_front], 0);
+    lv_obj_move_to_index(bg_img[back], 1);
+    lv_obj_set_style_opa(bg_img[bg_front], LV_OPA_COVER, 0);
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, bg_img[back]);
+    lv_anim_set_exec_cb(&a, bg_opa_anim_cb);
+    lv_anim_set_values(&a, 0, LV_OPA_COVER);
+    lv_anim_set_duration(&a, BG_FADE_MS);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
+    lv_anim_start(&a);
+    bg_front = back;
+}
+
 /* Album art buffer (encoded PNG or decoded pixels) owned by the UI. */
 static unsigned char * art_data = nullptr;
 static lv_image_dsc_t art_dsc;
@@ -142,7 +199,7 @@ static bool pos_playing    = false;
 static int32_t pos_base_ms = 0;
 static uint32_t pos_tick   = 0;
 
-static const uint32_t LYRIC_COLOR_DIM = 0x6B7280;
+static const uint32_t LYRIC_COLOR_DIM = 0x9CA3AF; /* readable on the ambient background too */
 static const int32_t LYRICS_PANEL_H   = 420;
 static const int32_t LYRICS_ANCHOR_Y  = 130; /* px from the panel top where the current line rests */
 static const int32_t LYRICS_FONT_PX   = 28;
@@ -528,6 +585,13 @@ void music_ui_create(void)
 
     // 화면 배경
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x12151B), 0);
+
+    // 앨범아트 기반 앰비언트 배경 (가장 뒤에 깔림)
+    for(int i = 0; i < 2; i++) {
+        bg_img[i] = lv_image_create(screen);
+        lv_obj_set_style_opa(bg_img[i], LV_OPA_TRANSP, 0);
+        lv_obj_set_clickable(bg_img[i], false);
+    }
 
     // 미디어 카드 (cover + title + artists 그룹)
     lv_obj_t * media_card = lv_obj_create(screen);

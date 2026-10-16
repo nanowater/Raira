@@ -84,6 +84,11 @@ void music_ui_set_album_art_raw(const void * data, uint32_t w, uint32_t h, lv_co
 
 void music_ui_clear_album_art(void);
 
+/* Full-screen background from the cover: opaque RGB565 pixels (w x h = the screen). Copied
+ * internally; cross-fades from the previous one. LVGL thread only. */
+void music_ui_set_background(const void * rgb565, uint32_t w, uint32_t h);
+#define MUSIC_UI_BG_BASE_COLOR 0x12151B /* screen color without a cover */
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif
