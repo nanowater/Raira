@@ -74,7 +74,7 @@ static void print_usage(void)
     fprintf(stdout, "-B list supported backends\n");
     fprintf(stdout, "-D run the LVGL demo instead of the app UI\n");
     fprintf(stdout, "-P use the host bridge (bridge/, default localhost:47900) instead of tidal-hifi; -s then addresses the bridge\n");
-    fprintf(stdout, "-F fake playlists/queue behind the list button (no real provider yet)\n");
+    fprintf(stdout, "-F fake playlists/queue behind the list button (replaces the bridge's browse data)\n");
     fprintf(stdout, "-f fullscreen\n");
     fprintf(stdout, "-m maximize\n");
     fprintf(stdout, "-s tidal-hifi host[:port] (default localhost:47836, env TIDAL_HIFI_HOST)\n");
@@ -303,6 +303,8 @@ int main(int argc, char ** argv)
             source = std::make_unique<TidalClient>(tidal_cfg);
         }
         saved.server          = source->endpoint(); /* what actually runs, whichever way it was chosen */
+        if(fake_browse) deps.browse = fake_browse_create();
+        else if(use_bridge) deps.browse = std::make_unique<BridgeBrowse>(cli_server);
         deps.settings         = saved;
         deps.source           = std::move(source);
         deps.wifi             = wifi_manager_create(); /* simulator: fake networks */
@@ -311,7 +313,6 @@ int main(int argc, char ** argv)
             return c.parse(spec);
         };
         music_app_start(std::move(deps));
-        if(fake_browse) fake_browse_install();
         install_volume_input();
     }
 

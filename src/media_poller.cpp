@@ -22,10 +22,20 @@ static_assert(MUSIC_UI_CAP_SEEK == MEDIA_CAP_SEEK, "UI capability bits must matc
 static_assert(MUSIC_UI_CAP_SHUFFLE == MEDIA_CAP_SHUFFLE, "UI capability bits must match media_source.h");
 static_assert(MUSIC_UI_CAP_REPEAT == MEDIA_CAP_REPEAT, "UI capability bits must match media_source.h");
 static_assert(MUSIC_UI_CAP_PREV_NEXT == MEDIA_CAP_PREV_NEXT, "UI capability bits must match media_source.h");
+static_assert(MUSIC_UI_CAP_BROWSE == MEDIA_CAP_BROWSE, "UI capability bits must match media_source.h");
 
 /* Capabilities of the current service: set in media_poller_start, then updated by the poller thread
  * when a poll reports different ones (MediaInfo::caps). Guarded by g_mu once the threads run. */
 uint32_t g_caps = 0;
+media_browse_mode_t g_browse_mode = MEDIA_BROWSE_NONE;
+
+/* The browse bit also depends on whether a browse provider exists at all. */
+uint32_t with_browse_mode(uint32_t caps)
+{
+    if(g_browse_mode == MEDIA_BROWSE_NONE) return caps & ~(uint32_t)MEDIA_CAP_BROWSE;
+    if(g_browse_mode == MEDIA_BROWSE_ALWAYS) return caps | MEDIA_CAP_BROWSE;
+    return caps;
+}
 
 /* Background threads must not call LVGL (lv_async_call is not thread-safe: it creates a timer in
  * LVGL's global list). They queue work here instead; a timer on the LVGL thread runs it. */
@@ -306,7 +316,7 @@ void poll_loop(std::unique_ptr<MediaSource> source)
         if(polled) {
             if(info.volume >= 0) volume_sync_polled(info.volume);
             if(info.caps >= 0) {
-                const uint32_t caps = (uint32_t)info.caps;
+                const uint32_t caps = with_browse_mode((uint32_t)info.caps);
                 bool changed;
                 {
                     std::lock_guard<std::mutex> lk(g_mu);
@@ -350,10 +360,16 @@ void poll_loop(std::unique_ptr<MediaSource> source)
 
 } // namespace
 
-void media_poller_start(std::unique_ptr<MediaSource> source)
+void media_post_to_ui(std::function<void()> fn)
 {
+    post_to_ui(std::move(fn));
+}
+
+void media_poller_start(std::unique_ptr<MediaSource> source, media_browse_mode_t browse)
+{
+    g_browse_mode = browse;
     /* capabilities() runs on the creating thread here, before the source moves over to the poller. */
-    g_caps = source->capabilities();
+    g_caps = with_browse_mode(source->capabilities());
     music_ui_set_capabilities(g_caps); /* hide the controls this service cannot drive */
     music_ui_set_transport_cb(on_transport);
     music_ui_set_seek_cb(on_seek);

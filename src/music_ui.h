@@ -59,15 +59,15 @@ void music_ui_set_seek_cb(music_ui_seek_cb_t cb);
 #define MUSIC_UI_CAP_SHUFFLE   (1u << 2)
 #define MUSIC_UI_CAP_REPEAT    (1u << 3)
 #define MUSIC_UI_CAP_PREV_NEXT (1u << 4)
+#define MUSIC_UI_CAP_BROWSE    (1u << 5) /* the playlist/queue button */
 
 /* Show only the transport controls the service supports (bitmask as above; bits not set hide their
  * control). Call once, after music_ui_create(); LVGL thread only. */
 void music_ui_set_capabilities(unsigned caps);
 
-/* Playlist/queue browsing: with a provider callback set, a button at the bottom right opens a panel in
- * place of the lyrics (see browse_ui.h for the lists to feed and the events it reports). NULL removes the
- * button. Not tied to the service capabilities yet: only the simulator's fake provider uses it so far.
- * LVGL thread only. */
+/* Playlist/queue browsing: a button at the bottom right (shown while MUSIC_UI_CAP_BROWSE is set) opens a
+ * panel in place of the lyrics; this callback receives what the panel asks for (see browse_ui.h for the lists to
+ * feed back). LVGL thread only. */
 void music_ui_set_browse_cb(browse_cb_t cb);
 
 /* Show/hide the "connection lost" banner (hidden by default; only shown while disconnected).

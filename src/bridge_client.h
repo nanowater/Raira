@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <nlohmann/json_fwd.hpp>
 #include <string>
 #include <vector>
 #include "media_source.h"
@@ -41,4 +42,24 @@ private:
     std::unique_ptr<HttpClient> http_;
     bool shuffle_ = false;        /* last polled state: the bridge takes explicit values, not toggles */
     std::string repeat_ = "off";
+};
+
+/* BrowseSource for the host bridge's /browse endpoints (its own connection: it runs on the browse thread). */
+class BridgeBrowse : public BrowseSource {
+public:
+    explicit BridgeBrowse(const std::string & spec);
+
+    bool list_queue(std::vector<BrowseItem> & out) override;
+    bool list_playlists(std::vector<BrowseItem> & out) override;
+    bool list_tracks(const std::string & playlist_id, std::string & playlist_title, std::vector<BrowseItem> & out) override;
+    bool play_item(const BrowseItem & item) override;
+    bool get_thumb(const std::string & cover_key, int px, CoverPixels & out) override;
+    bool set_endpoint(const std::string & spec) override;
+
+private:
+    bool get_json(const std::string & path, nlohmann::json & out);
+    std::string url(const std::string & path) const { return cfg_.base_url() + "/v0" + path; }
+
+    TidalConfig cfg_;
+    std::unique_ptr<HttpClient> http_;
 };

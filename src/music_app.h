@@ -10,6 +10,7 @@
 /* Everything the portable app needs from its host program (simulator main() or ESP32 app_main). */
 struct MusicAppDeps {
     std::unique_ptr<MediaSource> source;     /* the music service; the poller thread takes it over */
+    std::unique_ptr<BrowseSource> browse;    /* playlists/queue; may be null: no browse button. The browse thread takes it over */
     std::unique_ptr<WifiManager> wifi;       /* may be null: the settings page hides its WiFi row */
     std::unique_ptr<SettingsStore> store;    /* may be null: settings are not persisted */
     AppSettings settings;                    /* current values (server = the endpoint the source starts with) */

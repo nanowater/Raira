@@ -85,6 +85,7 @@ static uint32_t caps_of(const json & j)
         else if(s == "shuffle") caps |= MEDIA_CAP_SHUFFLE;
         else if(s == "repeat") caps |= MEDIA_CAP_REPEAT;
         else if(s == "prev_next") caps |= MEDIA_CAP_PREV_NEXT;
+        else if(s == "browse_playlists" || s == "browse_queue") caps |= MEDIA_CAP_BROWSE;
     }
     return caps;
 }
@@ -156,4 +157,142 @@ bool BridgeSource::get_cover(const MediaInfo & info, int want_px, std::vector<un
     if(!res.ok() || res.body.empty()) return false;
     out.assign(res.body.begin(), res.body.end());
     return true;
+}
+
+/* ---- Browse ---- */
+
+BridgeBrowse::BridgeBrowse(const std::string & spec) : http_(http_client_create())
+{
+    cfg_.port = BridgeSource::DEFAULT_PORT;
+    if(!spec.empty()) cfg_.parse(spec);
+}
+
+bool BridgeBrowse::set_endpoint(const std::string & spec)
+{
+    TidalConfig c = cfg_;
+    if(!c.parse(spec)) return false;
+    cfg_ = c;
+    return true;
+}
+
+bool BridgeBrowse::get_json(const std::string & path, json & out)
+{
+    HttpRequest req;
+    req.url       = url(path);
+    req.timeout_s = 10; /* the bridge may be waiting for the service's web API */
+    HttpResponse res = http_->perform(req);
+    if(!res.ok() || res.body.empty()) return false;
+    out = json::parse(res.body, nullptr, false);
+    return !out.is_discarded() && out.is_object();
+}
+
+static std::string join_artists(const json & j)
+{
+    std::string out;
+    auto ar = j.find("artists");
+    if(ar == j.end() || !ar->is_array()) return out;
+    for(const auto & a : *ar) {
+        if(!a.is_string()) continue;
+        if(!out.empty()) out += ", ";
+        out += a.get<std::string>();
+    }
+    return out;
+}
+
+/* A track entry of /browse/queue or /browse/playlists/<id>/tracks. `fallback_context` is the playlist the
+ * list belongs to (queue entries carry their own, possibly null). */
+static BrowseItem track_item(const json & t, const std::string & fallback_context)
+{
+    BrowseItem it;
+    it.id       = str_of(t, "id");
+    it.title    = str_of(t, "title");
+    it.subtitle = join_artists(t);
+    it.cover    = str_of(t, "cover");
+    it.context  = str_of(t, "context");
+    if(it.context.empty()) it.context = fallback_context;
+    auto idx = t.find("index");
+    if(idx != t.end() && idx->is_number()) it.index = idx->get<int>();
+    it.playable = !it.context.empty() && it.index >= 0;
+    return it;
+}
+
+bool BridgeBrowse::list_queue(std::vector<BrowseItem> & out)
+{
+    json j;
+    if(!get_json("/browse/queue", j)) return false;
+    out.clear();
+    auto now = j.find("now");
+    if(now != j.end() && now->is_object()) {
+        BrowseItem it = track_item(*now, "");
+        it.current    = true;
+        out.push_back(std::move(it));
+    }
+    auto items = j.find("items");
+    if(items != j.end() && items->is_array())
+        for(const auto & t : *items)
+            if(t.is_object()) out.push_back(track_item(t, ""));
+    return true;
+}
+
+bool BridgeBrowse::list_playlists(std::vector<BrowseItem> & out)
+{
+    json j;
+    if(!get_json("/browse/playlists", j)) return false;
+    out.clear();
+    auto items = j.find("items");
+    if(items == j.end() || !items->is_array()) return true;
+    for(const auto & p : *items) {
+        if(!p.is_object()) continue;
+        BrowseItem it;
+        it.id    = str_of(p, "id");
+        it.title = str_of(p, "name");
+        auto n   = p.find("track_count");
+        if(n != p.end() && n->is_number()) it.subtitle = std::to_string(n->get<int>()) + (n->get<int>() == 1 ? " track" : " tracks");
+        it.cover    = str_of(p, "cover");
+        it.playable = true; /* opening it is always possible */
+        out.push_back(std::move(it));
+    }
+    return true;
+}
+
+bool BridgeBrowse::list_tracks(const std::string & playlist_id, std::string & playlist_title, std::vector<BrowseItem> & out)
+{
+    (void)playlist_title; /* the caller already has the name from the playlist list */
+    out.clear();
+    int offset = 0;
+    /* A page at a time (the bridge caps it); a few pages are plenty for a 5" screen. */
+    for(int page = 0; page < 4; page++) {
+        json j;
+        if(!get_json("/browse/playlists/" + url_escape(playlist_id) + "/tracks?limit=50&offset=" + std::to_string(offset), j))
+            return page > 0;
+        auto items = j.find("items");
+        if(items == j.end() || !items->is_array()) break;
+        for(const auto & t : *items)
+            if(t.is_object()) out.push_back(track_item(t, playlist_id));
+        auto next = j.find("next");
+        if(next == j.end() || !next->is_number()) break;
+        offset = next->get<int>();
+    }
+    return true;
+}
+
+bool BridgeBrowse::play_item(const BrowseItem & item)
+{
+    HttpRequest req;
+    req.method       = "POST";
+    req.url          = url("/cmd/play_item");
+    req.body         = json{{"context", item.context}, {"index", item.index}}.dump();
+    req.content_type = "application/json";
+    return http_->perform(req).ok();
+}
+
+bool BridgeBrowse::get_thumb(const std::string & cover_key, int px, CoverPixels & out)
+{
+    HttpRequest req;
+    req.url          = url("/cover/" + url_escape(cover_key) + "?px=" + std::to_string(px));
+    req.timeout_s    = 10;
+    HttpResponse res = http_->perform(req);
+    if(!res.ok() || res.body.empty()) return false;
+    std::vector<unsigned char> jpeg(res.body.begin(), res.body.end());
+    return cover_decode(jpeg, (uint32_t)px, out);
 }

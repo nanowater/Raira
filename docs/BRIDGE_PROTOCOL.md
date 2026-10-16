@@ -1,6 +1,6 @@
 # Host bridge protocol (draft v0)
 
-Status: **draft**. The Linux bridge in `bridge/` (Rust, MPRIS) implements `/info`, `/players`, `/players/select`, `/state`, `/cmd/*` and `/cover/<key>`; browse (`/browse/*`, `/cmd/play_item`) and the TIDAL/Spotify supplements are not implemented, so `quality` is always `null` and the `browse_*` capabilities never appear. The device side is `BridgeSource` (`lvglsim -P`). Written 2026-10-16 from the MPRIS probing described below and from `src/media_info.h` / `src/media_source.h`. Items marked **(unverified)** were not tested.
+Status: **draft**. The Linux bridge in `bridge/` (Rust, MPRIS) implements `/info`, `/players`, `/players/select`, `/state`, `/cmd/*` and `/cover/<key>`; browse (`/browse/*`, `/cmd/play_item`) and the TIDAL/Spotify supplements are not implemented, so `quality` is always `null` and the `browse_*` capabilities never appear. The device side is `BridgeSource` + `BridgeBrowse` (`lvglsim -P`); `BridgeBrowse` already speaks the browse endpoints below, the bridge does not serve them yet. Written 2026-10-16 from the MPRIS probing described below and from `src/media_info.h` / `src/media_source.h`. Items marked **(unverified)** were not tested.
 
 ## Why a bridge
 
@@ -152,6 +152,8 @@ GET /browse/playlists/<id>/tracks?offset=0&limit=50
 
 GET /browse/queue
 {"now": {...track...}, "items": [{...track...}], "truncated": true}
+// a queue track may also carry "context" (the playlist it plays from) and "index" (its position there), both null
+// when unknown; the device only lets the user tap rows that have both.
 
 POST /cmd/play_item   {"context": "spotify:playlist:...", "index": 7}
 ```

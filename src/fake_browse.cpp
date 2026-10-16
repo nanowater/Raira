@@ -1,10 +1,8 @@
+#include "fake_browse.h"
 #include <cstdint>
 #include <cstdio>
-#include <functional>
 #include <string>
 #include <vector>
-#include "fake_browse.h"
-#include "music_ui.h"
 
 namespace {
 
@@ -54,12 +52,6 @@ const std::vector<Playlist> PLAYLISTS = {
     {"Empty playlist", {}},
 };
 
-/* What plays now: a playlist and a position in it. The queue is that playlist from there on, with a couple
- * of "added to queue" songs (no known context: view-only, like a Spotify queue entry) after the current one. */
-int g_playlist = 0;
-int g_index    = 0;
-int g_open     = -1; /* playlist whose tracks the panel shows */
-
 const Track EXTRA_QUEUED[] = {{"Dynamite", "BTS"}, {"Hello Future", "NCT DREAM"}};
 
 std::string cover_key(const Track & t)
@@ -68,132 +60,126 @@ std::string cover_key(const Track & t)
 }
 
 /* Fake cover art: a diagonal two-color gradient with a disc, colors from a hash of the key. */
-void make_thumb(const std::string & key, uint16_t * px)
+void make_thumb(const std::string & key, int n, CoverPixels & out)
 {
     uint32_t h = 2166136261u;
     for(unsigned char c : key) h = (h ^ c) * 16777619u;
-    auto rgb565 = [](int r, int g, int b) { return (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)); };
     const int r1 = 60 + (h & 0xFF) % 160, g1 = 60 + ((h >> 8) & 0xFF) % 160, b1 = 60 + ((h >> 16) & 0xFF) % 160;
     const int r2 = 255 - r1, g2 = 255 - g1, b2 = 255 - b1;
-    const int N = BROWSE_THUMB_PX;
-    for(int y = 0; y < N; y++) {
-        for(int x = 0; x < N; x++) {
-            const int t = (x + y) * 255 / (2 * N - 2);
+    out.w = out.h = (uint32_t)n;
+    out.data.assign((size_t)n * n * 4, 0xFF);
+    for(int y = 0; y < n; y++) {
+        for(int x = 0; x < n; x++) {
+            const int t = (x + y) * 255 / (2 * n - 2);
             int r = r1 + (r2 - r1) * t / 255, g = g1 + (g2 - g1) * t / 255, b = b1 + (b2 - b1) * t / 255;
-            const int dx = x - N / 2, dy = y - N / 2;
-            if(dx * dx + dy * dy < (N / 5) * (N / 5)) r = g = b = 235;
-            px[y * N + x] = rgb565(r, g, b);
+            const int dx = x - n / 2, dy = y - n / 2;
+            if(dx * dx + dy * dy < (n / 5) * (n / 5)) r = g = b = 235;
+            uint8_t * p = &out.data[((size_t)y * n + x) * 4];
+            p[0] = (uint8_t)b; /* BGRX */
+            p[1] = (uint8_t)g;
+            p[2] = (uint8_t)r;
         }
     }
 }
 
-/* Answer a thumbnail request after a short delay, like a bridge fetching and resizing the cover would. */
-void on_thumb_request(const char * key)
+/* Contexts look like "fake:<playlist index>". */
+std::string context_of(int playlist)
 {
-    auto * k = new std::string(key);
-    lv_timer_t * t = lv_timer_create(
-        [](lv_timer_t * tm) {
-            auto * key = static_cast<std::string *>(lv_timer_get_user_data(tm));
-            std::vector<uint16_t> px(BROWSE_THUMB_PX * BROWSE_THUMB_PX);
-            make_thumb(*key, px.data());
-            browse_ui_set_thumb(key->c_str(), px.data(), BROWSE_THUMB_PX, BROWSE_THUMB_PX);
-            delete key;
-        },
-        120 + (uint32_t)(k->size() * 7 % 200), k);
-    lv_timer_set_repeat_count(t, 1);
+    return "fake:" + std::to_string(playlist);
 }
 
-void push_queue()
+int playlist_of(const std::string & context)
 {
-    const Playlist & p = PLAYLISTS[g_playlist];
-    std::vector<std::string> subs;
-    std::vector<std::string> keys;
-    std::vector<browse_item_t> items;
-    subs.reserve(p.tracks.size() + 4);
-    keys.reserve(p.tracks.size() + 4);
-
-    auto add = [&](const Track & t, bool playable, bool current) {
-        subs.push_back(t.artists);
-        keys.push_back(cover_key(t));
-        items.push_back({t.title, subs.back().c_str(), playable, current, keys.back().c_str()});
-    };
-    add(p.tracks[g_index], true, true);
-    for(const Track & t : EXTRA_QUEUED) add(t, false, false);
-    for(size_t i = g_index + 1; i < p.tracks.size(); i++) add(p.tracks[i], true, false);
-    browse_ui_set_queue(items.data(), items.size());
+    return context.rfind("fake:", 0) == 0 ? atoi(context.c_str() + 5) : -1;
 }
 
-void push_playlists()
-{
-    std::vector<std::string> subs;
-    std::vector<std::string> keys;
-    std::vector<browse_item_t> items;
-    subs.reserve(PLAYLISTS.size());
-    keys.reserve(PLAYLISTS.size());
-    for(const Playlist & p : PLAYLISTS) {
-        subs.push_back(std::to_string(p.tracks.size()) + (p.tracks.size() == 1 ? " track" : " tracks"));
-        keys.push_back(std::string("playlist:") + p.name);
-        items.push_back({p.name, subs.back().c_str(), true, false, keys.back().c_str()});
-    }
-    browse_ui_set_playlists(items.data(), items.size());
-}
+class FakeBrowse : public BrowseSource {
+public:
+    bool always_available() const override { return true; }
 
-void push_tracks()
-{
-    const Playlist & p = PLAYLISTS[g_open];
-    std::vector<std::string> keys;
-    std::vector<browse_item_t> items;
-    keys.reserve(p.tracks.size());
-    for(size_t i = 0; i < p.tracks.size(); i++) {
-        const bool now = (g_open == g_playlist && (int)i == g_index);
-        keys.push_back(cover_key(p.tracks[i]));
-        items.push_back({p.tracks[i].title, p.tracks[i].artists, true, now, keys.back().c_str()});
-    }
-    browse_ui_set_tracks(p.name, items.data(), items.size());
-}
-
-/* Queue rows: 0 = current, then the extras, then the rest of the playlist. */
-int queue_row_to_index(int row)
-{
-    const int extras = (int)(sizeof(EXTRA_QUEUED) / sizeof(EXTRA_QUEUED[0]));
-    return g_index + (row - extras); /* row 0 -> g_index, row extras+1 -> g_index+1 */
-}
-
-void on_browse(browse_evt_t evt, int index)
-{
-    switch(evt) {
-        case BROWSE_EVT_SHOWN:
-            push_queue();
-            push_playlists();
-            break;
-        case BROWSE_EVT_OPEN_PLAYLIST:
-            if(index < 0 || index >= (int)PLAYLISTS.size()) return;
-            g_open = index;
-            push_tracks();
-            break;
-        case BROWSE_EVT_PLAY_TRACK:
-            if(g_open < 0 || index < 0 || index >= (int)PLAYLISTS[g_open].tracks.size()) return;
-            g_playlist = g_open;
-            g_index    = index;
-            printf("[fake-browse] play \"%s\" from \"%s\"\n", PLAYLISTS[g_playlist].tracks[g_index].title, PLAYLISTS[g_playlist].name);
-            push_tracks();
-            push_queue();
-            break;
-        case BROWSE_EVT_PLAY_QUEUE: {
-            const int i = (index == 0) ? g_index : queue_row_to_index(index);
-            if(i < 0 || i >= (int)PLAYLISTS[g_playlist].tracks.size()) return;
-            g_index = i;
-            printf("[fake-browse] jump to \"%s\"\n", PLAYLISTS[g_playlist].tracks[g_index].title);
-            push_queue();
-            break;
+    bool list_queue(std::vector<BrowseItem> & out) override
+    {
+        out.clear();
+        const Playlist & p = PLAYLISTS[playlist_];
+        out.push_back(item(playlist_, index_, true));
+        for(const Track & t : EXTRA_QUEUED) { /* "added to queue" songs: no known context, so view-only */
+            BrowseItem it;
+            it.id       = t.title;
+            it.title    = t.title;
+            it.subtitle = t.artists;
+            it.cover    = cover_key(t);
+            out.push_back(std::move(it));
         }
+        for(size_t i = index_ + 1; i < p.tracks.size(); i++) out.push_back(item(playlist_, (int)i, false));
+        return true;
     }
-}
+
+    bool list_playlists(std::vector<BrowseItem> & out) override
+    {
+        out.clear();
+        for(size_t i = 0; i < PLAYLISTS.size(); i++) {
+            const Playlist & p = PLAYLISTS[i];
+            BrowseItem it;
+            it.id       = context_of((int)i);
+            it.title    = p.name;
+            it.subtitle = std::to_string(p.tracks.size()) + (p.tracks.size() == 1 ? " track" : " tracks");
+            it.cover    = std::string("playlist:") + p.name;
+            it.playable = true;
+            out.push_back(std::move(it));
+        }
+        return true;
+    }
+
+    bool list_tracks(const std::string & playlist_id, std::string & playlist_title, std::vector<BrowseItem> & out) override
+    {
+        const int pl = playlist_of(playlist_id);
+        if(pl < 0 || pl >= (int)PLAYLISTS.size()) return false;
+        playlist_title = PLAYLISTS[pl].name;
+        out.clear();
+        for(size_t i = 0; i < PLAYLISTS[pl].tracks.size(); i++) out.push_back(item(pl, (int)i, pl == playlist_ && (int)i == index_));
+        return true;
+    }
+
+    bool play_item(const BrowseItem & it) override
+    {
+        const int pl = playlist_of(it.context);
+        if(pl < 0 || pl >= (int)PLAYLISTS.size() || it.index < 0 || it.index >= (int)PLAYLISTS[pl].tracks.size()) return false;
+        playlist_ = pl;
+        index_    = it.index;
+        printf("[fake-browse] play \"%s\" from \"%s\"\n", PLAYLISTS[pl].tracks[it.index].title, PLAYLISTS[pl].name);
+        fflush(stdout);
+        return true;
+    }
+
+    bool get_thumb(const std::string & key, int px, CoverPixels & out) override
+    {
+        make_thumb(key, px, out);
+        return true;
+    }
+
+private:
+    static BrowseItem item(int pl, int index, bool current)
+    {
+        const Track & t = PLAYLISTS[pl].tracks[index];
+        BrowseItem it;
+        it.id       = t.title;
+        it.context  = context_of(pl);
+        it.index    = index;
+        it.title    = t.title;
+        it.subtitle = t.artists;
+        it.cover    = cover_key(t);
+        it.playable = true;
+        it.current  = current;
+        return it;
+    }
+
+    int playlist_ = 0; /* what "plays now" */
+    int index_    = 0;
+};
 
 } // namespace
 
-void fake_browse_install(void)
+std::unique_ptr<BrowseSource> fake_browse_create()
 {
-    browse_ui_set_thumb_cb(on_thumb_request);
-    music_ui_set_browse_cb(on_browse);
+    return std::make_unique<FakeBrowse>();
 }

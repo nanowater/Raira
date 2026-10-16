@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include "cover_decoder.h"
 #include "media_info.h"
 
 /* What a music service looks like to the app. The core (poller, UI) only talks to this interface, so
@@ -21,6 +22,7 @@ enum MediaCapability : uint32_t {
     MEDIA_CAP_SHUFFLE  = 1u << 2,
     MEDIA_CAP_REPEAT   = 1u << 3,
     MEDIA_CAP_PREV_NEXT = 1u << 4,
+    MEDIA_CAP_BROWSE   = 1u << 5, /* playlists + play queue can be listed (needs a BrowseSource too) */
 };
 
 class MediaSource {
@@ -51,4 +53,36 @@ public:
      * for a malformed value or when the source has no endpoint to configure. Called on the poller thread. */
     virtual bool set_endpoint(const std::string & spec) { (void)spec; return false; }
     virtual std::string endpoint() const { return ""; } /* current endpoint, "" when not applicable */
+};
+
+/* ---- Browsing: playlists and the play queue ----
+ * Separate from MediaSource on purpose: listing can be slow (a web API behind the host bridge), so it runs on
+ * its own worker thread (browse_worker.cpp) and never delays the now-playing poll. Used from that thread
+ * only, one call at a time. All calls block; return false on failure. */
+struct BrowseItem {
+    std::string id;       /* what the service calls it (a URI); a playlist's id is its context */
+    std::string context;  /* the playlist this track plays from, "" when unknown (then it is not playable) */
+    int index = -1;       /* position within `context` */
+    std::string title;
+    std::string subtitle; /* artists, track count, ... */
+    std::string cover;    /* opaque key for get_thumb(), "" = none */
+    bool playable = false;
+    bool current  = false; /* the track playing now */
+};
+
+class BrowseSource {
+public:
+    virtual ~BrowseSource() = default;
+
+    /* The fake provider is not tied to the player: its browse button is always shown. */
+    virtual bool always_available() const { return false; }
+
+    virtual bool list_queue(std::vector<BrowseItem> & out)     = 0; /* now playing first, then what is next */
+    virtual bool list_playlists(std::vector<BrowseItem> & out) = 0;
+    virtual bool list_tracks(const std::string & playlist_id, std::string & playlist_title, std::vector<BrowseItem> & out) = 0;
+    virtual bool play_item(const BrowseItem & item) = 0; /* start item.context at item.index */
+    /* Small cover (about `px` square) decoded to pixels. */
+    virtual bool get_thumb(const std::string & cover_key, int px, CoverPixels & out) = 0;
+
+    virtual bool set_endpoint(const std::string & spec) { (void)spec; return false; }
 };

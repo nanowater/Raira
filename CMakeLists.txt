@@ -104,6 +104,7 @@ add_library(music_core STATIC
     src/browse_ui.cpp
     src/tidal_client.cpp
     src/bridge_client.cpp
+    src/browse_worker.cpp
     src/media_poller.cpp
     src/cover_decoder.cpp
     src/lyrics.cpp

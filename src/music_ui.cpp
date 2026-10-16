@@ -537,6 +537,8 @@ void music_ui_set_connected(bool connected)
 
 /* Show only the controls the service can drive (the flex row reflows on its own); without seek the
  * progress bar keeps displaying position but stops reacting to touches. */
+static void set_browse_open(bool open);
+
 void music_ui_set_capabilities(unsigned caps)
 {
     supported_caps = caps;
@@ -545,6 +547,8 @@ void music_ui_set_capabilities(unsigned caps)
     if(btn_repeat) lv_obj_set_hidden(btn_repeat, !(supported_caps & MUSIC_UI_CAP_REPEAT));
     if(btn_prev) lv_obj_set_hidden(btn_prev, !(supported_caps & MUSIC_UI_CAP_PREV_NEXT));
     if(btn_next) lv_obj_set_hidden(btn_next, !(supported_caps & MUSIC_UI_CAP_PREV_NEXT));
+    if(browse_btn) lv_obj_set_hidden(browse_btn, !(supported_caps & MUSIC_UI_CAP_BROWSE));
+    if(!(supported_caps & MUSIC_UI_CAP_BROWSE)) set_browse_open(false); /* the player changed: no list to show */
 
     /* SPACE_BETWEEN pushes a lone button to the left edge: with only play/pause left, center it */
     if(controls) {
@@ -1140,12 +1144,10 @@ void music_ui_create(void)
     lv_obj_set_style_text_color(browse_btn_label, lv_color_white(), 0);
     lv_obj_center(browse_btn_label);
     lv_obj_add_event_cb(browse_btn, [](lv_event_t *) { set_browse_open(!browse_open); }, LV_EVENT_CLICKED, nullptr);
-    lv_obj_set_hidden(browse_btn, !browse_ui_has_cb());
+    lv_obj_set_hidden(browse_btn, true); /* until music_ui_set_capabilities() says the service can browse */
 }
 
 void music_ui_set_browse_cb(browse_cb_t cb)
 {
     browse_ui_set_cb(cb);
-    if(browse_btn) lv_obj_set_hidden(browse_btn, cb == nullptr);
-    if(!cb) set_browse_open(false);
 }
