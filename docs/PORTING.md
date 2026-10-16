@@ -19,6 +19,11 @@ Volume input hook: `media_poller_volume_step(int delta)` (call from the encoder 
 
 ## What the ESP32 side has to provide
 
+(The hub direction in `docs/HUB_PROTOCOL.md` adds one more platform piece: an implementation of `platform/ws_server.h`
+on ESP-IDF's `esp_http_server` with WebSocket support (`CONFIG_HTTPD_WS_SUPPORT`), plus the `mdns` component to advertise
+`_musicbridge._tcp`. The portable hub core (`hub_source.*`) needs nothing else; with the hub, the device no longer needs
+`HttpClient` for the music service, and TLS disappears once lyrics are fetched by the source.)
+
 0. **`WifiManager` and `SettingsStore`** (`platform/wifi.h`, `platform/settings.h`) for the settings page: the
    simulator has a mock WiFi (fake networks, no real radio) and a JSON file. On the device: `esp_wifi` in STA mode
    (scan and connect are non-blocking, the UI polls `scan_running()` / `state()` from a 200 ms LVGL timer) and NVS
