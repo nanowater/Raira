@@ -23,6 +23,7 @@
 #include "lib/simulator_settings.h"
 #include "music_app.h"
 #include "media_poller.h"
+#include "tidal_client.h"
 
 /* Internal functions */
 static void configure_simulator(int argc, char ** argv);
@@ -265,7 +266,7 @@ int main(int argc, char ** argv)
         show_demo();
     }
     else {
-        music_app_start(tidal_cfg);
+        music_app_start(std::make_unique<TidalClient>(tidal_cfg));
         install_volume_input();
     }
 

@@ -147,7 +147,7 @@ bool TidalClient::get_current(MediaInfo & out)
     return true;
 }
 
-bool TidalClient::get_cover_from_url(const std::string & url, std::vector<unsigned char> & out)
+bool TidalClient::fetch_url(const std::string & url, std::vector<unsigned char> & out)
 {
     HttpRequest req;
     req.url          = url;
@@ -157,10 +157,33 @@ bool TidalClient::get_cover_from_url(const std::string & url, std::vector<unsign
     return true;
 }
 
-bool TidalClient::get_cover(std::vector<unsigned char> & out)
+bool TidalClient::fetch_current_image(std::vector<unsigned char> & out)
 {
     std::string body;
     if(!http_get("/current/image", body)) return false;
     out.assign(body.begin(), body.end());
     return true;
+}
+
+bool TidalClient::get_cover(const MediaInfo & info, int want_px, std::vector<unsigned char> & out)
+{
+    if(!info.image_url.empty()) {
+        /* TIDAL's CDN serves the same artwork in several sizes: swap the size in the URL for the smallest
+         * one that is still at least want_px (80/160/320/640/1280). */
+        std::string url = info.image_url;
+        size_t p        = url.find("1280x1280");
+        if(p != std::string::npos) {
+            const int sizes[] = {320, 640, 1280};
+            int pick          = 1280;
+            for(int s : sizes)
+                if(s >= want_px) {
+                    pick = s;
+                    break;
+                }
+            std::string size = std::to_string(pick) + "x" + std::to_string(pick);
+            url.replace(p, 9, size);
+        }
+        if(fetch_url(url, out)) return true;
+    }
+    return fetch_current_image(out);
 }

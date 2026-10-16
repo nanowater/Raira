@@ -13,7 +13,8 @@ was written); the ESP-IDF column below is the intended mapping, to be verified.
 | **Simulator platform** | `src/platform_sim/http_curl.cpp` (libcurl), `jpeg_turbo.cpp` (libjpeg-turbo), `src/main.cpp`, `src/lib/` | CMake targets `music_platform_sim`, `lvglsim`. `main.cpp` also holds sim-only input glue (mouse wheel / arrow keys → volume). |
 | **ESP32 platform** (to write) | `HttpClient` + `jpeg_decode_bgrx` + `app_main` | See below. |
 
-Entry point for both: `music_app_start(const TidalConfig &)` (LVGL initialised, on the LVGL thread).
+Entry point for both: `music_app_start(std::unique_ptr<MediaSource>)` (LVGL initialised, on the LVGL thread);
+`main()` / `app_main` builds the service (`std::make_unique<TidalClient>(cfg)`) and passes it in.
 Volume input hook: `media_poller_volume_step(int delta)` (call from the encoder driver).
 
 ## What the ESP32 side has to provide

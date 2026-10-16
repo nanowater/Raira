@@ -201,7 +201,7 @@ void apply_update(const Update * u)
     if(!u->bg.data.empty()) music_ui_set_background(u->bg.data.data(), u->bg.w, u->bg.h);
 }
 
-void poll_loop(TidalClient client)
+void poll_loop(std::unique_ptr<MediaSource> source)
 {
     std::string cover_for;  /* cover key (image URL) the displayed cover belongs to */
     std::string lyrics_for; /* metadata key lyrics were requested for */
@@ -235,16 +235,16 @@ void poll_loop(TidalClient client)
         }
         for(music_ui_cmd_t c : cmds) {
             switch(c) {
-                case MUSIC_UI_CMD_PREVIOUS: client.previous(); break;
-                case MUSIC_UI_CMD_PLAY_PAUSE: client.play_pause(); break;
-                case MUSIC_UI_CMD_NEXT: client.next(); break;
-                case MUSIC_UI_CMD_SHUFFLE: client.toggle_shuffle(); break;
-                case MUSIC_UI_CMD_REPEAT: client.toggle_repeat(); break;
+                case MUSIC_UI_CMD_PREVIOUS: source->previous(); break;
+                case MUSIC_UI_CMD_PLAY_PAUSE: source->play_pause(); break;
+                case MUSIC_UI_CMD_NEXT: source->next(); break;
+                case MUSIC_UI_CMD_SHUFFLE: source->toggle_shuffle(); break;
+                case MUSIC_UI_CMD_REPEAT: source->toggle_repeat(); break;
             }
         }
 
-        if(seek_sec >= 0) client.seek_absolute(seek_sec);
-        if(volume >= 0) client.set_volume(volume);
+        if(seek_sec >= 0) source->seek_absolute(seek_sec);
+        if(volume >= 0) source->set_volume(volume);
 
         /* Poll when due, or right after a command/seek (volume steps alone must not trigger a poll each). */
         const bool force = !cmds.empty() || seek_sec >= 0;
@@ -252,7 +252,7 @@ void poll_loop(TidalClient client)
         last_poll = std::chrono::steady_clock::now();
 
         MediaInfo info;
-        const bool polled = client.get_current(info);
+        const bool polled = source->get_current(info);
         /* Report only changes, and only after a few failures in a row so a single dropped poll
          * does not flash the banner; it disappears on the first successful poll. */
         if(polled) {
@@ -282,18 +282,8 @@ void poll_loop(TidalClient client)
             const std::string cover_key = info.image_url.empty() ? info.track_id : info.image_url;
             if(!cover_key.empty() && cover_key != cover_for) {
                 std::vector<unsigned char> img;
-                /* Fetch from the artwork URL itself (a smaller size is plenty for the widget).
-                 * tidal-hifi's /current/image serves a file it rewrites after the metadata changes, so
-                 * while skipping tracks quickly it can lag behind or return an in-between track's art;
-                 * it is only the fallback when the CDN is unreachable. */
-                bool got = false;
-                if(!info.image_url.empty()) {
-                    std::string small = info.image_url;
-                    size_t p          = small.find("1280x1280");
-                    if(p != std::string::npos) small.replace(p, 9, "640x640");
-                    got = client.get_cover_from_url(small, img);
-                }
-                if(!got) got = client.get_cover(img);
+                /* The source picks where the cover comes from and a size that is enough for the widget. */
+                const bool got = source->get_cover(info, MUSIC_UI_COVER_SIZE, img);
                 if(got) {
                     /* JPEG is decoded here, off the LVGL thread (LVGL's JPEG decoder only reads files). */
                     bool ok = cover_decode(img, MUSIC_UI_COVER_SIZE, u->cover);
@@ -312,13 +302,13 @@ void poll_loop(TidalClient client)
 
 } // namespace
 
-void media_poller_start(const TidalConfig & cfg)
+void media_poller_start(std::unique_ptr<MediaSource> source)
 {
     music_ui_set_transport_cb(on_transport);
     music_ui_set_seek_cb(on_seek);
     lv_timer_create(drain_ui_queue, 20, nullptr); /* runs queued UI work on the LVGL thread */
     std::thread(lyrics_loop).detach();
-    std::thread(poll_loop, TidalClient(cfg)).detach();
+    std::thread(poll_loop, std::move(source)).detach();
 }
 
 void media_poller_volume_step(int delta)

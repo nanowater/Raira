@@ -26,7 +26,8 @@ The device is a *controller*, not a player: it displays now-playing metadata and
 - `src/main.cpp` — entry point; CLI/env config (`-s host[:port]`, `TIDAL_HIFI_HOST`), starts the UI and the poller.
 - `src/music_ui.h` / `src/music_ui.cpp` — LVGL UI (cover, title/artists, seekable progress bar + times + quality, shuffle/prev/play/next/repeat row, lyrics panel, full-screen cover-derived ambient background, "connection lost" banner). Two layouts, switched by `apply_layout()`: LYRICS (250 px cover + info on the left, lyrics on the right) and NOW_PLAYING (400 px cover on the left, bigger title/artists/progress/controls on the right, no lyrics) — NOW_PLAYING is shown automatically when no lyrics are found (`music_ui_set_no_lyrics`) and LYRICS as soon as lyrics arrive; tapping the cover toggles the lyrics manually (the choice sticks across tracks; tracks without lyrics always get NOW_PLAYING). Switching animates (`request_layout`): the cover glides/scales, the rest fades out, is rearranged and fades back in (~0.4 s). LVGL gestures (swipes) did not fire reliably from simulated mouse drags, hence the tap. Pure LVGL, no networking; fed through `music_ui_update`, `music_ui_set_lyrics*`, `music_ui_set_album_art_*`; reports button presses via `music_ui_set_transport_cb` and progress-bar seeks via `music_ui_set_seek_cb`.
 - `src/media_info.h` — service-agnostic now-playing model (`MediaInfo`).
-- `src/tidal_client.*` — blocking tidal-hifi client (through the `HttpClient` interface, one reused connection): `/current`, cover download, transport POSTs. The only place that knows tidal-hifi JSON.
+- `src/media_source.h` — `MediaSource`, the interface every music service implements (`get_current`, `get_cover`, transport commands, `capabilities()`); the poller only talks to this. Used from the poller thread only.
+- `src/tidal_client.*` — `TidalClient`, the `MediaSource` for tidal-hifi (through `HttpClient`, one reused connection): `/current`, cover download (CDN URL with a size picked from `want_px`, `/current/image` as fallback), transport requests. The only place that knows tidal-hifi JSON/endpoints.
 - `src/lyrics.*` — LRCLIB lookup, candidate ranking, LRC parsing (HTTP through `HttpClient`).
 - `src/platform/` — interfaces the core needs from the OS: `http.h` (`HttpClient`), `jpeg.h` (`jpeg_decode_bgrx`). `src/platform_sim/` — their simulator implementations (libcurl, libjpeg-turbo). `src/music_app.*` — portable entry `music_app_start()`; `src/lvgl_compat.h` — the one place that includes LVGL. See `docs/PORTING.md` for the ESP32 plan, memory budget and open items.
 - `src/cover_decoder.*` — JPEG → 400×400 XRGB8888 (via `jpeg_decode_bgrx`; the widget scales it to 250 or 400) and the ambient background (`cover_background`: blurred color grid stretched to 800×480, dithered RGB565) so the UI only receives pixels.
@@ -90,6 +91,8 @@ Tier 2: Spotify, Apple Music, YouTube Music (each needs its own host-side bridge
 Tier 3: browser players, YouTube videos, generic streams (likely a browser extension/companion that posts now-playing).
 
 UI/service code should depend on a common normalized `MediaInfo`-like model, not on tidal-hifi JSON directly.
+
+**Adding a service** = one class implementing `MediaSource` (fill `MediaInfo`, map the commands, report `capabilities()`), created in `main()` / `app_main` and passed to `music_app_start()`. Nothing in the UI or poller changes. Per-service flash/RAM cost is small (tens of KB of code; the big buffers — cover, background, JPEG decode — are shared), so prefer one host-side bridge that normalizes several services into one protocol over per-service OAuth/TLS code on the ESP32. Capabilities are reported but not yet used to hide controls in the UI.
 
 ## Encoder UX (default)
 
