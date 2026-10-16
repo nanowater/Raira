@@ -32,6 +32,8 @@ static lv_obj_t * current_time_lbl          = nullptr;
 static lv_obj_t * duration_time_lbl         = nullptr;
 static lv_obj_t * quality_lbl               = nullptr; /* audio quality, between the two times */
 static lv_timer_t * title_scroll_timer      = nullptr;
+static lv_obj_t * controls                  = nullptr;
+static lv_obj_t * cover_box                 = nullptr; /* rounded-corner clip around the cover image */
 static lv_obj_t * play_label                = nullptr;
 static music_ui_transport_cb_t transport_cb = nullptr;
 static music_ui_seek_cb_t seek_cb           = nullptr;
@@ -170,6 +172,16 @@ static void apply_title_scroll_speed()
     lv_obj_set_style_anim_duration(title, ms < 1000 ? 1000 : ms, LV_PART_MAIN);
 }
 
+static void enable_title_scroll_cb(lv_timer_t * t);
+
+/* Show the title clipped, and let it scroll after a delay (also after a layout change). */
+static void restart_title_scroll()
+{
+    lv_label_set_long_mode(title, LV_LABEL_LONG_MODE_CLIP);
+    if(title_scroll_timer) lv_timer_del(title_scroll_timer);
+    title_scroll_timer = lv_timer_create(enable_title_scroll_cb, 2000, nullptr);
+}
+
 static void enable_title_scroll_cb(lv_timer_t * t)
 {
     if(title) {
@@ -193,6 +205,8 @@ static std::vector<lv_obj_t *> lyric_labels;
 static std::vector<int> lyric_times;
 static bool lyrics_synced = false;
 static int lyric_cur      = -1;
+static bool lyrics_available        = false; /* the current track has lyrics to show */
+static bool lyrics_hidden_by_user   = false; /* swiped the lyrics away: keep the lyrics-free layout */
 
 /* Playback position, interpolated between the 1 s polls so line changes feel on time. */
 static bool pos_playing    = false;
@@ -342,6 +356,7 @@ static void lyrics_tick_cb(lv_timer_t *)
 void music_ui_set_lyrics_message(const char * msg)
 {
     if(!lyrics_panel) return;
+    lyrics_available = false; /* loading / not found */
     lyrics_synced = false;
     lyrics_clear_labels();
     lv_obj_t * l = lv_label_create(lyrics_panel);
@@ -349,6 +364,10 @@ void music_ui_set_lyrics_message(const char * msg)
     lv_obj_set_style_text_font(l, lyrics_font, 0);
     lv_obj_set_style_text_color(l, lv_color_hex(LYRIC_COLOR_DIM), 0);
 }
+
+/* Layouts (see "Layouts" below): LYRICS = small cover + lyrics, NOW_PLAYING = big cover, no lyrics. */
+enum { LAYOUT_LYRICS = 0, LAYOUT_NOW_PLAYING = 1 };
+static void request_layout(int mode);
 
 void music_ui_set_lyrics(const music_ui_lyric_line_t * lines, size_t count, bool synced)
 {
@@ -376,6 +395,8 @@ void music_ui_set_lyrics(const music_ui_lyric_line_t * lines, size_t count, bool
     lv_obj_update_layout(lyrics_panel);
     lyrics_update_edge_fade();
     if(lyrics_synced) lyrics_tick_cb(nullptr);
+    lyrics_available = true;
+    request_layout(lyrics_hidden_by_user ? LAYOUT_NOW_PLAYING : LAYOUT_LYRICS);
 }
 
 static void lyrics_sync_position(const music_ui_state_t * st, bool hold)
@@ -453,9 +474,18 @@ static void on_transport_clicked(lv_event_t * e)
     if(transport_cb) transport_cb(cmd);
 }
 
+/* The row buttons change size and icon font with the layout. */
+struct TransportBtn {
+    lv_obj_t * btn;
+    lv_obj_t * lbl;
+    int32_t size[2];
+    const lv_font_t * font[2];
+};
+static std::vector<TransportBtn> transport_btns;
+
 /* Round icon button using a built-in LVGL symbol. Returns the label (for icon swaps). */
 static lv_obj_t * create_transport_button(lv_obj_t * parent, const char * symbol, int32_t size, const lv_font_t * font,
-                                          music_ui_cmd_t cmd)
+                                          int32_t big_size, const lv_font_t * big_font, music_ui_cmd_t cmd)
 {
     lv_obj_t * btn = lv_button_create(parent);
     lv_obj_set_size(btn, size, size);
@@ -471,6 +501,7 @@ static lv_obj_t * create_transport_button(lv_obj_t * parent, const char * symbol
     lv_obj_set_style_text_font(lbl, font, 0);
     lv_obj_set_style_text_color(lbl, lv_color_white(), 0);
     lv_obj_center(lbl);
+    transport_btns.push_back({btn, lbl, {size, big_size}, {font, big_font}});
     return lbl;
 }
 
@@ -489,10 +520,8 @@ void music_ui_update(const music_ui_state_t * st)
 
     if(title && strcmp(lv_label_get_text(title), new_title) != 0) {
         /* New track: restart from a clipped label, then enable scrolling after a delay. */
-        lv_label_set_long_mode(title, LV_LABEL_LONG_MODE_CLIP);
         lv_label_set_text(title, new_title);
-        if(title_scroll_timer) lv_timer_del(title_scroll_timer);
-        title_scroll_timer = lv_timer_create(enable_title_scroll_cb, 2000, nullptr);
+        restart_title_scroll();
     }
     set_label_if_changed(artists, new_artists);
 
@@ -579,6 +608,157 @@ void music_ui_set_album_art_raw(const void * data, uint32_t w, uint32_t h, lv_co
     set_album_art(data, (size_t)h * header.stride, &header);
 }
 
+/* ---- Layouts ----
+ * LYRICS:      small cover, info below it, lyrics panel on the right.
+ * NOW_PLAYING: big cover on the left, title/artists/progress/controls on the right (no lyrics). */
+static int layout_mode = -1;
+static const lv_font_t * title_font[2]   = {nullptr, nullptr};
+static const lv_font_t * artists_font[2] = {nullptr, nullptr};
+
+struct Geo {
+    int32_t cover_x, cover_y, cover_size; /* cover widget */
+    int32_t x, w;                         /* column holding title, artists, progress, controls */
+    int32_t title_y, title_h, artists_y, prog_y, prog_h, ctrl_y, ctrl_h;
+};
+static const Geo GEO[2] = {
+    /* LYRICS      */ {45, 24, 250, 45, 250, 274, 40, 314, 342, 46, 388, 68},
+    /* NOW_PLAYING */ {30, 40, 400, 470, 300, 114, 54, 172, 224, 52, 286, 80},
+};
+
+/* Column = everything that is not the cover: title, artists, progress, controls, lyrics panel. */
+static void apply_column(int mode)
+{
+    const Geo & g = GEO[mode];
+
+    lv_obj_set_size(title_box, g.w, g.title_h);
+    lv_obj_set_pos(title_box, g.x, g.title_y);
+    lv_obj_set_width(title, g.w);
+    lv_obj_set_style_text_font(title, title_font[mode], LV_STATE_DEFAULT);
+    restart_title_scroll(); /* the speed depends on the font and the width */
+
+    lv_obj_set_width(artists, g.w);
+    lv_obj_set_pos(artists, g.x, g.artists_y);
+    lv_obj_set_style_text_font(artists, artists_font[mode], LV_STATE_DEFAULT);
+
+    lv_obj_set_size(progress_panel, g.w, g.prog_h);
+    lv_obj_set_pos(progress_panel, g.x, g.prog_y);
+    lv_obj_set_width(progress_bar, g.w);
+
+    lv_obj_set_size(controls, g.w, g.ctrl_h);
+    lv_obj_set_pos(controls, g.x, g.ctrl_y);
+    for(const TransportBtn & b : transport_btns) {
+        lv_obj_set_size(b.btn, b.size[mode], b.size[mode]);
+        lv_obj_set_style_text_font(b.lbl, b.font[mode], 0);
+    }
+
+    lv_obj_set_hidden(lyrics_panel, mode != LAYOUT_LYRICS);
+}
+
+static void set_column_opa(int32_t opa)
+{
+    for(lv_obj_t * o : {title_box, artists, progress_panel, controls, lyrics_panel})
+        lv_obj_set_style_opa(o, (lv_opa_t)opa, 0);
+}
+
+static void set_cover_geo(const Geo & a, const Geo & b, float t)
+{
+    auto lerp = [t](int32_t x, int32_t y) { return (int32_t)(x + (y - x) * t + 0.5f); };
+    lv_obj_set_size(cover_box, lerp(a.cover_size, b.cover_size), lerp(a.cover_size, b.cover_size));
+    lv_obj_set_pos(cover_box, lerp(a.cover_x, b.cover_x), lerp(a.cover_y, b.cover_y));
+}
+
+/* ---- Layout transition: the cover glides and grows/shrinks; the column fades out, is rearranged
+ * while invisible, and fades back in ---- */
+static const uint32_t LAYOUT_ANIM_MS = 420;
+static const float COLUMN_SWITCH_AT  = 0.4f; /* fraction of the animation where the column is rearranged */
+static bool layout_animating  = false;
+static bool column_switched   = false;
+static int layout_from        = LAYOUT_LYRICS;
+static int layout_to          = LAYOUT_LYRICS;
+
+static void layout_anim_cb(void *, int32_t v)
+{
+    const float t = v / 1000.f;
+    set_cover_geo(GEO[layout_from], GEO[layout_to], t);
+    if(t < COLUMN_SWITCH_AT) {
+        set_column_opa((int32_t)(255 * (1.f - t / COLUMN_SWITCH_AT)));
+    } else {
+        if(!column_switched) {
+            apply_column(layout_to);
+            column_switched = true;
+        }
+        set_column_opa((int32_t)(255 * (t - COLUMN_SWITCH_AT) / (1.f - COLUMN_SWITCH_AT)));
+    }
+}
+
+static void finish_layout_transition()
+{
+    lv_anim_delete(lv_screen_active(), layout_anim_cb);
+    set_cover_geo(GEO[layout_to], GEO[layout_to], 0.f);
+    if(!column_switched) apply_column(layout_to);
+    set_column_opa(255);
+    layout_mode      = layout_to;
+    layout_animating = false;
+}
+
+static void layout_anim_ready(lv_anim_t *)
+{
+    finish_layout_transition();
+}
+
+static void apply_layout_now(int mode) /* no animation: initial layout */
+{
+    layout_from = layout_to = layout_mode = mode;
+    set_cover_geo(GEO[mode], GEO[mode], 0.f);
+    apply_column(mode);
+    set_column_opa(255);
+}
+
+static void request_layout(int mode)
+{
+    if(!cover) return;
+    if(layout_animating) {
+        if(mode == layout_to) return;
+        finish_layout_transition(); /* jump to where it was heading, then animate to the new target */
+    }
+    if(mode == layout_mode) return;
+
+    layout_from      = layout_mode;
+    layout_to        = mode;
+    layout_animating = true;
+    column_switched  = false;
+
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, lv_screen_active());
+    lv_anim_set_exec_cb(&a, layout_anim_cb);
+    lv_anim_set_values(&a, 0, 1000);
+    lv_anim_set_duration(&a, LAYOUT_ANIM_MS);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
+    lv_anim_set_completed_cb(&a, layout_anim_ready);
+    lv_anim_start(&a);
+}
+
+void music_ui_set_no_lyrics(void)
+{
+    music_ui_set_lyrics_message("");
+    request_layout(LAYOUT_NOW_PLAYING);
+}
+
+/* Tapping the cover shows or hides the lyrics. The choice sticks across tracks; tracks without
+ * lyrics always use the lyrics-free layout. */
+static void on_cover_clicked(lv_event_t *)
+{
+    const int current = layout_animating ? layout_to : layout_mode;
+    if(current == LAYOUT_LYRICS) {
+        lyrics_hidden_by_user = true;
+        request_layout(LAYOUT_NOW_PLAYING);
+    } else if(lyrics_available) {
+        lyrics_hidden_by_user = false;
+        request_layout(LAYOUT_LYRICS);
+    }
+}
+
 void music_ui_create(void)
 {
     lv_obj_t * screen = lv_screen_active();
@@ -593,28 +773,29 @@ void music_ui_create(void)
         lv_obj_set_clickable(bg_img[i], false);
     }
 
-    // 미디어 카드 (cover + title + artists 그룹)
-    lv_obj_t * media_card = lv_obj_create(screen);
-    lv_obj_set_size(media_card, 280, 450);
-    lv_obj_set_flex_flow(media_card, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(media_card, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_bg_opa(media_card, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(media_card, 0, 0);
-    lv_obj_set_style_pad_all(media_card, 6, 0);
-    lv_obj_set_style_pad_row(media_card, 0, 0);
-    lv_obj_align(media_card, LV_ALIGN_TOP_LEFT, 30, 15);
-    lv_obj_set_scrollable(media_card, false);
+    // 레이아웃에 따라 위치/크기가 바뀌므로 위젯은 화면에 직접 두고 apply_layout_now()/request_layout()이 배치한다
+    title_font[LAYOUT_LYRICS]       = noto_font(28, &lv_font_montserrat_28);
+    title_font[LAYOUT_NOW_PLAYING]  = noto_font(36, &lv_font_montserrat_36);
+    artists_font[LAYOUT_LYRICS]     = noto_font(20, &lv_font_montserrat_22);
+    artists_font[LAYOUT_NOW_PLAYING] = noto_font(26, &lv_font_montserrat_28);
 
     // 커버 이미지 placeholder
-    cover = lv_image_create(media_card);
-    lv_obj_set_size(cover, MUSIC_UI_COVER_SIZE, MUSIC_UI_COVER_SIZE);
-    lv_obj_set_style_radius(cover, 16, LV_STATE_DEFAULT);
-    lv_obj_set_style_clip_corner(cover, true, 0);
+    /* The rounded corners live on a box around the image: clipping an image widget that LVGL scales
+     * (400 px art shown at 250 px) loses the corner mask, a parent box clips whatever it contains. */
+    cover_box = lv_obj_create(screen);
+    lv_obj_set_style_bg_opa(cover_box, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(cover_box, 0, 0);
+    lv_obj_set_style_pad_all(cover_box, 0, 0);
+    lv_obj_set_style_radius(cover_box, 16, LV_STATE_DEFAULT);
+    lv_obj_set_style_clip_corner(cover_box, true, 0);
+    lv_obj_set_scrollable(cover_box, false);
+    cover = lv_image_create(cover_box);
+    lv_obj_set_size(cover, LV_PCT(100), LV_PCT(100));
     lv_image_set_inner_align(cover, LV_IMAGE_ALIGN_STRETCH);
+    lv_obj_set_clickable(cover, false);
 
-    // 제목 clipping 컨테이너 (커버 폭과 동일)
-    title_box = lv_obj_create(media_card);
-    lv_obj_set_size(title_box, 250, 40);
+    // 제목 clipping 컨테이너
+    title_box = lv_obj_create(screen);
     lv_obj_set_style_bg_opa(title_box, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(title_box, 0, 0);
     lv_obj_set_style_pad_all(title_box, 0, 0);
@@ -626,23 +807,17 @@ void music_ui_create(void)
     // 곡 제목 (컨테이너 안에서 움직임)
     title = lv_label_create(title_box);
     lv_label_set_text(title, "");
-    lv_obj_set_width(title, 250);
     lv_label_set_long_mode(title, LV_LABEL_LONG_MODE_CLIP);
-    lv_obj_set_style_text_font(title, noto_font(28, &lv_font_montserrat_28), LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), LV_STATE_DEFAULT);
 
-    // 가수/그룹 (제목 아래, 조금 작게)
-    artists = lv_label_create(media_card);
+    // 가수/그룹 (제목 아래, 조금 작게). 폭에 고정하고 길면 그대로 잘라냄
+    artists = lv_label_create(screen);
     lv_label_set_text(artists, "");
-    // 커버 폭에 고정하고, 길면 그대로 잘라냄 (안 그러면 카드 폭을 넘겨 레이아웃이 밀림)
-    lv_obj_set_width(artists, MUSIC_UI_COVER_SIZE);
     lv_label_set_long_mode(artists, LV_LABEL_LONG_MODE_CLIP);
-    lv_obj_set_style_text_font(artists, noto_font(20, &lv_font_montserrat_22), LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(artists, lv_color_hex(0xA0A0A0), LV_STATE_DEFAULT);
 
     // 재생 진행바 패널
-    progress_panel = lv_obj_create(media_card);
-    lv_obj_set_size(progress_panel, 250, 46);
+    progress_panel = lv_obj_create(screen);
     lv_obj_set_style_bg_opa(progress_panel, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(progress_panel, 0, 0);
     lv_obj_set_style_pad_all(progress_panel, 0, 0);
@@ -650,7 +825,7 @@ void music_ui_create(void)
 
     // 재생바: 패널 전체 폭
     progress_bar = lv_slider_create(progress_panel);
-    lv_obj_set_size(progress_bar, 250, 8);
+    lv_obj_set_height(progress_bar, 8);
     lv_obj_align(progress_bar, LV_ALIGN_TOP_MID, 0, 8);
     lv_obj_set_ext_click_area(progress_bar, 14); /* the bar is thin: make it easy to hit with a finger */
     lv_slider_set_range(progress_bar, 0, 1000);
@@ -689,9 +864,8 @@ void music_ui_create(void)
     lv_obj_set_style_text_color(quality_lbl, lv_color_hex(0xA0A0A0), LV_STATE_DEFAULT);
     lv_obj_align(quality_lbl, LV_ALIGN_TOP_MID, 0, 22);
 
-    // 재생 컨트롤 (재생바 아래, 카드 폭에 맞춤)
-    lv_obj_t * controls = lv_obj_create(media_card);
-    lv_obj_set_size(controls, MUSIC_UI_COVER_SIZE, 68); /* same width as the cover */
+    // 재생 컨트롤 (재생바 아래, 컬럼 폭에 맞춤)
+    controls = lv_obj_create(screen);
     lv_obj_set_flex_flow(controls, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(controls, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_bg_opa(controls, LV_OPA_TRANSP, 0);
@@ -699,12 +873,15 @@ void music_ui_create(void)
     lv_obj_set_style_pad_all(controls, 0, 0);
     lv_obj_set_scrollable(controls, false);
 
-    // 셔플 / 이전 / 재생 / 다음 / 반복 (카드 폭 250px에 한 줄)
-    shuffle_label = create_transport_button(controls, LV_SYMBOL_SHUFFLE, 40, &lv_font_montserrat_22, MUSIC_UI_CMD_SHUFFLE);
-    create_transport_button(controls, LV_SYMBOL_PREV, 48, &lv_font_montserrat_28, MUSIC_UI_CMD_PREVIOUS);
-    play_label = create_transport_button(controls, LV_SYMBOL_PLAY, 60, &lv_font_montserrat_36, MUSIC_UI_CMD_PLAY_PAUSE);
-    create_transport_button(controls, LV_SYMBOL_NEXT, 48, &lv_font_montserrat_28, MUSIC_UI_CMD_NEXT);
-    repeat_label = create_transport_button(controls, LV_SYMBOL_LOOP, 40, &lv_font_montserrat_22, MUSIC_UI_CMD_REPEAT);
+    // 셔플 / 이전 / 재생 / 다음 / 반복 (한 줄, 크기는 레이아웃마다 다름: 작은 것 / 큰 것)
+    shuffle_label = create_transport_button(controls, LV_SYMBOL_SHUFFLE, 40, &lv_font_montserrat_22, 52, &lv_font_montserrat_28,
+                                            MUSIC_UI_CMD_SHUFFLE);
+    create_transport_button(controls, LV_SYMBOL_PREV, 48, &lv_font_montserrat_28, 62, &lv_font_montserrat_36, MUSIC_UI_CMD_PREVIOUS);
+    play_label = create_transport_button(controls, LV_SYMBOL_PLAY, 60, &lv_font_montserrat_36, 76, &lv_font_montserrat_44,
+                                         MUSIC_UI_CMD_PLAY_PAUSE);
+    create_transport_button(controls, LV_SYMBOL_NEXT, 48, &lv_font_montserrat_28, 62, &lv_font_montserrat_36, MUSIC_UI_CMD_NEXT);
+    repeat_label = create_transport_button(controls, LV_SYMBOL_LOOP, 40, &lv_font_montserrat_22, 52, &lv_font_montserrat_28,
+                                           MUSIC_UI_CMD_REPEAT);
 
     repeat_one_label = lv_label_create(lv_obj_get_parent(repeat_label));
     lv_label_set_text(repeat_one_label, "1");
@@ -731,6 +908,8 @@ void music_ui_create(void)
     lv_obj_add_event_cb(lyrics_panel, lyrics_scroll_cb, LV_EVENT_SCROLL, nullptr);
     music_ui_set_lyrics_message("");
     lv_timer_create(lyrics_tick_cb, 100, nullptr);
+    apply_layout_now(LAYOUT_LYRICS);
+    lv_obj_add_event_cb(cover_box, on_cover_clicked, LV_EVENT_CLICKED, nullptr);
 
     // 연결 끊김 배너 (끊겼을 때만 표시, 오른쪽 위)
     offline_banner = lv_obj_create(screen);

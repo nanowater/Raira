@@ -119,7 +119,7 @@ void apply_lyrics(const LyricsResult * r)
             for(const LyricLine & l : r->lyrics.lines) lines.push_back({l.text.c_str(), l.time_ms});
             music_ui_set_lyrics(lines.data(), lines.size(), r->lyrics.synced);
         } else {
-            music_ui_set_lyrics_message("가사를 찾을 수 없어요");
+            music_ui_set_no_lyrics(); /* switches to the layout without the lyrics panel */
         }
     }
 }
@@ -290,7 +290,7 @@ void poll_loop(TidalClient client)
                 if(!info.image_url.empty()) {
                     std::string small = info.image_url;
                     size_t p          = small.find("1280x1280");
-                    if(p != std::string::npos) small.replace(p, 9, "320x320");
+                    if(p != std::string::npos) small.replace(p, 9, "640x640");
                     got = client.get_cover_from_url(small, img);
                 }
                 if(!got) got = client.get_cover(img);

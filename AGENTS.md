@@ -24,11 +24,11 @@ The device is a *controller*, not a player: it displays now-playing metadata and
 ## Repository layout
 
 - `src/main.cpp` — entry point; CLI/env config (`-s host[:port]`, `TIDAL_HIFI_HOST`), starts the UI and the poller.
-- `src/music_ui.h` / `src/music_ui.cpp` — LVGL UI (cover, title/artists, seekable progress bar + times, shuffle/prev/play/next/repeat row, lyrics panel). Pure LVGL, no networking; fed through `music_ui_update`, `music_ui_set_lyrics*`, `music_ui_set_album_art_*`; reports button presses via `music_ui_set_transport_cb` and progress-bar seeks via `music_ui_set_seek_cb`.
+- `src/music_ui.h` / `src/music_ui.cpp` — LVGL UI (cover, title/artists, seekable progress bar + times + quality, shuffle/prev/play/next/repeat row, lyrics panel, full-screen cover-derived ambient background, "connection lost" banner). Two layouts, switched by `apply_layout()`: LYRICS (250 px cover + info on the left, lyrics on the right) and NOW_PLAYING (400 px cover on the left, bigger title/artists/progress/controls on the right, no lyrics) — NOW_PLAYING is shown automatically when no lyrics are found (`music_ui_set_no_lyrics`) and LYRICS as soon as lyrics arrive; tapping the cover toggles the lyrics manually (the choice sticks across tracks; tracks without lyrics always get NOW_PLAYING). Switching animates (`request_layout`): the cover glides/scales, the rest fades out, is rearranged and fades back in (~0.4 s). LVGL gestures (swipes) did not fire reliably from simulated mouse drags, hence the tap. Pure LVGL, no networking; fed through `music_ui_update`, `music_ui_set_lyrics*`, `music_ui_set_album_art_*`; reports button presses via `music_ui_set_transport_cb` and progress-bar seeks via `music_ui_set_seek_cb`.
 - `src/media_info.h` — service-agnostic now-playing model (`MediaInfo`).
 - `src/tidal_client.*` — blocking tidal-hifi client (libcurl, one reused handle): `/current`, cover download, transport POSTs. The only place that knows tidal-hifi JSON.
 - `src/lyrics.*` — LRCLIB lookup, candidate ranking, LRC parsing.
-- `src/cover_decoder.*` — JPEG → 250×250 XRGB8888 (turbojpeg) so the UI only receives pixels.
+- `src/cover_decoder.*` — JPEG → 400×400 XRGB8888 (turbojpeg; the widget scales it to 250 or 400) and the ambient background (`cover_background`: blurred color grid stretched to 800×480, dithered RGB565) so the UI only receives pixels.
 - `src/media_poller.*` — background threads (poll `/current` every 500 ms + lyrics fetch), the UI mailbox that hands results to the LVGL thread, and the volume logic (`media_poller_volume_step`).
 - `src/fonts/` — `font_mono_16.c` (DejaVu Sans Mono, digits and ":", via lv_font_conv) and `noto_sans_kr.c` (embeds the Noto Sans KR subsets with `.incbin`). Font files and regeneration commands: `assets/fonts/README.md`.
 - `src/lib/` — LVGL display/input backends (SDL/DRM/FB/Wayland/X11/GLFW).
@@ -60,7 +60,7 @@ Read now-playing:
   - `favorite`, `player: { status, shuffle (bool), repeat ("off"/"all"/"single") }`,
   - `audioQuality: { quality, badgeText, bitDepth, sampleRate, codec }`.
 - `GET /health` for connection status; `GET /current/image`, `GET /current/audio-quality` for details.
-- Covers: `/current/image` serves a file tidal-hifi rewrites after the metadata changes, so while skipping tracks it lags or returns an in-between track's art (and is labelled `image/png` while being JPEG). We download the `image` URL from `/current` instead (swap `1280x1280` for `320x320`) and use `/current/image` only as a fallback.
+- Covers: `/current/image` serves a file tidal-hifi rewrites after the metadata changes, so while skipping tracks it lags or returns an in-between track's art (and is labelled `image/png` while being JPEG). We download the `image` URL from `/current` instead (swap `1280x1280` for `640x640`) and use `/current/image` only as a fallback.
 - Metadata can be briefly inconsistent after a track change (e.g. new `url` with old `title`); key anything derived from it on all fields, not just `url`.
 
 Playback control:

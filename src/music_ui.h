@@ -8,8 +8,9 @@
 extern "C" {
 #endif
 
-/* Cover widget edge length in px; pass this to the decoder for 1:1 drawing. */
-#define MUSIC_UI_COVER_SIZE 250
+/* Edge length the cover is decoded to. The widget shows it at 250 px next to the lyrics and at 400 px
+ * in the lyrics-free layout (LVGL scales it). */
+#define MUSIC_UI_COVER_SIZE 400
 
 void music_ui_create(void);
 
@@ -58,6 +59,9 @@ typedef struct {
     const char * text;
     int time_ms; /* ignored when the lyrics are not synced */
 } music_ui_lyric_line_t;
+
+/* No lyrics for this track: switch to the "now playing" layout (big cover, info on the right). */
+void music_ui_set_no_lyrics(void);
 
 /* Show lyrics (strings are copied). Synced lyrics follow the playback position and
  * highlight the current line; unsynced ones are just a scrollable text. LVGL thread only. */
