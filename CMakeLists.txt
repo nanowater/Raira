@@ -103,7 +103,7 @@ add_executable(lvglsim
     src/media_poller.cpp
     src/cover_decoder.cpp
     src/lyrics.cpp
-    src/fonts/font_mono_13.c
+    src/fonts/font_mono_16.c
     src/fonts/noto_sans_kr.c
 )
 find_package(CURL REQUIRED)

@@ -15,7 +15,8 @@ struct Lyrics {
     std::vector<LyricLine> lines;
 };
 
-/* Parse LRC ("[mm:ss.xx]text", several stamps per line allowed). Empty lines are dropped. */
+/* Parse LRC ("[mm:ss.xx]text", several stamps per line allowed). Timestamped lines with no text
+ * are kept (empty `text`): they mark instrumental gaps, where no line should be highlighted. */
 Lyrics lyrics_parse_lrc(const std::string & lrc);
 Lyrics lyrics_parse_plain(const std::string & text);
 

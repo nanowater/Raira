@@ -109,7 +109,6 @@ Lyrics lyrics_parse_lrc(const std::string & lrc)
         }
         if(stamps.empty()) continue;
         std::string text = trim(line.substr(i));
-        if(text.empty()) continue;
         for(int t : stamps) out.lines.push_back({t, text});
     }
     std::stable_sort(out.lines.begin(), out.lines.end(),
@@ -137,13 +136,40 @@ static std::string jstr(const json & j, const char * key)
 }
 
 /* Prefer synced lyrics, fall back to plain text. */
+/* Synced lyrics rarely say when the last line ends, which left it highlighted until the track
+ * finished (often through a long outro). Append an empty "gap" entry after it, using the typical
+ * line spacing as the line's length, so the highlight clears once the singing stops. */
+static void add_end_marker(Lyrics & l)
+{
+    if(l.lines.empty() || l.lines.back().text.empty()) return; /* the LRC already ends with a gap */
+    std::vector<int> gaps;
+    int prev = -1;
+    for(const LyricLine & line : l.lines) {
+        if(line.text.empty()) {
+            prev = -1;
+            continue;
+        }
+        if(prev >= 0 && line.time_ms > prev) gaps.push_back(line.time_ms - prev);
+        prev = line.time_ms;
+    }
+    int len = 5000;
+    if(!gaps.empty()) {
+        std::nth_element(gaps.begin(), gaps.begin() + gaps.size() / 2, gaps.end());
+        len = gaps[gaps.size() / 2];
+    }
+    len = std::min(std::max(len, 3000), 8000);
+    l.lines.push_back({l.lines.back().time_ms + len, ""});
+}
+
 static bool from_json(const json & j, Lyrics & out, bool allow_synced = true)
 {
     if(!j.is_object()) return false;
     std::string synced = allow_synced ? jstr(j, "syncedLyrics") : std::string();
     if(!synced.empty()) {
         Lyrics l = lyrics_parse_lrc(synced);
-        if(!l.lines.empty()) {
+        bool has_text = std::any_of(l.lines.begin(), l.lines.end(), [](const LyricLine & x) { return !x.text.empty(); });
+        if(has_text) {
+            add_end_marker(l);
             out = std::move(l);
             return true;
         }

@@ -17,4 +17,4 @@ regenerate it with the same command, swapping the input file.
 
 Simplified-Chinese-only characters (GB2312, ~+0.9MB) are not included. The font is the KR face, so
 Japanese kanji are drawn with Korean glyph variants.
-`src/fonts/font_mono_13.c` (DejaVu Sans Mono, digits and ":") is generated with lv_font_conv; see its header.
+`src/fonts/font_mono_16.c` (DejaVu Sans Mono, digits and ":") is generated with lv_font_conv; see its header.
