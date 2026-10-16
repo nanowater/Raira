@@ -129,6 +129,7 @@ add_library(music_platform_sim STATIC
     src/platform_sim/settings_file.cpp
     src/platform_sim/wifi_mock.cpp
     src/platform_sim/ws_server_lws.cpp
+    src/platform_sim/mdns_responder.cpp
 )
 target_include_directories(music_platform_sim PUBLIC src)
 target_link_libraries(music_platform_sim PUBLIC CURL::libcurl PkgConfig::TURBOJPEG PkgConfig::LWS)

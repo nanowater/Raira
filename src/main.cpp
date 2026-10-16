@@ -1,5 +1,6 @@
 #include <unistd.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,6 +29,7 @@
 #include <random>
 #include "bridge_client.h"
 #include "hub_source.h"
+#include "platform/mdns.h"
 #include "tidal_client.h"
 #include "platform/settings.h"
 #include "platform/wifi.h"
@@ -36,6 +38,9 @@
 static void configure_simulator(int argc, char ** argv);
 static void install_volume_input(void);
 static TidalConfig tidal_cfg;
+static volatile sig_atomic_t g_quit = 0; /* set by SIGINT/SIGTERM: leave the main loop so the hub says goodbye on mDNS */
+static void on_quit_signal(int) { g_quit = 1; }
+static std::unique_ptr<MdnsAdvertiser> g_mdns; /* announces the hub for the whole run */
 static int hub_port = 0; /* -S <port>: be the hub, sources (the PC bridge) connect to this port */
 static std::string cli_token;  /* -T or MUSIC_BRIDGE_TOKEN: the host bridge's access token */
 static std::string cli_server; /* the raw -s value: the bridge has another default port than tidal-hifi */
@@ -327,6 +332,13 @@ int main(int argc, char ** argv)
                         paired.push_back({e.value("id", ""), e.value("name", ""), e.value("secret", "")});
             auto hub = std::make_unique<HubSource>(ws_server_create(), HubIdentity{saved.hub_device_id, saved.hub_device_name}, paired);
             if(!hub->start((uint16_t)hub_port)) die("Cannot listen on port %d (is another hub or the bridge using it?)\n", hub_port);
+            /* sources find the hub by itself: _musicbridge._tcp with the device id and name in the TXT record */
+            g_mdns = mdns_advertiser_create();
+            MdnsService adv;
+            adv.instance = saved.hub_device_name;
+            adv.port     = (uint16_t)hub_port;
+            adv.txt      = {{"proto", "1"}, {"id", saved.hub_device_id}, {"name", saved.hub_device_name}};
+            if(!g_mdns->start(adv)) fprintf(stderr, "mDNS: no usable network interface, the hub is not announced (sources need its address)\n");
             deps.hub = hub.get();
             source   = std::move(hub);
         } else if(use_bridge) {
@@ -356,7 +368,9 @@ int main(int argc, char ** argv)
         install_volume_input();
     }
 
-    while(1) {
+    signal(SIGINT, on_quit_signal);
+    signal(SIGTERM, on_quit_signal);
+    while(!g_quit) {
         uint32_t ms = lv_timer_handler();
         if(ms == LV_NO_TIMER_READY) {
             ms = LV_DEF_REFR_PERIOD;
@@ -364,5 +378,6 @@ int main(int argc, char ** argv)
         usleep(ms * 1000);
     }
 
-    return 0;
+    if(g_mdns) g_mdns->stop(); /* goodbye: sources drop us from their lists at once instead of after the TTL */
+    _exit(0); /* the background threads of the poller and the hub never stop; skip static destructors */
 }
