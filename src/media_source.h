@@ -53,6 +53,11 @@ public:
      * for a malformed value or when the source has no endpoint to configure. Called on the poller thread. */
     virtual bool set_endpoint(const std::string & spec) { (void)spec; return false; }
     virtual std::string endpoint() const { return ""; } /* current endpoint, "" when not applicable */
+
+    /* An access token the service wants with every request (the host bridge outside the loopback). The settings
+     * page only offers the token row when uses_token() is true. set_token() is called on the poller thread. */
+    virtual bool uses_token() const { return false; }
+    virtual void set_token(const std::string & token) { (void)token; }
 };
 
 /* ---- Browsing: playlists and the play queue ----
@@ -85,4 +90,5 @@ public:
     virtual bool get_thumb(const std::string & cover_key, int px, CoverPixels & out) = 0;
 
     virtual bool set_endpoint(const std::string & spec) { (void)spec; return false; }
+    virtual void set_token(const std::string & token) { (void)token; }
 };

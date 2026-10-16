@@ -11,3 +11,6 @@ void browse_worker_start(std::unique_ptr<BrowseSource> source);
 
 /* Point the browse source at another host ("host[:port]"); applied on the worker thread. */
 void browse_worker_set_endpoint(const std::string & spec);
+
+/* Give the browse source another access token; applied on the worker thread. */
+void browse_worker_set_token(const std::string & token);

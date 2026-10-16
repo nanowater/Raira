@@ -14,6 +14,7 @@ struct HttpRequest {
     std::string user_agent;     /* empty = implementation default */
     std::string body;           /* request body for POST/PUT, empty = none */
     std::string content_type;   /* e.g. "application/json"; only used with a body */
+    std::string bearer_token;   /* non-empty: sent as "Authorization: Bearer <token>" */
     int connect_timeout_s = 2;
     int timeout_s         = 5;
     std::function<bool()> cancelled; /* polled while transferring; returning true aborts the request */

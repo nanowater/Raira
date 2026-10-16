@@ -37,6 +37,10 @@ void media_poller_volume_step(int delta);
  * the next poll uses it. An invalid value is ignored by the source. */
 void media_poller_set_endpoint(const std::string & spec);
 
+/* Give the music service another access token (see MediaSource::set_token). Thread-safe, applied on the poller
+ * thread; the next poll uses it and the connection state goes UNKNOWN until that poll decides. */
+void media_poller_set_token(const std::string & token);
+
 /* Called on the LVGL thread when the connection state changes (also once right after the endpoint was
  * switched, with UNKNOWN). Set once, e.g. by the settings page; default: none. */
 void media_poller_set_connection_cb(void (*cb)(media_conn_state_t state));

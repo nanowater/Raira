@@ -43,11 +43,11 @@ public:
             curl_easy_setopt(curl_, CURLOPT_POSTFIELDS, req.body.c_str()); /* req outlives perform() */
             curl_easy_setopt(curl_, CURLOPT_POSTFIELDSIZE, (long)req.body.size());
             curl_easy_setopt(curl_, CURLOPT_CUSTOMREQUEST, req.method.c_str());
-            if(!req.body.empty() && !req.content_type.empty()) {
+            if(!req.body.empty() && !req.content_type.empty())
                 headers = curl_slist_append(headers, ("Content-Type: " + req.content_type).c_str());
-                curl_easy_setopt(curl_, CURLOPT_HTTPHEADER, headers);
-            }
         }
+        if(!req.bearer_token.empty()) headers = curl_slist_append(headers, ("Authorization: Bearer " + req.bearer_token).c_str());
+        if(headers) curl_easy_setopt(curl_, CURLOPT_HTTPHEADER, headers);
         if(req.cancelled) {
             curl_easy_setopt(curl_, CURLOPT_NOPROGRESS, 0L);
             curl_easy_setopt(curl_, CURLOPT_XFERINFOFUNCTION, xfer_cb);

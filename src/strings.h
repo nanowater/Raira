@@ -19,7 +19,9 @@ constexpr const char * SETTINGS        = "Settings";
 constexpr const char * WIFI            = "WiFi";
 constexpr const char * PASSWORD        = "Password";
 constexpr const char * SERVER_TITLE    = "Server address";
-constexpr const char * SERVER_ROW      = "Server (tidal-hifi)";
+constexpr const char * SERVER_ROW      = "Server";
+constexpr const char * TOKEN_ROW       = "Access token";
+constexpr const char * TOKEN_TITLE     = "Access token";
 constexpr const char * NOT_SET         = "Not set";
 
 /* settings: WiFi */
@@ -38,10 +40,12 @@ constexpr const char * RESCAN          = "Rescan";
 constexpr const char * CONNECT         = "Connect";
 
 /* settings: server */
-constexpr const char * SERVER_HINT     = "Address of the PC running tidal-hifi (e.g. 192.168.0.10 or 192.168.0.10:47836)";
+constexpr const char * SERVER_HINT     = "Address of the PC running the music service or the bridge (e.g. 192.168.0.10 or 192.168.0.10:47900)";
 constexpr const char * SERVER_INVALID  = "Invalid address (e.g. 192.168.0.10:47836)";
 constexpr const char * SERVER_PLACEHOLDER = "host[:port]";
 constexpr const char * SAVE            = "Save";
+constexpr const char * TOKEN_HINT      = "Token the bridge on the PC prints at start (leave empty if it is not needed)";
+constexpr const char * TOKEN_PLACEHOLDER = "Access token";
 constexpr const char * SERVER_CHECKING   = "Saved. Checking the connection...";
 constexpr const char * SERVER_CONNECTED  = "Connected";
 constexpr const char * SERVER_UNREACHABLE = "Not connected";

@@ -7,7 +7,7 @@
 
 namespace {
 
-enum Page { PAGE_MAIN, PAGE_WIFI, PAGE_PASSWORD, PAGE_SERVER, PAGE_COUNT };
+enum Page { PAGE_MAIN, PAGE_WIFI, PAGE_PASSWORD, PAGE_SERVER, PAGE_TOKEN, PAGE_COUNT };
 
 const uint32_t COLOR_BG      = 0x12151B;
 const uint32_t COLOR_ROW     = 0x1F2937;
@@ -27,6 +27,8 @@ lv_timer_t * poll_timer = nullptr;
 /* main page */
 lv_obj_t * wifi_value  = nullptr;
 lv_obj_t * server_value = nullptr;
+lv_obj_t * token_value  = nullptr;
+lv_obj_t * token_row    = nullptr;
 lv_obj_t * wifi_row    = nullptr;
 
 /* wifi page */
@@ -44,6 +46,8 @@ lv_obj_t * pw_input    = nullptr;
 lv_obj_t * pw_eye_lbl  = nullptr;
 lv_obj_t * server_input = nullptr;
 lv_obj_t * server_msg  = nullptr;
+lv_obj_t * token_input = nullptr;
+lv_obj_t * token_msg   = nullptr;
 
 const lv_font_t * f(int px, bool bold = false)
 {
@@ -134,6 +138,7 @@ const char * page_title(int p)
         case PAGE_WIFI: return str::WIFI;
         case PAGE_PASSWORD: return str::PASSWORD;
         case PAGE_SERVER: return str::SERVER_TITLE;
+        case PAGE_TOKEN: return str::TOKEN_TITLE;
         default: return str::SETTINGS;
     }
 }
@@ -152,6 +157,10 @@ void refresh_main()
     lv_label_set_text(wifi_value, wifi_text.c_str());
     std::string server = svc.get_server ? svc.get_server() : "";
     lv_label_set_text(server_value, server.empty() ? str::NOT_SET : server.c_str());
+    if(token_value) {
+        const bool has_token = svc.get_token && !svc.get_token().empty();
+        lv_label_set_text(token_value, has_token ? "********" : str::NOT_SET); /* never show the token itself */
+    }
 }
 
 void show_page(int p)
@@ -159,10 +168,11 @@ void show_page(int p)
     page_now = p;
     for(int i = 0; i < PAGE_COUNT; i++) lv_obj_set_hidden(pages[i], i != p);
     lv_label_set_text(title_lbl, page_title(p));
-    const bool typing = (p == PAGE_PASSWORD || p == PAGE_SERVER);
+    const bool typing = (p == PAGE_PASSWORD || p == PAGE_SERVER || p == PAGE_TOKEN);
     lv_obj_set_hidden(keyboard, !typing);
     if(p == PAGE_PASSWORD) lv_keyboard_set_textarea(keyboard, pw_input);
     if(p == PAGE_SERVER) lv_keyboard_set_textarea(keyboard, server_input);
+    if(p == PAGE_TOKEN) lv_keyboard_set_textarea(keyboard, token_input);
     if(p == PAGE_MAIN) refresh_main();
 }
 
@@ -241,7 +251,8 @@ void on_back(lv_event_t *)
     switch(page_now) {
         case PAGE_PASSWORD: show_page(PAGE_WIFI); break;
         case PAGE_WIFI:
-        case PAGE_SERVER: show_page(PAGE_MAIN); break;
+        case PAGE_SERVER:
+        case PAGE_TOKEN: show_page(PAGE_MAIN); break;
         default:
             lv_obj_set_hidden(root, true);
             if(poll_timer) lv_timer_pause(poll_timer);
@@ -262,6 +273,13 @@ void on_open_server(lv_event_t *)
     lv_textarea_set_text(server_input, svc.get_server ? svc.get_server().c_str() : "");
     set_status(server_msg, "", COLOR_DIM);
     show_page(PAGE_SERVER);
+}
+
+void on_open_token(lv_event_t *)
+{
+    lv_textarea_set_text(token_input, svc.get_token ? svc.get_token().c_str() : "");
+    set_status(token_msg, "", COLOR_DIM);
+    show_page(PAGE_TOKEN);
 }
 
 void on_rescan(lv_event_t *)
@@ -307,15 +325,26 @@ void on_save_server(lv_event_t *)
     save_server();
 }
 
+void save_token()
+{
+    if(svc.set_token) svc.set_token(lv_textarea_get_text(token_input)); /* the result appears via on_connection_state() */
+}
+
+void on_save_token(lv_event_t *)
+{
+    save_token();
+}
+
 /* Connection state changes reported by the poller (LVGL thread). UNKNOWN is the moment right after
  * the endpoint was switched; the LOST/CONNECTED changes that follow are its polls' verdict. */
 void on_connection_state(media_conn_state_t state)
 {
     if(!root) return;
+    lv_obj_t * msg = page_now == PAGE_TOKEN ? token_msg : server_msg; /* the page being edited shows the verdict */
     switch(state) {
-        case MEDIA_CONN_UNKNOWN:   set_status(server_msg, str::SERVER_CHECKING, COLOR_DIM); break;
-        case MEDIA_CONN_CONNECTED: set_status(server_msg, str::SERVER_CONNECTED, COLOR_GOOD); break;
-        case MEDIA_CONN_LOST:      set_status(server_msg, str::SERVER_UNREACHABLE, COLOR_BAD); break;
+        case MEDIA_CONN_UNKNOWN:   set_status(msg, str::SERVER_CHECKING, COLOR_DIM); break;
+        case MEDIA_CONN_CONNECTED: set_status(msg, str::SERVER_CONNECTED, COLOR_GOOD); break;
+        case MEDIA_CONN_LOST:      set_status(msg, str::SERVER_UNREACHABLE, COLOR_BAD); break;
     }
 }
 
@@ -324,6 +353,7 @@ void on_keyboard_ready(lv_event_t *)
 {
     if(page_now == PAGE_PASSWORD) connect_with_password();
     else if(page_now == PAGE_SERVER) save_server();
+    else if(page_now == PAGE_TOKEN) save_token();
 }
 
 lv_obj_t * make_page(lv_obj_t * parent)
@@ -391,6 +421,7 @@ void settings_ui_init(SettingsServices services)
     else wifi_value = lv_label_create(pages[PAGE_MAIN]);
     lv_obj_t * server_row = make_row(pages[PAGE_MAIN], 108, str::SERVER_ROW, &server_value, on_open_server);
     (void)server_row;
+    if(svc.get_token) token_row = make_row(pages[PAGE_MAIN], 200, str::TOKEN_ROW, &token_value, on_open_token);
 
     /* wifi page */
     wifi_status = make_label(pages[PAGE_WIFI], "", 22, COLOR_DIM);
@@ -434,6 +465,16 @@ void settings_ui_init(SettingsServices services)
     lv_obj_set_pos(save, 650, 48);
     server_msg = make_label(pages[PAGE_SERVER], "", 18, COLOR_BAD);
     lv_obj_set_pos(server_msg, 30, 112);
+
+    /* token page */
+    lv_obj_t * token_hint = make_label(pages[PAGE_TOKEN], str::TOKEN_HINT, 18, COLOR_DIM);
+    lv_obj_set_pos(token_hint, 30, 12);
+    token_input = make_textarea(pages[PAGE_TOKEN], 30, 48, 600);
+    lv_textarea_set_placeholder_text(token_input, str::TOKEN_PLACEHOLDER);
+    lv_obj_t * token_save = make_button(pages[PAGE_TOKEN], str::SAVE, 140, 56, 0x2563EB, on_save_token);
+    lv_obj_set_pos(token_save, 650, 48);
+    token_msg = make_label(pages[PAGE_TOKEN], "", 18, COLOR_BAD);
+    lv_obj_set_pos(token_msg, 30, 112);
 
     /* shared keyboard along the bottom */
     keyboard = lv_keyboard_create(root);

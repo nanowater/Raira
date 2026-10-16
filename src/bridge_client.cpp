@@ -4,7 +4,7 @@
 
 using nlohmann::json;
 
-BridgeSource::BridgeSource(const std::string & spec) : http_(http_client_create())
+BridgeSource::BridgeSource(const std::string & spec, const std::string & token) : http_(http_client_create()), token_(token)
 {
     cfg_.port = DEFAULT_PORT;
     if(!spec.empty()) cfg_.parse(spec);
@@ -31,6 +31,7 @@ std::string BridgeSource::endpoint() const
 bool BridgeSource::post(const std::string & path, const std::string & json_body)
 {
     HttpRequest req;
+    req.bearer_token = token_;
     req.method = "POST";
     req.url    = url(path);
     if(!json_body.empty()) {
@@ -93,6 +94,7 @@ static uint32_t caps_of(const json & j)
 bool BridgeSource::get_current(MediaInfo & out)
 {
     HttpRequest req;
+    req.bearer_token = token_;
     req.url          = url("/state");
     HttpResponse res = http_->perform(req);
     if(!res.transport_ok) return false;
@@ -151,6 +153,7 @@ bool BridgeSource::get_cover(const MediaInfo & info, int want_px, std::vector<un
 {
     if(info.image_url.empty()) return false;
     HttpRequest req;
+    req.bearer_token = token_;
     req.url          = url("/cover/" + url_escape(info.image_url) + "?px=" + std::to_string(want_px));
     req.timeout_s    = 10; /* the bridge may have to fetch and re-encode the cover first */
     HttpResponse res = http_->perform(req);
@@ -161,7 +164,7 @@ bool BridgeSource::get_cover(const MediaInfo & info, int want_px, std::vector<un
 
 /* ---- Browse ---- */
 
-BridgeBrowse::BridgeBrowse(const std::string & spec) : http_(http_client_create())
+BridgeBrowse::BridgeBrowse(const std::string & spec, const std::string & token) : http_(http_client_create()), token_(token)
 {
     cfg_.port = BridgeSource::DEFAULT_PORT;
     if(!spec.empty()) cfg_.parse(spec);
@@ -178,6 +181,7 @@ bool BridgeBrowse::set_endpoint(const std::string & spec)
 bool BridgeBrowse::get_json(const std::string & path, json & out)
 {
     HttpRequest req;
+    req.bearer_token = token_;
     req.url       = url(path);
     req.timeout_s = 10; /* the bridge may be waiting for the service's web API */
     HttpResponse res = http_->perform(req);
@@ -279,6 +283,7 @@ bool BridgeBrowse::list_tracks(const std::string & playlist_id, std::string & pl
 bool BridgeBrowse::play_item(const BrowseItem & item)
 {
     HttpRequest req;
+    req.bearer_token = token_;
     req.method       = "POST";
     req.url          = url("/cmd/play_item");
     req.body         = json{{"context", item.context}, {"index", item.index}}.dump();
@@ -289,6 +294,7 @@ bool BridgeBrowse::play_item(const BrowseItem & item)
 bool BridgeBrowse::get_thumb(const std::string & cover_key, int px, CoverPixels & out)
 {
     HttpRequest req;
+    req.bearer_token = token_;
     req.url          = url("/cover/" + url_escape(cover_key) + "?px=" + std::to_string(px));
     req.timeout_s    = 10;
     HttpResponse res = http_->perform(req);

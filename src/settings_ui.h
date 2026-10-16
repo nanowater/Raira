@@ -12,6 +12,9 @@ struct SettingsServices {
     std::function<std::string()> get_server;                     /* current endpoint, "host[:port]" */
     std::function<bool(const std::string &)> set_server;         /* validate + apply + persist; false = invalid */
     std::function<void(const std::string & ssid, const std::string & password)> remember_wifi; /* persist */
+    /* Access token of the music service (the host bridge): both unset = the service needs none, the row is hidden. */
+    std::function<std::string()> get_token;
+    std::function<void(const std::string &)> set_token;           /* apply + persist; "" clears it */
 };
 
 /* Build the (hidden) overlay on the active screen. Call once, after the main UI. LVGL thread only. */

@@ -16,7 +16,7 @@ class BridgeSource : public MediaSource {
 public:
     static constexpr int DEFAULT_PORT = 47900;
 
-    explicit BridgeSource(const std::string & spec);
+    BridgeSource(const std::string & spec, const std::string & token);
 
     const char * name() const override { return "bridge"; }
     uint32_t capabilities() const override; /* until the first poll: the basics */
@@ -33,6 +33,8 @@ public:
     bool seek_absolute(int seconds) override;
     bool set_endpoint(const std::string & spec) override;
     std::string endpoint() const override;
+    bool uses_token() const override { return true; }
+    void set_token(const std::string & token) override { token_ = token; }
 
 private:
     bool post(const std::string & path, const std::string & json_body);
@@ -40,6 +42,7 @@ private:
 
     TidalConfig cfg_;
     std::unique_ptr<HttpClient> http_;
+    std::string token_;
     bool shuffle_ = false;        /* last polled state: the bridge takes explicit values, not toggles */
     std::string repeat_ = "off";
 };
@@ -47,7 +50,7 @@ private:
 /* BrowseSource for the host bridge's /browse endpoints (its own connection: it runs on the browse thread). */
 class BridgeBrowse : public BrowseSource {
 public:
-    explicit BridgeBrowse(const std::string & spec);
+    BridgeBrowse(const std::string & spec, const std::string & token);
 
     bool list_queue(std::vector<BrowseItem> & out) override;
     bool list_playlists(std::vector<BrowseItem> & out) override;
@@ -55,6 +58,7 @@ public:
     bool play_item(const BrowseItem & item) override;
     bool get_thumb(const std::string & cover_key, int px, CoverPixels & out) override;
     bool set_endpoint(const std::string & spec) override;
+    void set_token(const std::string & token) override { token_ = token; }
 
 private:
     bool get_json(const std::string & path, nlohmann::json & out);
@@ -62,4 +66,5 @@ private:
 
     TidalConfig cfg_;
     std::unique_ptr<HttpClient> http_;
+    std::string token_;
 };

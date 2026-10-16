@@ -13,7 +13,7 @@
 namespace {
 
 struct Req {
-    enum Kind { REFRESH, OPEN_PLAYLIST, PLAY_TRACK, PLAY_QUEUE, THUMB, ENDPOINT } kind = REFRESH;
+    enum Kind { REFRESH, OPEN_PLAYLIST, PLAY_TRACK, PLAY_QUEUE, THUMB, ENDPOINT, TOKEN } kind = REFRESH;
     int index = 0;
     std::string text; /* cover key, or the new endpoint */
 };
@@ -150,6 +150,7 @@ void worker(std::unique_ptr<BrowseSource> src)
                 break;
             }
             case Req::ENDPOINT: src->set_endpoint(r.text); break;
+            case Req::TOKEN: src->set_token(r.text); break;
         }
     }
 }
@@ -169,5 +170,13 @@ void browse_worker_set_endpoint(const std::string & spec)
     Req r;
     r.kind = Req::ENDPOINT;
     r.text = spec;
+    push(std::move(r));
+}
+
+void browse_worker_set_token(const std::string & token)
+{
+    Req r;
+    r.kind = Req::TOKEN;
+    r.text = token;
     push(std::move(r));
 }

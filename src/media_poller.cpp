@@ -92,6 +92,8 @@ double g_vol_target = -1;                  /* wanted volume, -1 = just follow th
 bool g_vol_dirty    = false;               /* g_vol_target not sent yet */
 std::chrono::steady_clock::time_point g_vol_last_send, g_vol_last_step;
 std::string g_endpoint; /* new service endpoint to apply on the poller thread, "" = none */
+std::string g_token;    /* new access token to apply on the poller thread */
+bool g_token_dirty = false;
 int g_seek_sec = -1; /* latest requested seek position, -1 = none (only the newest matters) */
 
 void volume_sync_polled(double polled)
@@ -109,6 +111,16 @@ void set_endpoint_pending(const std::string & spec)
     {
         std::lock_guard<std::mutex> lk(g_mu);
         g_endpoint = spec;
+    }
+    g_cv.notify_one();
+}
+
+void set_token_pending(const std::string & token)
+{
+    {
+        std::lock_guard<std::mutex> lk(g_mu);
+        g_token       = token;
+        g_token_dirty = true;
     }
     g_cv.notify_one();
 }
@@ -256,16 +268,21 @@ void poll_loop(std::unique_ptr<MediaSource> source)
         std::deque<music_ui_cmd_t> cmds;
         int seek_sec     = -1;
         std::string endpoint; /* non-empty: switch the source to this endpoint */
+        bool new_token = false;
+        std::string token;
         double volume    = -1; /* >= 0: send this level */
         {
             using clk = std::chrono::steady_clock;
             std::unique_lock<std::mutex> lk(g_mu);
             g_cv.wait_until(lk, last_poll + std::chrono::milliseconds(POLL_INTERVAL_MS),
-                            [] { return !g_cmds.empty() || g_seek_sec >= 0 || g_vol_dirty || !g_endpoint.empty(); });
+                            [] { return !g_cmds.empty() || g_seek_sec >= 0 || g_vol_dirty || !g_endpoint.empty() || g_token_dirty; });
             cmds.swap(g_cmds);
             seek_sec   = g_seek_sec;
             g_seek_sec = -1;
             endpoint.swap(g_endpoint);
+            new_token    = g_token_dirty;
+            token        = g_token;
+            g_token_dirty = false;
             if(g_vol_dirty) {
                 auto ready = g_vol_last_send + std::chrono::milliseconds(VOLUME_SEND_INTERVAL_MS);
                 if(clk::now() < ready) {
@@ -288,9 +305,10 @@ void poll_loop(std::unique_ptr<MediaSource> source)
             }
         }
 
-        if(!endpoint.empty()) {
-            source->set_endpoint(endpoint);
-            /* Judge the new address on its own polls; until one succeeds or fails for good, the
+        if(new_token) source->set_token(token);
+        if(!endpoint.empty()) source->set_endpoint(endpoint);
+        if(!endpoint.empty() || new_token) {
+            /* Judge the new address/token on its own polls; until one succeeds or fails for good, the
              * connection state is UNKNOWN (e.g. the settings page shows "checking..." then). */
             failed_polls = 0;
             post_conn_state(MEDIA_CONN_UNKNOWN);
@@ -299,7 +317,7 @@ void poll_loop(std::unique_ptr<MediaSource> source)
         if(volume >= 0) source->set_volume(volume);
 
         /* Poll when due, or right after a command/seek (volume steps alone must not trigger a poll each). */
-        const bool force = !cmds.empty() || seek_sec >= 0 || !endpoint.empty();
+        const bool force = !cmds.empty() || seek_sec >= 0 || !endpoint.empty() || new_token;
         if(!force && std::chrono::steady_clock::now() < last_poll + std::chrono::milliseconds(POLL_INTERVAL_MS)) continue;
         last_poll = std::chrono::steady_clock::now();
 
@@ -396,6 +414,11 @@ void media_poller_volume_step(int delta)
 void media_poller_set_endpoint(const std::string & spec)
 {
     set_endpoint_pending(spec);
+}
+
+void media_poller_set_token(const std::string & token)
+{
+    set_token_pending(token);
 }
 
 void media_poller_set_connection_cb(void (*cb)(media_conn_state_t state))

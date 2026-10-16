@@ -38,7 +38,7 @@ Windows GSMTC **(unverified)**: now-playing, cover thumbnail, position, play/pau
 - Commands are `POST`; reads are `GET`. Bodies are small JSON objects.
 - Errors: non-2xx with `{"error": "<code>", "message": "<text>"}`. Codes: `no_player`, `unsupported`, `bad_request`, `upstream_failed`, `auth_required`.
 - Polling first (`GET /state` every ~500 ms like today). Optional later: `GET /events` as Server-Sent Events carrying the same payload as `/state`, so the device can stop polling. Not needed for v0.
-- Auth: LAN only for v0, optional shared token in `Authorization: Bearer <token>` (set in the device's settings page). Pairing and TLS: open question.
+- Auth: a shared token in `Authorization: Bearer <token>` on **every** request (covers included); missing/wrong → 401 `auth_required`. The bridge requires it unless it is bound to the loopback address (`--no-auth` turns it off, `--token X` sets it); otherwise it generates a 16-character token on first use (alphabet without 0/o/1/i/l, typed on a touch keyboard), keeps it in `$XDG_CONFIG_HOME/music-bridge/token` (mode 0600) and prints it at start. The device takes it in its settings page ("Access token"). It travels in the clear over plain HTTP: it keeps casual or accidental clients out, not someone sniffing the network. Pairing (e.g. a QR code from the GUI) and TLS: open.
 - Versioning: the path prefix (`/v0`) plus `GET /info` returning `{"protocol": 0, ...}`. Unknown JSON fields must be ignored by both sides.
 
 ## Players
