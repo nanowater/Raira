@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 #include "media_info.h"
 
@@ -45,4 +46,9 @@ public:
     virtual bool toggle_repeat()                 = 0; /* cycles off -> all -> single */
     virtual bool set_volume(double level)        = 0; /* 0.0 .. 1.0 */
     virtual bool seek_absolute(int seconds)      = 0;
+
+    /* Point the source at another server/endpoint ("host[:port]" for a host-side service). Returns false
+     * for a malformed value or when the source has no endpoint to configure. Called on the poller thread. */
+    virtual bool set_endpoint(const std::string & spec) { (void)spec; return false; }
+    virtual std::string endpoint() const { return ""; } /* current endpoint, "" when not applicable */
 };

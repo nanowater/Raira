@@ -29,6 +29,14 @@ std::string TidalConfig::base_url() const
     return "http://" + host + ":" + std::to_string(port);
 }
 
+bool TidalClient::set_endpoint(const std::string & spec)
+{
+    TidalConfig c = cfg_;
+    if(!c.parse(spec)) return false;
+    cfg_ = c; /* the next request uses the new address; the old connection is dropped by the HTTP layer */
+    return true;
+}
+
 bool TidalClient::http_get(const std::string & path, std::string & body)
 {
     HttpRequest req;

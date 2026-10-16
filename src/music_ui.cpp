@@ -6,20 +6,15 @@
 #include "lvgl_compat.h"
 #include <src/misc/cache/instance/lv_image_cache.h>
 #include "music_ui.h"
+#include "settings_ui.h"
+#include "strings.h"
+#include "ui_fonts.h"
 
 extern "C" const lv_font_t font_mono_16; /* DejaVu Sans Mono 16px, digits and ":" only (src/fonts) */
-extern "C" const unsigned char * noto_sans_kr_get(size_t * size);      /* embedded Noto Sans KR subset */
-extern "C" const unsigned char * noto_sans_kr_bold_get(size_t * size); /* same glyph set, Bold */
-
-/* Noto Sans KR at the given px size via TinyTTF; falls back to `fallback` if loading fails. */
+/* Noto Sans KR via TinyTTF (cached, see ui_fonts.cpp). */
 static const lv_font_t * noto_font(int32_t px, const lv_font_t * fallback, bool bold = false)
 {
-    size_t size                = 0;
-    const unsigned char * data = bold ? noto_sans_kr_bold_get(&size) : noto_sans_kr_get(&size);
-    lv_font_t * f              = lv_tiny_ttf_create_data(data, size, px);
-    if(!f) return fallback;
-    f->fallback = fallback; /* glyphs outside the subset (e.g. symbols) */
-    return f;
+    return ui_noto_font(px, fallback, bold);
 }
 
 static lv_obj_t * cover                     = nullptr;
@@ -871,6 +866,12 @@ static void on_cover_clicked(lv_event_t *)
 
 void music_ui_create(void)
 {
+    /* Dark theme with the Korean-capable font as default: the settings page (list, text input, keyboard)
+     * is built from stock widgets, which take their colors and font from the theme. */
+    lv_display_set_theme(lv_display_get_default(),
+                         lv_theme_default_init(lv_display_get_default(), lv_color_hex(0x60A5FA), lv_color_hex(0x3B82F6), true,
+                                               noto_font(20, &lv_font_montserrat_22)));
+
     lv_obj_t * screen = lv_screen_active();
 
     // 화면 배경
@@ -1019,7 +1020,10 @@ void music_ui_create(void)
     music_ui_set_lyrics_message("");
     lv_timer_create(lyrics_tick_cb, 100, nullptr);
     apply_layout_now(LAYOUT_LYRICS);
-    lv_obj_add_event_cb(cover_box, on_cover_clicked, LV_EVENT_CLICKED, nullptr);
+    /* A short tap toggles the lyrics. LVGL sends CLICKED even after a long press, SHORT_CLICKED only
+     * for a short one, so a long press can open the settings without also toggling the layout. */
+    lv_obj_add_event_cb(cover_box, on_cover_clicked, LV_EVENT_SHORT_CLICKED, nullptr);
+    lv_obj_add_event_cb(cover_box, [](lv_event_t *) { settings_ui_open(); }, LV_EVENT_LONG_PRESSED, nullptr);
 
     // 연결 끊김 배너 (끊겼을 때만 표시, 오른쪽 위)
     offline_banner = lv_obj_create(screen);
@@ -1043,9 +1047,11 @@ void music_ui_create(void)
     lv_obj_set_style_border_width(dot, 0, 0);
 
     lv_obj_t * offline_text = lv_label_create(offline_banner);
-    lv_label_set_text(offline_text, "연결 끊김");
+    lv_label_set_text(offline_text, str::CONNECTION_LOST);
     lv_obj_set_style_text_font(offline_text, noto_font(18, &lv_font_montserrat_16), 0);
     lv_obj_set_style_text_color(offline_text, lv_color_white(), 0);
 
+    /* Tapping the banner is the way to fix the connection: it opens the settings. */
+    lv_obj_add_event_cb(offline_banner, [](lv_event_t *) { settings_ui_open(); }, LV_EVENT_CLICKED, nullptr);
     lv_obj_set_hidden(offline_banner, true); /* shown only while the host is unreachable */
 }

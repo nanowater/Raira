@@ -106,6 +106,8 @@ add_library(music_core STATIC
     src/cover_decoder.cpp
     src/lyrics.cpp
     src/http_util.cpp
+    src/ui_fonts.cpp
+    src/settings_ui.cpp
     src/fonts/font_mono_16.c
     src/fonts/noto_sans_kr.c
 )
@@ -119,6 +121,8 @@ pkg_check_modules(TURBOJPEG REQUIRED IMPORTED_TARGET libturbojpeg)
 add_library(music_platform_sim STATIC
     src/platform_sim/http_curl.cpp
     src/platform_sim/jpeg_turbo.cpp
+    src/platform_sim/settings_file.cpp
+    src/platform_sim/wifi_mock.cpp
 )
 target_include_directories(music_platform_sim PUBLIC src)
 target_link_libraries(music_platform_sim PUBLIC CURL::libcurl PkgConfig::TURBOJPEG)

@@ -24,11 +24,14 @@
 #include "music_app.h"
 #include "media_poller.h"
 #include "tidal_client.h"
+#include "platform/settings.h"
+#include "platform/wifi.h"
 
 /* Internal functions */
 static void configure_simulator(int argc, char ** argv);
 static void install_volume_input(void);
 static TidalConfig tidal_cfg;
+static bool host_from_cli = false; /* -s or TIDAL_HIFI_HOST given: wins over the saved setting */
 static void print_lvgl_version(void);
 static void print_usage(void);
 static void show_demo(void);
@@ -117,6 +120,7 @@ static void configure_simulator(int argc, char ** argv)
 
     if(const char * env_host = getenv("TIDAL_HIFI_HOST")) {
         if(!tidal_cfg.parse(env_host)) die("Invalid TIDAL_HIFI_HOST '%s'\n", env_host);
+        host_from_cli = true;
     }
 
     const char * env_w = getenv("LV_SIM_WINDOW_WIDTH");
@@ -142,6 +146,7 @@ static void configure_simulator(int argc, char ** argv)
                 break;
             case 's':
                 if(!tidal_cfg.parse(optarg)) die("Invalid -s value '%s' (expected host[:port])\n", optarg);
+                host_from_cli = true;
                 break;
             case 'D':
                 show_demo_screen = true;
@@ -216,6 +221,10 @@ static void volume_key_cb(lv_event_t * e)
 
 static void install_volume_input(void)
 {
+    /* A long press on the cover opens the settings: make it deliberate (LVGL's default is 400 ms) */
+    for(lv_indev_t * i = lv_indev_get_next(NULL); i; i = lv_indev_get_next(i))
+        if(lv_indev_get_type(i) == LV_INDEV_TYPE_POINTER) lv_indev_set_long_press_time(i, 800);
+
     lv_group_t * g = lv_group_create();
     lv_group_set_default(g);
     for(lv_indev_t * i = lv_indev_get_next(NULL); i; i = lv_indev_get_next(i)) {
@@ -266,7 +275,20 @@ int main(int argc, char ** argv)
         show_demo();
     }
     else {
-        music_app_start(std::make_unique<TidalClient>(tidal_cfg));
+        MusicAppDeps deps;
+        deps.store = settings_store_create();
+        AppSettings saved;
+        if(deps.store->load(saved) && !host_from_cli && !saved.server.empty()) tidal_cfg.parse(saved.server);
+        auto source           = std::make_unique<TidalClient>(tidal_cfg);
+        saved.server          = source->endpoint(); /* what actually runs, whichever way it was chosen */
+        deps.settings         = saved;
+        deps.source           = std::move(source);
+        deps.wifi             = wifi_manager_create(); /* simulator: fake networks */
+        deps.validate_server  = [](const std::string & spec) {
+            TidalConfig c;
+            return c.parse(spec);
+        };
+        music_app_start(std::move(deps));
         install_volume_input();
     }
 

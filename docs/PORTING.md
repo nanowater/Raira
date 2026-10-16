@@ -19,6 +19,12 @@ Volume input hook: `media_poller_volume_step(int delta)` (call from the encoder 
 
 ## What the ESP32 side has to provide
 
+0. **`WifiManager` and `SettingsStore`** (`platform/wifi.h`, `platform/settings.h`) for the settings page: the
+   simulator has a mock WiFi (fake networks, no real radio) and a JSON file. On the device: `esp_wifi` in STA mode
+   (scan and connect are non-blocking, the UI polls `scan_running()` / `state()` from a 200 ms LVGL timer) and NVS
+   for `AppSettings` (server address, WiFi credentials). Set the touch indev's long-press time to ~800 ms
+   (`lv_indev_set_long_press_time`), the settings open on a long press of the cover.
+
 1. **`HttpClient` / `http_client_create()`** (`platform/http.h`): blocking GET/PUT/POST without body, timeouts,
    user agent, and a `cancelled()` callback polled during the transfer. Intended: `esp_http_client`
    (keep-alive via one handle per thread; HTTPS with the ESP certificate bundle for LRCLIB and the TIDAL

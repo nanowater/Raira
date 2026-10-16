@@ -41,6 +41,8 @@ public:
     bool toggle_repeat() override { return http_post("/player/repeat/toggle"); }
     bool set_volume(double level) override; /* 0.0..1.0 */
     bool seek_absolute(int seconds) override { return http_put("/player/seek/absolute?seconds=" + std::to_string(seconds)); }
+    bool set_endpoint(const std::string & spec) override;
+    std::string endpoint() const override { return cfg_.port == 47836 ? cfg_.host : cfg_.host + ":" + std::to_string(cfg_.port); }
 
 private:
     bool fetch_url(const std::string & url, std::vector<unsigned char> & out);
