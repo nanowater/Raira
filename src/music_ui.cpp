@@ -147,9 +147,14 @@ static int32_t position_ms()
     return pos_base_ms + (pos_playing ? (int32_t)lv_tick_elaps(pos_tick) : 0);
 }
 
+static void lyric_scroll_anim_cb(void * var, int32_t v);
+
 static void lyrics_clear_labels()
 {
-    if(lyrics_panel) lv_obj_clean(lyrics_panel);
+    if(lyrics_panel) {
+        lv_anim_delete(lyrics_panel, lyric_scroll_anim_cb); /* a glide for the previous lyrics must not carry over */
+        lv_obj_clean(lyrics_panel);
+    }
     lyric_labels.clear();
     lyric_times.clear();
     lyric_cur = -1;
@@ -179,6 +184,55 @@ static void lyrics_scroll_cb(lv_event_t *)
     lyrics_update_edge_fade();
 }
 
+/* Smooth highlight changes: the text color eases between dim and white, and the view glides to
+ * the new line with an ease-in-out curve instead of jumping. */
+static const uint32_t LYRIC_COLOR_FADE_MS   = 250;
+static const uint32_t LYRIC_SCROLL_MS       = 450;
+
+static void lyric_color_anim_cb(void * var, int32_t v)
+{
+    lv_obj_set_style_text_color(static_cast<lv_obj_t *>(var),
+                                lv_color_mix(lv_color_white(), lv_color_hex(LYRIC_COLOR_DIM), (uint8_t)v), 0);
+}
+
+static void animate_lyric_color(lv_obj_t * l, bool to_white)
+{
+    /* continue from wherever a running fade currently is, so quick line changes don't flicker */
+    lv_anim_t * running = lv_anim_get(l, lyric_color_anim_cb);
+    int32_t from        = running ? running->current_value : (to_white ? 0 : 255);
+    lv_anim_delete(l, lyric_color_anim_cb);
+
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, l);
+    lv_anim_set_exec_cb(&a, lyric_color_anim_cb);
+    lv_anim_set_values(&a, from, to_white ? 255 : 0);
+    lv_anim_set_duration(&a, LYRIC_COLOR_FADE_MS);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
+    lv_anim_start(&a);
+}
+
+static void lyric_scroll_anim_cb(void * var, int32_t v)
+{
+    lv_obj_scroll_to_y(static_cast<lv_obj_t *>(var), v, LV_ANIM_OFF);
+}
+
+static void glide_lyrics_to(int32_t y)
+{
+    lv_anim_delete(lyrics_panel, lyric_scroll_anim_cb);
+    int32_t from = lv_obj_get_scroll_y(lyrics_panel);
+    if(from == y) return;
+
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, lyrics_panel);
+    lv_anim_set_exec_cb(&a, lyric_scroll_anim_cb);
+    lv_anim_set_values(&a, from, y);
+    lv_anim_set_duration(&a, LYRIC_SCROLL_MS);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
+    lv_anim_start(&a);
+}
+
 /* Highlight line `idx`. Before the first line (idx < 0) and in gaps nothing is highlighted, but the
  * view still moves to the next line to be sung (or the last line once the lyrics are over), so
  * seeking back to the start or ahead into the outro scrolls along. */
@@ -186,13 +240,13 @@ static void lyrics_highlight(int idx)
 {
     if(idx == lyric_cur) return;
     if(lyric_cur >= 0 && lyric_cur < (int)lyric_labels.size() && lyric_labels[lyric_cur])
-        lv_obj_set_style_text_color(lyric_labels[lyric_cur], lv_color_hex(LYRIC_COLOR_DIM), 0);
+        animate_lyric_color(lyric_labels[lyric_cur], false);
     lyric_cur = idx;
 
     const int n = (int)lyric_labels.size();
     lv_obj_t * focus = (idx >= 0 && idx < n) ? lyric_labels[idx] : nullptr;
     if(focus) {
-        lv_obj_set_style_text_color(focus, lv_color_white(), 0);
+        animate_lyric_color(focus, true);
     } else {
         /* gap / before the first line: aim at the next line that will be sung; after the last line
          * there is none, so stay on the last line (also when seeking into the outro) */
@@ -204,7 +258,7 @@ static void lyrics_highlight(int idx)
     lv_obj_update_layout(lyrics_panel);
     /* lv_obj_get_y() is relative to the content area (below the top padding), so scrolling by it
      * leaves the line at LYRICS_ANCHOR_Y from the panel top. */
-    lv_obj_scroll_to_y(lyrics_panel, lv_obj_get_y(focus), LV_ANIM_ON);
+    glide_lyrics_to(lv_obj_get_y(focus));
 }
 
 static void lyrics_tick_cb(lv_timer_t *)
