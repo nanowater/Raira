@@ -9,6 +9,7 @@ use serde_json::Value;
 const REPEAT_CYCLE: [&str; 3] = ["off", "all", "single"]; // the order tidal-hifi's toggle walks through
 
 pub struct Tidal {
+    spec: String,
     base: String,
     http: reqwest::Client,
 }
@@ -31,7 +32,12 @@ impl Tidal {
         let base = if spec.contains(':') { format!("http://{spec}") } else { format!("http://{spec}:47836") };
         // short timeouts: a stalled tidal-hifi must not slow down every /state of the bridge
         let http = reqwest::Client::builder().timeout(Duration::from_millis(900)).build().ok()?;
-        Some(Self { base, http })
+        Some(Self { spec: spec.to_string(), base, http })
+    }
+
+    /// "host[:port]" as given.
+    pub fn spec(&self) -> &str {
+        &self.spec
     }
 
     /// None when tidal-hifi's API is not reachable or answers nonsense.

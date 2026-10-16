@@ -1,7 +1,7 @@
 //! Player registry, selection and the mapping from raw MPRIS data to the protocol's types.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use axum::Json;
@@ -56,7 +56,7 @@ struct Inner {
 pub struct Hub {
     mpris: Mpris,
     inner: Mutex<Inner>,
-    tidal: Option<Tidal>,
+    tidal: RwLock<Option<Arc<Tidal>>>,
 }
 
 struct Snapshot {
@@ -145,12 +145,23 @@ fn capabilities(raw: &Raw) -> Vec<&'static str> {
 
 impl Hub {
     pub async fn new(tidal: Option<Tidal>) -> zbus::Result<Arc<Self>> {
-        Ok(Arc::new(Self { mpris: Mpris::connect().await?, inner: Mutex::new(Inner::default()), tidal }))
+        Ok(Arc::new(Self { mpris: Mpris::connect().await?, inner: Mutex::new(Inner::default()), tidal: RwLock::new(tidal.map(Arc::new)) }))
     }
 
     /// The tidal-hifi supplement, for the player it belongs to.
-    fn tidal_for(&self, raw: &Raw) -> Option<&Tidal> {
-        if raw.identity.eq_ignore_ascii_case("tidal-hifi") { self.tidal.as_ref() } else { None }
+    fn tidal_for(&self, raw: &Raw) -> Option<Arc<Tidal>> {
+        if raw.identity.eq_ignore_ascii_case("tidal-hifi") { self.tidal.read().unwrap().clone() } else { None }
+    }
+
+    /// Switch the tidal-hifi supplement on (Some) or off (None) at runtime.
+    pub fn set_tidal(&self, t: Option<Tidal>) {
+        *self.tidal.write().unwrap() = t.map(Arc::new);
+    }
+
+    /// (address, answers right now) of the tidal-hifi supplement, None when it is off.
+    pub async fn tidal_status(&self) -> Option<(String, bool)> {
+        let t = self.tidal.read().unwrap().clone()?;
+        Some((t.spec().to_string(), t.current().await.is_some()))
     }
 
     /// Read every player and settle the selection (explicit choice > still playing > newest playing > last).

@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Music Bridge</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1b1f27; --dim: #667085; --line: #e3e6ec;
+    --accent: #2563eb; --good: #15803d; --bad: #b91c1c; --warn: #b45309; --field: #f0f2f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #12151b; --card: #1b2029; --text: #e8ebf1; --dim: #9aa3b2; --line: #2a303b;
+            --accent: #60a5fa; --good: #34d399; --bad: #f87171; --warn: #fbbf24; --field: #131720; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
+  h1 { font-size: 22px; margin: 0; }
+  .ver { color: var(--dim); font-size: 13px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+  h2 { font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--dim); margin: 0 0 10px; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0; }
+  .grow { flex: 1 1 auto; min-width: 0; }
+  .dim { color: var(--dim); }
+  .small { font-size: 13px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; background: var(--dim); margin-right: 6px; }
+  .dot.good { background: var(--good); } .dot.bad { background: var(--bad); } .dot.warn { background: var(--warn); }
+  code, .mono { font-family: ui-monospace, monospace; background: var(--field); border-radius: 6px; padding: 2px 7px; word-break: break-all; }
+  .big { font-size: 20px; letter-spacing: .06em; }
+  button { font: inherit; color: var(--text); background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  input[type=text], input[type=number] { font: inherit; color: var(--text); background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; width: 100%; }
+  label.field { display: block; margin: 8px 0; }
+  label.field span { display: block; font-size: 13px; color: var(--dim); margin-bottom: 3px; }
+  .player { display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-radius: 8px; }
+  .player:hover { background: var(--field); }
+  .tag { font-size: 12px; color: var(--dim); border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; }
+  .note { font-size: 13px; margin-top: 8px; }
+  .note.bad { color: var(--bad); } .note.good { color: var(--good); } .note.warn { color: var(--warn); }
+  #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--text); color: var(--bg);
+           padding: 8px 14px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #toast.show { opacity: .95; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Music Bridge</h1>
+    <span class="ver" id="ver"></span>
+  </header>
+
+  <section>
+    <h2>Connect a device</h2>
+    <div class="row"><span class="dim">Address</span><span id="addr" class="grow"></span></div>
+    <div class="row">
+      <span class="dim">Token</span>
+      <code class="big" id="token">••••••••••••••••</code>
+      <span class="grow"></span>
+      <button id="show">Show</button>
+      <button id="copy">Copy</button>
+      <button id="regen">New token</button>
+    </div>
+    <div class="note dim" id="authnote"></div>
+    <div class="row" style="margin-top:12px"><span class="dim">Device</span><span id="device" class="grow"></span></div>
+    <div class="note" id="denied"></div>
+  </section>
+
+  <section>
+    <h2>Players</h2>
+    <div id="players"></div>
+    <div class="note dim" id="now"></div>
+  </section>
+
+  <section>
+    <h2>TIDAL (tidal-hifi)</h2>
+    <div class="dim small">Adds shuffle, repeat and audio quality to the TIDAL desktop app.</div>
+    <label class="field"><span>tidal-hifi address (empty = off)</span><input type="text" id="tidal" placeholder="127.0.0.1:47836"></label>
+    <div class="row"><span id="tidalstate" class="grow"></span></div>
+  </section>
+
+  <section>
+    <h2>Network</h2>
+    <div class="row">
+      <label class="field grow"><span>Listen address</span><input type="text" id="bind"></label>
+      <label class="field" style="width:120px"><span>Port</span><input type="number" id="port" min="1024" max="65535"></label>
+    </div>
+    <div class="note dim">0.0.0.0 lets other devices connect (they need the token); 127.0.0.1 only this PC.</div>
+    <div class="note warn" id="restart" hidden>Saved. The listen address and port change after the bridge is restarted.</div>
+    <div class="row" style="margin-top:12px"><span class="grow dim small" id="cfgpath"></span><button class="primary" id="save">Save settings</button></div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+let data = null, shown = false, editing = false;
+
+async function api(path, method = 'GET', body) {
+  const opt = { method, headers: { 'X-Bridge-UI': '1' } };
+  if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
+  const r = await fetch(path, opt);
+  if (!r.ok) throw new Error((await r.text()) || r.statusText);
+  return r;
+}
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2200); }
+function ago(s) { if (s == null) return null; if (s < 2) return 'just now'; if (s < 90) return Math.round(s) + ' s ago'; if (s < 5400) return Math.round(s / 60) + ' min ago'; return Math.round(s / 3600) + ' h ago'; }
+function dot(kind, text) { const d = document.createElement('span'); d.className = 'dot ' + kind; const f = document.createDocumentFragment(); f.append(d, text); return f; }
+function setNote(el, kind, text) { el.className = 'note ' + kind; el.textContent = text; el.hidden = !text; }
+
+function render(d) {
+  data = d;
+  $('ver').textContent = 'v' + d.version;
+  const host = d.lan_ip || '<this PC\'s IP>';
+  $('addr').replaceChildren(Object.assign(document.createElement('code'), { textContent: host + ':' + d.port }));
+  $('token').textContent = shown ? d.auth.token : '•'.repeat(d.auth.token.length);
+  $('show').textContent = shown ? 'Hide' : 'Show';
+  $('regen').disabled = d.auth.fixed;
+  $('regen').title = d.auth.fixed ? 'The token was set with --token' : '';
+  setNote($('authnote'), d.auth.enforced ? 'dim' : 'warn',
+    d.auth.enforced ? 'Every request needs this token.'
+      : (/^(127\.|localhost|::1)/.test(d.bind) ? 'Not required while the bridge listens on this PC only. Enter it on the device if you open the bridge to the network.'
+                                                : 'No token is required: anyone on the network can control the players (started with --no-auth).'));
+
+  const dv = d.device;
+  $('device').replaceChildren(dv.last_seen_s != null && dv.last_seen_s < 6
+    ? dot('good', 'Connected (' + dv.ip + ')')
+    : dv.last_seen_s != null ? dot('warn', 'Last seen ' + ago(dv.last_seen_s) + ' (' + dv.ip + ')') : dot('', 'No device has connected yet'));
+  if (dv.denied > 0 && (dv.last_seen_s == null || (dv.last_denied_s != null && dv.last_denied_s < dv.last_seen_s))) {
+    setNote($('denied'), 'bad', dv.last_denied_ip + ' was refused ' + ago(dv.last_denied_s) + ': wrong or missing token (' + dv.denied + ' refused in total).');
+  } else if (dv.denied > 0) {
+    setNote($('denied'), 'dim', dv.denied + ' request(s) were refused earlier (wrong token).');
+  } else setNote($('denied'), 'dim', '');
+
+  const list = $('players'); list.replaceChildren();
+  if (!d.players.players.length) list.append(Object.assign(document.createElement('div'), { className: 'dim', textContent: 'No player is running. Start Spotify, TIDAL or a browser player.' }));
+  for (const p of d.players.players) {
+    const row = document.createElement('label'); row.className = 'player';
+    const radio = Object.assign(document.createElement('input'), { type: 'radio', name: 'player', checked: p.id === d.players.selected });
+    radio.onchange = async () => { try { await api('/ui/select', 'POST', { id: p.id }); refresh(); } catch (e) { toast(e.message); } };
+    const name = Object.assign(document.createElement('span'), { className: 'grow', textContent: p.name });
+    const kind = Object.assign(document.createElement('span'), { className: 'tag', textContent: p.service });
+    row.append(radio, name, kind, dot(p.status === 'playing' ? 'good' : '', p.status));
+    list.append(row);
+  }
+  const n = d.now;
+  setNote($('now'), 'dim', n && n.title ? (n.status === 'playing' ? 'Now playing: ' : 'Paused: ') + n.title + (n.artists.length ? ' — ' + n.artists.join(', ') : '') : '');
+
+  const t = d.tidal;
+  $('tidalstate').replaceChildren(!t.enabled ? dot('', 'Off') : t.reachable ? dot('good', 'tidal-hifi answers at ' + t.addr) : dot('bad', 'No answer from ' + t.addr + ' (is tidal-hifi running with its API enabled?)'));
+  if (!editing) {
+    $('tidal').value = d.config.tidal_hifi === '' ? '' : d.config.tidal_hifi;
+    $('bind').value = d.config.bind; $('port').value = d.config.port;
+  }
+  $('restart').hidden = !d.config.restart_needed;
+  $('cfgpath').textContent = d.config.path;
+}
+
+async function refresh() { try { render(await (await api('/ui/status')).json()); } catch (e) { /* the bridge is gone: keep the last view */ } }
+
+for (const id of ['tidal', 'bind', 'port']) { $(id).addEventListener('input', () => editing = true); }
+$('show').onclick = () => { shown = !shown; if (data) render(data); };
+$('copy').onclick = async () => { try { await navigator.clipboard.writeText(data.auth.token); toast('Token copied'); } catch { toast('Copy failed: select the token and copy it by hand'); } };
+$('regen').onclick = async () => {
+  if (!confirm('Create a new token? Devices must be given the new one.')) return;
+  try { await api('/ui/token/regenerate', 'POST'); shown = true; toast('New token created'); refresh(); } catch (e) { toast(e.message); }
+};
+$('save').onclick = async () => {
+  try {
+    await api('/ui/config', 'POST', { bind: $('bind').value, port: Number($('port').value), tidal_hifi: $('tidal').value });
+    editing = false; toast('Saved'); refresh();
+  } catch (e) { toast(e.message); }
+};
+
+refresh(); setInterval(refresh, 1500);
+</script>
+</body>
+</html>

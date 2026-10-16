@@ -1,11 +1,15 @@
 mod auth;
+mod config;
 mod cover;
 mod hub;
 mod model;
 mod tidal;
+mod tray;
+mod ui;
 mod mpris;
 
-use std::sync::Arc;
+use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 
 use axum::extract::{Path, Query, State as AxState};
 use axum::http::{StatusCode, header};
@@ -89,33 +93,26 @@ fn arg(name: &str) -> Option<String> {
 async fn main() {
     tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
 
-    let bind = arg("--bind").unwrap_or_else(|| "0.0.0.0".into());
-    let port = arg("--port").unwrap_or_else(|| "47900".into());
+    // command line > settings file (edited from the settings page) > defaults
+    let cfg = config::load();
+    let bind = arg("--bind").or(cfg.bind.clone()).unwrap_or_else(|| "0.0.0.0".into());
+    let port: u16 = arg("--port").and_then(|p| p.parse().ok()).or(cfg.port).unwrap_or(47900);
 
     // Access: --no-auth = open, --token X = that token, otherwise a stored token, required unless bound to loopback.
-    let required: auth::Required = if flag("--no-auth") {
-        None
-    } else if let Some(t) = arg("--token") {
-        Some(Arc::new(t))
-    } else if auth::is_loopback(&bind) {
-        None
-    } else {
-        let (t, path) = auth::load_or_create();
-        tracing::info!("access token required: {t}  (stored in {})", path.display());
-        Some(Arc::new(t))
-    };
-    if required.is_none() && !auth::is_loopback(&bind) {
+    let access = auth::Access::new(&bind, flag("--no-auth"), arg("--token"));
+    if access.enforced() {
+        tracing::info!("access token required; see the settings page (or {})", config::dir().join("token").display());
+    } else if !auth::is_loopback(&bind) {
         tracing::warn!("listening on {bind} WITHOUT an access token: anyone on the network can control the players");
     }
 
     // tidal-hifi's own API fills what its MPRIS lacks (shuffle, repeat, quality); on by default, harmless when absent
-    let tidal = if flag("--no-tidal-hifi") {
-        None
-    } else {
-        tidal::Tidal::new(&arg("--tidal-hifi").unwrap_or_else(|| "127.0.0.1:47836".into()))
-    };
+    let tidal_spec = arg("--tidal-hifi").or(cfg.tidal_hifi.clone()).unwrap_or_else(|| ui::DEFAULT_TIDAL.into());
+    let tidal = if flag("--no-tidal-hifi") { None } else { tidal::Tidal::new(&tidal_spec) };
     let hub = Hub::new(tidal).await.expect("cannot connect to the D-Bus session bus");
-    let app = Router::new()
+
+    // the devices' API: /v0, with the token check
+    let v0 = Router::new()
         .route("/v0/info", get(info))
         .route("/v0/players", get(players))
         .route("/v0/players/select", post(select))
@@ -131,11 +128,28 @@ async fn main() {
         .route("/v0/cmd/repeat", post(repeat))
         .route("/v0/cmd/open", post(open))
         .route("/v0/cover/{key}", get(cover_img))
-        .layer(axum::middleware::from_fn_with_state(required, auth::check))
-        .with_state(hub);
+        .with_state(hub.clone())
+        .layer(axum::middleware::from_fn_with_state(access.clone(), auth::check));
 
+    // the settings page: this PC only
+    let ui_state: ui::Ui = Arc::new(ui::UiState { hub: hub.clone(), access: access.clone(), bind: bind.clone(), port, config: Mutex::new(cfg) });
+    let settings = Router::new()
+        .route("/", get(ui::page))
+        .route("/ui/status", get(ui::status))
+        .route("/ui/select", post(ui::select))
+        .route("/ui/token/regenerate", post(ui::regenerate_token))
+        .route("/ui/config", post(ui::set_config))
+        .with_state(ui_state.clone())
+        .layer(axum::middleware::from_fn_with_state(ui_state, ui::guard));
+
+    let app = v0.merge(settings);
     let addr = format!("{bind}:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap_or_else(|e| panic!("cannot listen on {addr}: {e}"));
-    tracing::info!("music-bridge listening on http://{addr}/v0");
-    axum::serve(listener, app).await.unwrap();
+    let page = format!("http://127.0.0.1:{port}/");
+    tracing::info!("music-bridge listening on http://{addr}/v0 — settings: {page}");
+
+    if !flag("--no-tray") {
+        tokio::spawn(tray::spawn(page, hub, access));
+    }
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await.unwrap();
 }
