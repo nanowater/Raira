@@ -170,9 +170,8 @@ S3 (no hardware decoder), real internal-RAM headroom with the WebSocket server r
 1. TLS: `wss://` needs a certificate the source trusts (self-signed, pinned at pairing?) and costs ESP32 RAM; a PAKE for the
    pairing code would protect the secret on plain ws. Both can come after the first version.
 2. mDNS across subnets/VLANs and on Windows (the bridge resolves it itself, no OS service needed), and a manual-address fallback.
-3. Library for the simulator's WebSocket server (libwebsockets, civetweb, or a small hand-written one over the existing
-   sockets); hidden behind `platform/`.
-4. A source that is *also* the lyrics provider: caching policy, and what the device shows while lyrics are loading.
+3. ~~Library for the simulator's WebSocket server~~: settled, libwebsockets (`platform_sim/ws_server_lws.cpp`) behind `platform/ws_server.h`.
+4. ~~Lyrics from the source~~: done (`lyrics.rs`, see "What the source does"); the device shows "Loading lyrics..." while it waits (up to 25 s).
 5. Several devices and one source: allowed (the source connects to each), but volume/shuffle state then belongs to the
    player, not the device; the `state` stream keeps the devices consistent.
 6. The default port 47900 (like tidal-hifi's 47836) lies inside Linux's ephemeral port range (32768-60999): once in a while an outgoing connection of some program holds it and `bind` fails with EADDRINUSE (seen once in testing). A port below 32768 would avoid it; not changed yet.
