@@ -16,6 +16,7 @@ constexpr const char * BROWSE_EMPTY     = "Nothing here";
 
 /* settings: titles and rows */
 constexpr const char * SETTINGS        = "Settings";
+constexpr const char * MENU_TITLE      = "Menu";
 constexpr const char * WIFI            = "WiFi";
 constexpr const char * PASSWORD        = "Password";
 constexpr const char * SERVER_TITLE    = "Server address";

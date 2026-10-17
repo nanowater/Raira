@@ -7,7 +7,7 @@
 
 namespace {
 
-enum Page { PAGE_MAIN, PAGE_WIFI, PAGE_PASSWORD, PAGE_SERVER, PAGE_TOKEN, PAGE_PLAYER, PAGE_SOURCES, PAGE_COUNT };
+enum Page { PAGE_MAIN, PAGE_WIFI, PAGE_PASSWORD, PAGE_SERVER, PAGE_TOKEN, PAGE_PLAYER, PAGE_SOURCES, PAGE_MENU, PAGE_COUNT };
 
 const uint32_t COLOR_BG      = 0x12151B;
 const uint32_t COLOR_ROW     = 0x1F2937;
@@ -28,8 +28,11 @@ lv_timer_t * poll_timer = nullptr;
 lv_obj_t * wifi_value  = nullptr;
 lv_obj_t * server_value = nullptr;
 lv_obj_t * token_value  = nullptr;
-lv_obj_t * token_row    = nullptr;
-lv_obj_t * wifi_row    = nullptr;
+
+/* menu page (long press on the cover): where back goes from the pages it leads to */
+lv_obj_t * menu_player_value = nullptr;
+bool settings_from_menu      = false; /* the settings page was entered from the menu: back returns there */
+bool player_from_menu        = false; /* so was the player page */
 
 /* player page: the players the service reported last, the row for the current choice is highlighted */
 lv_obj_t * player_value  = nullptr;
@@ -118,6 +121,78 @@ lv_obj_t * make_button(lv_obj_t * parent, const char * text, int w, int h, uint3
     return b;
 }
 
+/* A square tile: big symbol, name below, an optional small value line under the name (returned through value_out). x = -1 leaves the
+ * position to the parent (a flex container); otherwise (x, y) is the top-left corner. */
+lv_obj_t * make_tile(lv_obj_t * parent, int x, int y, int size, const char * symbol, const char * title, lv_obj_t ** value_out, lv_event_cb_t cb)
+{
+    lv_obj_t * t = lv_obj_create(parent);
+    lv_obj_set_size(t, size, size);
+    if(x >= 0) lv_obj_set_pos(t, x, y);
+    lv_obj_set_style_radius(t, 28, 0);
+    lv_obj_set_style_bg_color(t, lv_color_hex(COLOR_ROW), 0);
+    lv_obj_set_style_bg_opa(t, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(t, lv_color_hex(COLOR_ROW_PRESSED), LV_STATE_PRESSED);
+    lv_obj_set_style_border_width(t, 0, 0);
+    lv_obj_set_style_pad_all(t, 12, 0);
+    lv_obj_set_scrollable(t, false);
+    if(cb) lv_obj_add_event_cb(t, cb, LV_EVENT_CLICKED, nullptr);
+    /* icon, name and value line form one group, centered in the tile as a whole */
+    lv_obj_t * group = lv_obj_create(t);
+    lv_obj_set_size(group, size - 24, LV_SIZE_CONTENT);
+    lv_obj_center(group);
+    lv_obj_set_style_bg_opa(group, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(group, 0, 0);
+    lv_obj_set_style_pad_all(group, 0, 0);
+    lv_obj_set_style_pad_row(group, 6, 0);
+    lv_obj_set_flex_flow(group, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(group, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_scrollable(group, false);
+    lv_obj_set_clickable(group, false); /* a tap goes to the tile */
+    lv_obj_t * icon = make_label(group, symbol, 28, COLOR_ACCENT);
+    lv_obj_set_style_text_font(icon, &lv_font_montserrat_48, 0); /* the symbols live only in the built-in font */
+    lv_obj_t * name = make_label(group, title, 26, 0xFFFFFF);
+    /* one line: a longer name is cut with "..." instead of wrapping over the icon; the height is the font's line height, a smaller
+     * one cuts the descenders (g, p, y) */
+    lv_obj_set_size(name, size - 24, lv_font_get_line_height(f(26)) + 2);
+    lv_obj_set_style_text_align(name, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
+    if(value_out) {
+        *value_out = make_label(group, "", 18, COLOR_DIM);
+        lv_obj_set_size(*value_out, size - 24, lv_font_get_line_height(f(18)) + 2);
+        lv_obj_set_style_text_align(*value_out, LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_long_mode(*value_out, LV_LABEL_LONG_DOT);
+    }
+    return t;
+}
+
+struct TileSpec {
+    const char * symbol;
+    const char * title;
+    lv_obj_t ** value_out; /* nullptr: no value line */
+    lv_event_cb_t cb;
+};
+
+/* Lay the tiles of a menu page out as big as the page allows: up to three in one row (at most 300 px), four to six in two rows
+ * (190 px); every row is centered, the whole block sits in the middle of the page. */
+void layout_tiles(lv_obj_t * page, const std::vector<TileSpec> & specs)
+{
+    const int n = static_cast<int>(specs.size());
+    if(n == 0) return;
+    const int gap  = 24;
+    const int page_h = 480 - 64;
+    const int cols = n <= 3 ? n : (n + 1) / 2;
+    const int rows = (n + cols - 1) / cols;
+    const int size = n <= 3 ? std::min(300, (740 - (n - 1) * gap) / n) : 190;
+    const int top  = (page_h - (rows * size + (rows - 1) * gap)) / 2;
+    for(int i = 0; i < n; i++) {
+        const int row    = i / cols;
+        const int in_row = std::min(cols, n - row * cols);
+        const int left   = (800 - (in_row * size + (in_row - 1) * gap)) / 2;
+        make_tile(page, left + (i % cols) * (size + gap), top + row * (size + gap), size, specs[i].symbol, specs[i].title, specs[i].value_out,
+                  specs[i].cb);
+    }
+}
+
 lv_obj_t * make_row(lv_obj_t * parent, int y, const char * title, lv_obj_t ** value_out, lv_event_cb_t cb)
 {
     lv_obj_t * r = lv_obj_create(parent);
@@ -155,8 +230,19 @@ const char * page_title(int p)
         case PAGE_TOKEN: return str::TOKEN_TITLE;
         case PAGE_PLAYER: return str::PLAYER_TITLE;
         case PAGE_SOURCES: return str::SOURCES_TITLE;
+        case PAGE_MENU: return str::MENU_TITLE;
         default: return str::SETTINGS;
     }
+}
+
+/* The current player choice as shown in a row: "Automatic", or the name of the chosen player. */
+std::string player_text()
+{
+    const std::string id = svc.get_player ? svc.get_player() : "";
+    std::string text     = id.empty() ? str::PLAYER_AUTO : id;
+    for(const PlayerInfo & p : player_infos)
+        if(!id.empty() && p.id == id) text = p.name;
+    return text;
 }
 
 void refresh_main()
@@ -182,13 +268,7 @@ void refresh_main()
         std::string text = paired == 0 ? str::NOT_SET : std::to_string(connected) + " / " + std::to_string(paired) + " connected";
         lv_label_set_text(sources_value, text.c_str());
     }
-    if(player_value) {
-        const std::string id = svc.get_player ? svc.get_player() : "";
-        std::string text     = id.empty() ? str::PLAYER_AUTO : id;
-        for(const PlayerInfo & p : player_infos)
-            if(!id.empty() && p.id == id) text = p.name;
-        lv_label_set_text(player_value, text.c_str());
-    }
+    if(player_value) lv_label_set_text(player_value, player_text().c_str());
     if(token_value) {
         const bool has_token = svc.get_token && !svc.get_token().empty();
         lv_label_set_text(token_value, has_token ? "********" : str::NOT_SET); /* never show the token itself */
@@ -206,6 +286,7 @@ void show_page(int p)
     if(p == PAGE_SERVER) lv_keyboard_set_textarea(keyboard, server_input);
     if(p == PAGE_TOKEN) lv_keyboard_set_textarea(keyboard, token_input);
     if(p == PAGE_MAIN) refresh_main();
+    if(p == PAGE_MENU && menu_player_value) lv_label_set_text(menu_player_value, player_text().c_str());
 }
 
 void fill_wifi_list()
@@ -243,39 +324,28 @@ void fill_wifi_list()
 
 void fill_player_list();
 
-/* One row of the player list: "Automatic" (id "") or a player of the service. */
+/* One tile of the player list: "Automatic" (id "") or a player of the service; the chosen one has a green border. */
 void add_player_row(const std::string & id, const std::string & name, const std::string & tag, bool selected)
 {
-    lv_obj_t * r = lv_obj_create(player_list);
-    lv_obj_set_size(r, lv_pct(100), 60);
-    lv_obj_set_style_radius(r, 12, 0);
-    lv_obj_set_style_bg_color(r, lv_color_hex(COLOR_ROW), 0);
-    lv_obj_set_style_bg_opa(r, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(r, lv_color_hex(COLOR_ROW_PRESSED), LV_STATE_PRESSED);
-    lv_obj_set_style_border_width(r, 0, 0);
-    lv_obj_set_style_pad_hor(r, 20, 0);
-    lv_obj_set_scrollable(r, false);
-    auto * idp = new std::string(id); /* travels with the row, freed on delete */
+    lv_obj_t * tag_lbl = nullptr;
+    lv_obj_t * r = make_tile(player_list, -1, 0, 200, id.empty() ? LV_SYMBOL_REFRESH : LV_SYMBOL_AUDIO, name.c_str(), &tag_lbl, nullptr);
+    lv_label_set_text(tag_lbl, tag.c_str());
+    lv_obj_set_style_text_font(tag_lbl, f(16), 0);
+    auto * idp = new std::string(id); /* travels with the tile, freed on delete */
     lv_obj_add_event_cb(
         r,
         [](lv_event_t * e) {
             if(svc.set_player) svc.set_player(*static_cast<std::string *>(lv_event_get_user_data(e)));
-            /* the rows are rebuilt (to move the highlight) after this click has been handled */
+            /* the tiles are rebuilt (to move the highlight) after this click has been handled */
             lv_async_call([](void *) { if(root && page_now == PAGE_PLAYER) fill_player_list(); }, nullptr);
         },
         LV_EVENT_CLICKED, idp);
     lv_obj_add_event_cb(r, [](lv_event_t * e) { delete static_cast<std::string *>(lv_event_get_user_data(e)); }, LV_EVENT_DELETE, idp);
-
-    lv_obj_t * n = make_label(r, name.c_str(), 22, 0xFFFFFF);
-    lv_obj_align(n, LV_ALIGN_LEFT_MID, 0, 0);
-    lv_obj_t * t = make_label(r, tag.c_str(), 16, COLOR_DIM);
-    lv_obj_align(t, LV_ALIGN_RIGHT_MID, 0, 0);
     if(selected) {
-        lv_obj_set_style_border_width(r, 2, 0);
+        lv_obj_set_style_border_width(r, 3, 0);
         lv_obj_set_style_border_color(r, lv_color_hex(COLOR_GOOD), 0);
     }
 }
-
 void fill_player_list()
 {
     lv_obj_clean(player_list);
@@ -286,6 +356,7 @@ void fill_player_list()
 
 void on_open_player(lv_event_t *)
 {
+    player_from_menu = (page_now == PAGE_MENU);
     lv_obj_clean(player_list);
     set_status(player_status, str::PLAYER_LOADING, COLOR_DIM);
     show_page(PAGE_PLAYER);
@@ -419,6 +490,12 @@ void poll_cb(lv_timer_t *)
     if(page_now == PAGE_MAIN) refresh_main();
 }
 
+void close_overlay()
+{
+    lv_obj_set_hidden(root, true);
+    if(poll_timer) lv_timer_pause(poll_timer);
+}
+
 void on_back(lv_event_t *)
 {
     switch(page_now) {
@@ -426,13 +503,20 @@ void on_back(lv_event_t *)
         case PAGE_WIFI:
         case PAGE_SERVER:
         case PAGE_TOKEN:
-        case PAGE_PLAYER:
         case PAGE_SOURCES: show_page(PAGE_MAIN); break;
-        default:
-            lv_obj_set_hidden(root, true);
-            if(poll_timer) lv_timer_pause(poll_timer);
+        case PAGE_PLAYER: show_page(player_from_menu ? PAGE_MENU : PAGE_MAIN); break;
+        case PAGE_MAIN:
+            if(settings_from_menu) show_page(PAGE_MENU);
+            else close_overlay();
             break;
+        default: close_overlay(); break; /* the menu */
     }
+}
+
+void on_open_settings_from_menu(lv_event_t *)
+{
+    settings_from_menu = true;
+    show_page(PAGE_MAIN);
 }
 
 void on_open_wifi(lv_event_t *)
@@ -591,22 +675,30 @@ void settings_ui_init(SettingsServices services)
 
     for(int i = 0; i < PAGE_COUNT; i++) pages[i] = make_page(root);
 
+    /* menu page: what the long press on the cover leads to */
+    {
+        std::vector<TileSpec> tiles;
+        if(svc.get_player) tiles.push_back({LV_SYMBOL_AUDIO, str::PLAYER_ROW, &menu_player_value, on_open_player});
+        tiles.push_back({LV_SYMBOL_SETTINGS, str::SETTINGS, nullptr, on_open_settings_from_menu});
+        layout_tiles(pages[PAGE_MENU], tiles);
+    }
+
     /* main page */
-    if(svc.wifi) wifi_row = make_row(pages[PAGE_MAIN], 16, "WiFi", &wifi_value, on_open_wifi);
+    /* tiles; which ones exist depends on what the music service needs (tidal-hifi: server; bridge: server + token + player;
+     * hub: player + sources) */
+    std::vector<TileSpec> tiles;
+    if(svc.wifi) tiles.push_back({LV_SYMBOL_WIFI, str::WIFI, &wifi_value, on_open_wifi});
     else wifi_value = lv_label_create(pages[PAGE_MAIN]);
-    /* one row below the other; which rows exist depends on what the music service needs (tidal-hifi: server;
-     * bridge: server + token + player; hub: player + sources) */
-    int row_y = svc.wifi ? 108 : 16;
-    auto next_y = [&] { int y = row_y; row_y += 92; return y; };
     if(!svc.hub) {
-        make_row(pages[PAGE_MAIN], next_y(), str::SERVER_ROW, &server_value, on_open_server);
+        tiles.push_back({LV_SYMBOL_DRIVE, str::SERVER_ROW, &server_value, on_open_server});
     } else {
         server_value = lv_label_create(pages[PAGE_MAIN]); /* refresh_main() writes to it; the hub has no address */
         lv_obj_set_hidden(server_value, true);
     }
-    if(svc.get_token) token_row = make_row(pages[PAGE_MAIN], next_y(), str::TOKEN_ROW, &token_value, on_open_token);
-    if(svc.get_player) make_row(pages[PAGE_MAIN], next_y(), str::PLAYER_ROW, &player_value, on_open_player);
-    if(svc.hub) make_row(pages[PAGE_MAIN], next_y(), str::SOURCES_ROW, &sources_value, on_open_sources);
+    if(svc.get_token) tiles.push_back({LV_SYMBOL_EYE_CLOSE, str::TOKEN_ROW, &token_value, on_open_token});
+    if(svc.get_player) tiles.push_back({LV_SYMBOL_AUDIO, str::PLAYER_ROW, &player_value, on_open_player});
+    if(svc.hub) tiles.push_back({LV_SYMBOL_USB, str::SOURCES_ROW, &sources_value, on_open_sources});
+    layout_tiles(pages[PAGE_MAIN], tiles);
 
     /* wifi page */
     wifi_status = make_label(pages[PAGE_WIFI], "", 22, COLOR_DIM);
@@ -655,8 +747,9 @@ void settings_ui_init(SettingsServices services)
     lv_obj_set_style_bg_opa(player_list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(player_list, 0, 0);
     lv_obj_set_style_pad_all(player_list, 0, 0);
-    lv_obj_set_style_pad_row(player_list, 10, 0);
-    lv_obj_set_flex_flow(player_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(player_list, 20, 0);
+    lv_obj_set_style_pad_column(player_list, 20, 0);
+    lv_obj_set_flex_flow(player_list, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_scrollbar_mode(player_list, LV_SCROLLBAR_MODE_OFF);
 
     /* password page */
@@ -710,11 +803,23 @@ void settings_ui_init(SettingsServices services)
     lv_obj_set_hidden(root, true);
 }
 
-void settings_ui_open()
+static void show_overlay(int page)
 {
     if(!root) return;
-    show_page(PAGE_MAIN);
+    settings_from_menu = false; /* set again when the settings page is entered from the menu */
+    player_from_menu   = false;
+    show_page(page);
     lv_obj_set_hidden(root, false);
     lv_obj_move_foreground(root);
     lv_timer_resume(poll_timer);
+}
+
+void settings_ui_open()
+{
+    show_overlay(PAGE_MAIN);
+}
+
+void settings_ui_open_menu()
+{
+    show_overlay(PAGE_MENU);
 }

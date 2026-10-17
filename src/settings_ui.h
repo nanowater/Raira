@@ -29,5 +29,9 @@ struct SettingsServices {
 /* Build the (hidden) overlay on the active screen. Call once, after the main UI. LVGL thread only. */
 void settings_ui_init(SettingsServices services);
 
-/* Show the overlay and start a WiFi scan. */
+/* Show the overlay on its settings page. */
 void settings_ui_open();
+
+/* Show the overlay on its menu (long press on the cover): quick access to the player choice and to the settings. Back from either
+ * returns to the menu, back from the menu closes the overlay. */
+void settings_ui_open_menu();

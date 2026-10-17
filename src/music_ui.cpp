@@ -1128,7 +1128,7 @@ void music_ui_create(void)
     /* A short tap toggles the lyrics. LVGL sends CLICKED even after a long press, SHORT_CLICKED only
      * for a short one, so a long press can open the settings without also toggling the layout. */
     lv_obj_add_event_cb(cover_box, on_cover_clicked, LV_EVENT_SHORT_CLICKED, nullptr);
-    lv_obj_add_event_cb(cover_box, [](lv_event_t *) { settings_ui_open(); }, LV_EVENT_LONG_PRESSED, nullptr);
+    lv_obj_add_event_cb(cover_box, [](lv_event_t *) { settings_ui_open_menu(); }, LV_EVENT_LONG_PRESSED, nullptr);
 
     // 연결 끊김 배너 (끊겼을 때만 표시, 오른쪽 위)
     offline_banner = lv_obj_create(screen);
