@@ -38,6 +38,7 @@ The device is a *controller*, not a player: it displays now-playing metadata and
 - `src/media_poller.*` — background threads (poll `/current` every 500 ms + lyrics fetch), the UI mailbox that hands results to the LVGL thread, the volume logic (`media_poller_volume_step`), and the connection state (`media_conn_state_t`: CONNECTED/LOST/UNKNOWN after an endpoint switch), reported through `music_ui_set_connected` and the settings-page callback (`media_poller_set_connection_cb`).
 - `src/fonts/` — `font_mono_16.c` (DejaVu Sans Mono, digits and ":", via lv_font_conv) and `noto_sans_kr.c` (embeds the Noto Sans KR subsets with `.incbin`). Font files and regeneration commands: `assets/fonts/README.md`.
 - `src/lib/` — LVGL display/input backends (SDL/DRM/FB/Wayland/X11/GLFW).
+- `tools/` — automatic checks and helpers (see `tools/README.md`): `tools/run_checks.sh [--network]` runs the bridge unit tests, a conformance suite for the simulator's WebSocket server, a probe for its mDNS responder, the device's Automatic-focus rule against a fake source, and with `--network` the C++/Rust lyrics comparison; `fake_source.py` (a hub source without a real player, scenarios with expectations), `seed_device.py`, `ui_run.sh` (simulator + fake source on a virtual display + screenshots). Run `tools/run_checks.sh` before committing a change to the hub, the bridge or the lyrics code.
 - `docs/tidal-hifi-swagger.json` — tidal-hifi local API spec (OpenAPI 3.1.0, v8.1.3, 28 paths). **Use this, not the old official TIDAL OAS**, for integration work.
 - `docs/JC8048W550/` — vendor reference demos; not part of the build.
 - `boards/` — configs for various embedded boards (NXP i.MX93, etc.); ESP32 target config to be added.
@@ -119,6 +120,7 @@ UI/service code should depend on a common normalized `MediaInfo`-like model, not
 - Fonts: text uses Noto Sans KR via LVGL TinyTTF from data embedded with `.incbin` (Regular for UI, Bold for lyrics; glyphs: Latin, kana, Hangul, ~7k Han from KS X 1001 + JIS X 0208, no simplified-only Chinese). Times use the generated mono bitmap font. Both subsets are the KR face, so Japanese kanji show Korean glyph variants.
 - HTTP/JSON parsing: JSON uses `nlohmann/json`; HTTP and JPEG go through `src/platform/` (libcurl / libjpeg-turbo on the sim, ESP-IDF equivalents later). Keep `curl`/`turbojpeg` includes out of the core files (`music_core` target); new OS dependencies get an interface in `src/platform/` first. tidal-hifi itself is plain HTTP; LRCLIB and the TIDAL image CDN are HTTPS.
 - Update `docs/tidal-hifi-swagger.json` if tidal-hifi version changes.
+- When a test starts background processes (simulator, bridge, Xvfb), stop them by PID: `pkill -f` matches the shell that runs it, and a leftover simulator keeps its port (a stale `lvglsim -S` once blocked the hub's port).
 
 ## Known constraints / do-not-do
 
