@@ -5,7 +5,7 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 PORT=${PORT:-18398}
 TMP=$(mktemp -d)
 PID=""
-cleanup() { [ -n "$PID" ] && kill -9 "$PID" 2>/dev/null; rm -rf "$TMP"; }
+cleanup() { [ -n "$PID" ] && { kill -9 "$PID" 2>/dev/null; wait "$PID" 2>/dev/null; }; rm -rf "$TMP"; }
 trap cleanup EXIT INT TERM
 
 if ss -ltn 2>/dev/null | grep -q ":$PORT "; then echo "port $PORT is in use (set PORT=...)"; exit 2; fi

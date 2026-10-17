@@ -6,16 +6,20 @@ scenario of players and states, so the device side can be checked without a real
   python3 -I tools/fake_source.py --port 18399 --pair 123456          # pairs with the code shown on the device, prints the secret
   python3 -I tools/fake_source.py --port 18399 --scenario-file my.json
 
-What the device sends back (cmd, cover_req, lyrics_req, focus) is printed; cmd is acknowledged, cover_req answered with
-cover_err, lyrics_req (only with --features lyrics) with "not found".
+What the device sends back (cmd, cover_req, lyrics_req, focus) is printed and counted; cmd is acknowledged. With --features
+cover a cover_req is answered with a small built-in JPEG, with --features lyrics a lyrics_req with eight synced lines (without the
+feature the device would not ask); otherwise cover_err / "not found".
 
 A step may carry "expect_focus": the player id the device must be showing (it announces its choice with a `focus` message) when
-the step ends; a mismatch makes the exit code 1. That is how the Automatic rule is checked without looking at the screen.
+the step ends, and "expect_counts": {"cover_req": N, "lyrics_req": M}, how many of those requests the device has sent so far; a
+mismatch makes the exit code 1. That is how the Automatic rule and the device's cache after a reconnect are checked without
+looking at the screen. A step {"disconnect": S} closes the connection, stays away S seconds and connects again.
 
 Exit code: 0 when the scenario ran to its end and every expectation held, 1 when the connection, the authentication or an
 expectation failed.
 """
 import argparse
+import base64
 import json
 import os
 import select
@@ -82,8 +86,9 @@ class Ws:
                 out.append((op, payload))
         return out
 
-    def poll(self, seconds):
-        """Messages that arrive within `seconds` (text ones decoded to dicts)."""
+    def poll(self, seconds, on_msg=None):
+        """Messages that arrive within `seconds` (text ones decoded to dicts). `on_msg` is called with each one as it arrives, so
+        a request can be answered at once instead of when the wait is over."""
         msgs, end = [], time.time() + seconds
         while time.time() < end and not self.closed:
             r, _, _ = select.select([self.s], [], [], max(0.0, min(0.2, end - time.time())))
@@ -95,17 +100,24 @@ class Ws:
                 break
             self.buf += data
             for op, payload in self._read_frames():
-                msgs.append(json.loads(payload) if op == 1 else {"t": "<binary>", "bytes": len(payload)})
+                m = json.loads(payload) if op == 1 else {"t": "<binary>", "bytes": len(payload)}
+                msgs.append(m)
+                if on_msg:
+                    on_msg(m)
         return msgs
+
+
+TINY_JPEG = base64.b64decode("/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAoHBwgHBgoICAgLCgoLDhgQDg0NDh0VFhEYIx8lJCIfIiEmKzcvJik0KSEiMEExNDk7Pj4+JS5ESUM8SDc9Pjv/2wBDAQoLCw4NDhwQEBw7KCIoOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozv/wAARCABAAEADASIAAhEBAxEB/8QAFwABAQEBAAAAAAAAAAAAAAAAAAIBBf/EABUQAQEAAAAAAAAAAAAAAAAAAAAR/8QAFgEBAQEAAAAAAAAAAAAAAAAAAAUE/8QAFREBAQAAAAAAAAAAAAAAAAAAABP/2gAMAwEAAhEDEQA/AONCKhF2iZFMIqEKEUwioQoRTCKhChFUI2EYKLMWQjYQoRZCNhChFkI2EKEWwioRgosQTCKhChBMIqEKEEwioQoQVCNhGCizFkI2EKEWQjYQoRZCNhChF//Z")  # 64x64 baseline JPEG
+LYRICS = [{"ms": 1000 + 4000 * i, "text": f"fake lyric line {i + 1}"} for i in range(8)] + [{"ms": 34000, "text": ""}]
 
 
 def players(selected, *ps):
     return {"t": "players", "selected": selected, "players": [dict(id=i, name=n, service=s, status=st) for i, n, s, st in ps]}
 
 
-def state(player, title, status, pos, artists=("Fake Artist",), album="Fake Album", dur=245000, caps=("seek", "prev_next"), **extra):
+def state(player, title, status, pos, artists=("Fake Artist",), album="Fake Album", dur=245000, caps=("seek", "prev_next"), cover=None, **extra):
     m = {"t": "state", "player": player, "status": status,
-         "track": {"id": player + ":" + title, "title": title, "artists": list(artists), "album": album, "duration_ms": dur, "cover": None},
+         "track": {"id": player + ":" + title, "title": title, "artists": list(artists), "album": album, "duration_ms": dur, "cover": cover},
          "position_ms": pos, "rate": 1.0, "volume": 1.0, "shuffle": False, "repeat": "off", "quality": None, "capabilities": list(caps)}
     m.update(extra)
     return m
@@ -120,6 +132,18 @@ SCENARIOS = {
     # paused 150 ms either side of a lyric line boundary: the highlight must flip between the two (needs network for lyrics)
     "boundary": [{"send": [players("p", ("p", "Fake player", "other", "paused")), state("p", "Feel", "paused", pos, **FEEL)], "wait": w}
                  for pos, w in [(31640, 7), (31940, 4), (31640, 4), (31940, 3)]],
+    # the connection drops and comes back with the same track: the device must blank its screen meanwhile (look at the shots) and
+    # show the cover and lyrics again WITHOUT asking for them once more; with another track it must ask again. Needs --features cover,lyrics
+    "reconnect": [
+        {"send": [players("p", ("p", "Fake player", "other", "playing")), state("p", "Song A", "playing", 20000, cover="a")], "wait": 7,
+         "expect_focus": "p", "expect_counts": {"cover_req": 1, "lyrics_req": 1}},
+        {"disconnect": 5},
+        {"send": [players("p", ("p", "Fake player", "other", "playing")), state("p", "Song A", "playing", 28000, cover="a")], "wait": 4,
+         "expect_focus": "p", "expect_counts": {"cover_req": 1, "lyrics_req": 1}},
+        {"disconnect": 5},
+        {"send": [players("p", ("p", "Fake player", "other", "playing")), state("p", "Song B", "playing", 5000, cover="b")], "wait": 5,
+         "expect_focus": "p", "expect_counts": {"cover_req": 2, "lyrics_req": 2}},
+    ],
     # the source's own pick must win over a newer playing player (docs/HUB_PROTOCOL.md, Automatic)
     "pick": [{"send": [players(sel, ("tidal", "tidal-hifi", "tidal", "paused"), ("web", "Firefox", "browser", "playing")),
                        state("tidal", "TIDAL song (paused)", "paused", 40000),
@@ -143,61 +167,89 @@ def main():
     a = ap.parse_args()
 
     steps = json.load(open(a.scenario_file)) if a.scenario_file else SCENARIOS[a.scenario]
-    try:
-        ws = Ws(a.host, a.port)
-    except OSError as e:
-        print("cannot connect:", e, file=sys.stderr)
-        return 1
-
     features = [f for f in a.features.split(",") if f]
-    ws.send({"t": "hello", "proto": 1, "source_id": a.source_id, "name": a.name, "os": "linux", "features": features})
-    ws.send({"t": "pair", "code": a.pair} if a.pair else {"t": "auth", "secret": a.secret})
+    counts = {"cover_req": 0, "lyrics_req": 0}  # what the device asked for, over all connections of this run
+    focus = [None]                              # what the device last said it is showing
+    session = [None]
 
-    ready = False
-    deadline = time.time() + 5
-    while not ready and time.time() < deadline and not ws.closed:
-        for m in ws.poll(0.3):
-            if m["t"] in ("ready", "paired"):
-                ready = True
-                if m["t"] == "paired":
-                    print("paired, secret:", m["secret"])
-            elif m["t"] in ("auth_failed", "pair_failed", "pairing_required") and not (m["t"] == "pairing_required" and a.pair):
-                print("not accepted:", json.dumps(m), file=sys.stderr)
-                return 1
-    if not ready:
+    def open_session(pair_code=None):
+        """Connect, say hello, authenticate (or pair) and wait until the device accepts. None when it does not."""
+        try:
+            ws = Ws(a.host, a.port)
+        except OSError as e:
+            print("cannot connect:", e, file=sys.stderr)
+            return None
+        ws.send({"t": "hello", "proto": 1, "source_id": a.source_id, "name": a.name, "os": "linux", "features": features})
+        ws.send({"t": "pair", "code": pair_code} if pair_code else {"t": "auth", "secret": a.secret})
+        deadline = time.time() + 5
+        while time.time() < deadline and not ws.closed:
+            for m in ws.poll(0.3):
+                if m["t"] in ("ready", "paired"):
+                    if m["t"] == "paired":
+                        print("paired, secret:", m["secret"])
+                    return ws
+                if m["t"] in ("auth_failed", "pair_failed") or (m["t"] == "pairing_required" and not pair_code):
+                    print("not accepted:", json.dumps(m), file=sys.stderr)
+                    return None
         print("the device did not accept this source in time", file=sys.stderr)
+        return None
+
+    def handle(m):
+        """One message from the device, answered as soon as it arrives."""
+        ws = session[0]
+        print("<-", json.dumps(m, ensure_ascii=False), flush=True)
+        if m["t"] == "focus":
+            focus[0] = m.get("player")
+        elif m["t"] == "cmd":
+            ws.send({"t": "ack", "id": m.get("id"), "ok": True})
+        elif m["t"] == "cover_req":
+            counts["cover_req"] += 1
+            if "cover" in features:
+                ws.s.sendall(frame(2, struct.pack("!I", m["id"]) + TINY_JPEG))
+            else:
+                ws.send({"t": "cover_err", "id": m.get("id")})
+        elif m["t"] == "lyrics_req":
+            counts["lyrics_req"] += 1
+            if "lyrics" in features:
+                ws.send({"t": "lyrics", "id": m.get("id"), "found": True, "synced": True, "lines": LYRICS})
+            else:
+                ws.send({"t": "lyrics", "id": m.get("id"), "found": False})
+
+    session[0] = open_session(a.pair)
+    if session[0] is None:
         return 1
     print("ready")
 
-    focus = [None]  # what the device last said it is showing
-
-    def handle(msgs):
-        for m in msgs:
-            print("<-", json.dumps(m, ensure_ascii=False))
-            if m["t"] == "focus":
-                focus[0] = m.get("player")
-            if m["t"] == "cmd":
-                ws.send({"t": "ack", "id": m.get("id"), "ok": True})
-            elif m["t"] == "cover_req":
-                ws.send({"t": "cover_err", "id": m.get("id")})
-            elif m["t"] == "lyrics_req":
-                ws.send({"t": "lyrics", "id": m.get("id"), "found": False})
-
     failures = 0
     for i, step in enumerate(steps):
+        label = f"step {i + 1}/{len(steps)}"
+        if "disconnect" in step:
+            session[0].s.close()
+            print(f"{label}: disconnected, away for {step['disconnect']} s", flush=True)
+            time.sleep(step["disconnect"])
+            session[0] = open_session()
+            if session[0] is None:
+                return 1
+            print(f"{label}: connected again", flush=True)
+            focus[0] = None  # the device announces its focus again when it has one
+            continue
         for msg in step.get("send", []):
-            ws.send(msg)
-        print(f"step {i + 1}/{len(steps)} sent, waiting {step.get('wait', 1)} s", flush=True)
-        handle(ws.poll(step.get("wait", 1)))
-        if ws.closed:
+            session[0].send(msg)
+        print(f"{label} sent, waiting {step.get('wait', 1)} s", flush=True)
+        session[0].poll(step.get("wait", 1), handle)
+        if session[0].closed:
             print("the device closed the connection", file=sys.stderr)
             return 1
         if "expect_focus" in step:
             ok = focus[0] == step["expect_focus"]
             failures += not ok
             print(("check ok:   " if ok else "CHECK FAILED: ") + f"the device shows {focus[0]!r}, expected {step['expect_focus']!r}")
-    handle(ws.poll(a.linger))
-    ws.s.close()
+        for name, want in step.get("expect_counts", {}).items():
+            ok = counts[name] == want
+            failures += not ok
+            print(("check ok:   " if ok else "CHECK FAILED: ") + f"{name} was sent {counts[name]} time(s), expected {want}")
+    session[0].poll(a.linger, handle)
+    session[0].s.close()
     return 1 if failures else 0
 
 

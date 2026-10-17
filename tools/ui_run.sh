@@ -33,7 +33,8 @@ if ss -ltn 2>/dev/null | grep -q ":$PORT "; then echo "port $PORT is in use (--p
 
 TMP=$(mktemp -d)
 PIDS=()
-cleanup() { for p in "${PIDS[@]}"; do kill -9 "$p" 2>/dev/null; done; rm -rf "$TMP"; }
+# kill -9 only sends the signal: wait until the processes are really gone, or the next run finds the port still taken
+cleanup() { for p in "${PIDS[@]}"; do kill -9 "$p" 2>/dev/null; done; for p in "${PIDS[@]}"; do wait "$p" 2>/dev/null; done; rm -rf "$TMP"; }
 trap cleanup EXIT INT TERM
 mkdir -p "$OUT"
 

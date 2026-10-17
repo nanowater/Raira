@@ -6,7 +6,7 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 PORT=${PORT:-18397}
 TMP=$(mktemp -d)
 PID=""
-cleanup() { [ -n "$PID" ] && kill -9 "$PID" 2>/dev/null; rm -rf "$TMP"; }
+cleanup() { [ -n "$PID" ] && { kill -9 "$PID" 2>/dev/null; wait "$PID" 2>/dev/null; }; rm -rf "$TMP"; }
 trap cleanup EXIT INT TERM
 
 g++ -std=gnu++17 -Wall -Wextra -I"$ROOT/src" "$ROOT/tools/mdns_probe/main.cpp" "$ROOT/src/platform_sim/mdns_responder.cpp" \
