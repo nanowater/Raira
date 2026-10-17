@@ -42,7 +42,7 @@ struct HubSourceInfo {
 
 class HubSource : public MediaSource {
 public:
-    static constexpr uint16_t DEFAULT_PORT = 47900;
+    static constexpr uint16_t DEFAULT_PORT = 18322; /* below Linux's ephemeral range (32768+), so no clash with outgoing connections */
 
     HubSource(std::unique_ptr<WsServer> ws, HubIdentity identity, std::vector<PairedSource> paired);
     ~HubSource() override;

@@ -14,7 +14,7 @@
  * capabilities (MediaInfo::caps). */
 class BridgeSource : public MediaSource {
 public:
-    static constexpr int DEFAULT_PORT = 47900;
+    static constexpr int DEFAULT_PORT = 18801; /* the bridge's own server (v0 API, settings page) */
 
     BridgeSource(const std::string & spec, const std::string & token, const std::string & player);
 

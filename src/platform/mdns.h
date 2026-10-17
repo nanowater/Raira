@@ -13,7 +13,7 @@ struct MdnsService {
     std::string instance;                              /* "Music Controller", shown to the user */
     std::string host = "music-controller";             /* announced as <host>.local */
     std::string type = "_musicbridge._tcp";            /* service type */
-    uint16_t port    = 47900;
+    uint16_t port    = 18322;
     std::vector<std::pair<std::string, std::string>> txt; /* e.g. proto=1, id=<device id> */
 };
 

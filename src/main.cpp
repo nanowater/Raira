@@ -83,9 +83,9 @@ static void print_usage(void)
     fprintf(stdout, "-V print LVGL version\n");
     fprintf(stdout, "-B list supported backends\n");
     fprintf(stdout, "-D run the LVGL demo instead of the app UI\n");
-    fprintf(stdout, "-P use the host bridge (bridge/, default localhost:47900) instead of tidal-hifi; -s then addresses the bridge\n");
+    fprintf(stdout, "-P use the host bridge (bridge/, default localhost:18801) instead of tidal-hifi; -s then addresses the bridge\n");
     fprintf(stdout, "-T access token of the host bridge (env MUSIC_BRIDGE_TOKEN; saved setting otherwise)\n");
-    fprintf(stdout, "-S port: be the hub on this port (e.g. 47900): sources such as the PC bridge connect to it and pair with a code shown in Settings > Sources\n");
+    fprintf(stdout, "-S port: be the hub on this port (e.g. 18322): sources such as the PC bridge connect to it and pair with a code shown in Settings > Sources\n");
     fprintf(stdout, "-F fake playlists/queue behind the list button (replaces the bridge's browse data)\n");
     fprintf(stdout, "-f fullscreen\n");
     fprintf(stdout, "-m maximize\n");
