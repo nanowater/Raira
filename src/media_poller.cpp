@@ -68,16 +68,23 @@ void post_conn_state(int state)
     if(g_conn_posted.exchange(state) == state) return;
     post_to_ui([state, cb = g_conn_cb.load()] {
         if(state != MEDIA_CONN_UNKNOWN) music_ui_set_connected(state == MEDIA_CONN_CONNECTED);
+        if(state == MEDIA_CONN_LOST) music_ui_clear_content(); /* what is shown may be long out of date; the poller keeps the data */
         if(cb) cb(static_cast<media_conn_state_t>(state));
     });
 }
 
-struct Update {
-    MediaInfo info;
-    CoverPixels cover;                /* empty data = unchanged */
+/* Everything derived from one cover. Shared (immutable) so the poller can keep the last one and show it again, e.g. after the
+ * connection came back with the same track, without downloading and decoding it once more. */
+struct CoverBundle {
+    CoverPixels cover;
     CoverPixels bg;                   /* full-screen ambient background for this cover, empty = none */
     std::vector<unsigned char> png;   /* fallback for covers that are not JPEG */
-    bool clear_cover = false;         /* nothing is playing any more: drop the old cover */
+};
+
+struct Update {
+    MediaInfo info;
+    std::shared_ptr<const CoverBundle> art; /* null = the cover is unchanged */
+    bool clear_cover = false;               /* nothing is playing any more: drop the old cover */
 };
 
 /* Commands from the LVGL thread; drained by the poll thread so UI never blocks on HTTP. */
@@ -163,6 +170,7 @@ void on_transport(music_ui_cmd_t cmd)
 struct LyricsRequest {
     MediaInfo info;
     uint64_t gen = 0;
+    std::string key; /* the metadata key the poller derived from `info` */
 };
 struct LyricsResult {
     uint64_t gen = 0;
@@ -180,6 +188,12 @@ std::condition_variable g_lyr_cv;
 bool g_lyr_has_req = false;
 LyricsRequest g_lyr_req;
 std::atomic<uint64_t> g_lyr_gen{0}; /* newest requested track; older results are dropped */
+/* The last lyrics that were found, with the key of their track: shown again without a lookup when the same track comes back
+ * (after a reconnect, or when switching back to it). Only found lyrics are kept: a lookup that failed for a moment must not
+ * turn into "no lyrics" for good. */
+std::mutex g_lyr_cache_mu;
+std::shared_ptr<LyricsResult> g_lyr_cache;
+std::string g_lyr_cache_key;
 
 void apply_lyrics(const LyricsResult * r)
 {
@@ -222,17 +236,36 @@ void lyrics_loop()
         uint64_t gen     = req.gen;
         auto cancelled   = [gen] { return g_lyr_gen.load() != gen; };
         r->found         = g_lyrics_provider ? g_lyrics_provider(req.info, r->lyrics, cancelled) : lyrics_fetch(req.info, r->lyrics, cancelled);
+        if(r->found && g_lyr_gen.load() == gen) {
+            std::lock_guard<std::mutex> lk(g_lyr_cache_mu);
+            g_lyr_cache     = r;
+            g_lyr_cache_key = req.key;
+        }
         post_to_ui([r] { apply_lyrics(r.get()); });
     }
 }
 
-void request_lyrics(const MediaInfo & info)
+/* The lyrics of `key` again, from the cache (null when the last found lyrics belong to another track). */
+std::shared_ptr<LyricsResult> cached_lyrics(const std::string & key)
+{
+    std::lock_guard<std::mutex> lk(g_lyr_cache_mu);
+    return (g_lyr_cache && g_lyr_cache_key == key) ? g_lyr_cache : nullptr;
+}
+
+void show_cached_lyrics(const std::shared_ptr<LyricsResult> & cached)
+{
+    auto r  = std::make_shared<LyricsResult>(*cached);
+    r->gen  = ++g_lyr_gen; /* also drops whatever lookup of an older track may still be running */
+    post_to_ui([r] { apply_lyrics(r.get()); });
+}
+
+void request_lyrics(const MediaInfo & info, const std::string & key)
 {
     uint64_t gen = ++g_lyr_gen;
     post_to_ui([] { music_ui_set_lyrics_message(str::LOADING_LYRICS); });
     {
         std::lock_guard<std::mutex> lk(g_lyr_mu);
-        g_lyr_req     = {info, gen};
+        g_lyr_req     = {info, gen, key};
         g_lyr_has_req = true;
     }
     g_lyr_cv.notify_one();
@@ -268,11 +301,14 @@ void apply_update(const Update * u)
                         u->info.position_ms >= 0 ? (int)u->info.position_ms : -1};
     music_ui_update(&st);
     if(u->clear_cover) music_ui_clear_album_art();
-    if(!u->cover.data.empty())
-        music_ui_set_album_art_raw(u->cover.data.data(), u->cover.w, u->cover.h, LV_COLOR_FORMAT_XRGB8888);
-    else if(!u->png.empty())
-        music_ui_set_album_art_encoded(u->png.data(), u->png.size());
-    if(!u->bg.data.empty()) music_ui_set_background(u->bg.data.data(), u->bg.w, u->bg.h);
+    if(u->art) {
+        const CoverBundle & a = *u->art;
+        if(!a.cover.data.empty())
+            music_ui_set_album_art_raw(a.cover.data.data(), a.cover.w, a.cover.h, LV_COLOR_FORMAT_XRGB8888);
+        else if(!a.png.empty())
+            music_ui_set_album_art_encoded(a.png.data(), a.png.size());
+        if(!a.bg.data.empty()) music_ui_set_background(a.bg.data.data(), a.bg.w, a.bg.h);
+    }
 }
 
 void poll_loop(std::unique_ptr<MediaSource> source)
@@ -281,6 +317,9 @@ void poll_loop(std::unique_ptr<MediaSource> source)
     std::string lyrics_for; /* metadata key lyrics were requested for */
     auto last_poll = std::chrono::steady_clock::now() - std::chrono::milliseconds(POLL_INTERVAL_MS);
     int failed_polls = 0;              /* consecutive failed polls, reset when the endpoint changes */
+    bool lost_handled = false;         /* the poller's own state was reset for the current loss of the connection */
+    std::shared_ptr<const CoverBundle> art_cache; /* the last cover that was decoded, and the key it belongs to */
+    std::string art_cache_key;
     while(true) {
         /* Sleep until the next poll, or wake early for a transport command, a seek or a volume step. */
         std::deque<music_ui_cmd_t> cmds;
@@ -359,9 +398,19 @@ void poll_loop(std::unique_ptr<MediaSource> source)
          * does not flash the banner; it disappears on the first successful poll. */
         if(polled) {
             failed_polls = 0;
+            lost_handled = false;
             post_conn_state(MEDIA_CONN_CONNECTED);
         } else if(++failed_polls >= CONNECTION_LOST_AFTER_FAILS) {
             post_conn_state(MEDIA_CONN_LOST);
+            if(!lost_handled) {
+                /* The screen is blanked (post_conn_state). Forget what it showed, so the first poll after the connection
+                 * is back fills it again - from the cached cover and lyrics when the track is the same - and cancel a
+                 * lyrics lookup that is still running: its answer must not appear on the blank screen. */
+                lost_handled = true;
+                cover_for.clear();
+                lyrics_for.clear();
+                ++g_lyr_gen;
+            }
         }
         if(polled) {
             if(info.volume >= 0) volume_sync_polled(info.volume);
@@ -382,25 +431,38 @@ void poll_loop(std::unique_ptr<MediaSource> source)
                                            std::to_string(info.duration_sec);
             if(!info.title.empty() && lyrics_key != lyrics_for) {
                 lyrics_for = lyrics_key;
-                request_lyrics(info);
+                if(auto cached = cached_lyrics(lyrics_key)) show_cached_lyrics(cached);
+                else request_lyrics(info, lyrics_key);
             }
-            auto u = std::make_shared<Update>(Update{info, {}, {}, {}});
+            auto u = std::make_shared<Update>();
+            u->info = info;
             /* Key the cover by its image URL: consecutive tracks of one album keep the cover,
              * and a new URL means new artwork is due. */
             const std::string cover_key = info.image_url.empty() ? info.track_id : info.image_url;
             if(!cover_key.empty() && cover_key != cover_for) {
-                std::vector<unsigned char> img;
-                /* The source picks where the cover comes from and a size that is enough for the widget. */
-                const bool got = source->get_cover(info, MUSIC_UI_COVER_SIZE, img);
-                if(got) {
-                    /* JPEG is decoded here, off the LVGL thread (LVGL's JPEG decoder only reads files). */
-                    bool ok = cover_decode(img, MUSIC_UI_COVER_SIZE, u->cover);
-                    if(ok) cover_background(u->cover, SCREEN_W, SCREEN_H, MUSIC_UI_BG_BASE_COLOR, u->bg);
-                    if(!ok && img.size() > 8 && img[0] == 0x89 && img[1] == 'P' && img[2] == 'N' && img[3] == 'G') {
-                        u->png = std::move(img);
-                        ok     = true;
+                if(art_cache && art_cache_key == cover_key) { /* the same artwork again: reconnected, or switched back to it */
+                    u->art    = art_cache;
+                    cover_for = cover_key;
+                } else {
+                    std::vector<unsigned char> img;
+                    /* The source picks where the cover comes from and a size that is enough for the widget. */
+                    const bool got = source->get_cover(info, MUSIC_UI_COVER_SIZE, img);
+                    if(got) {
+                        auto bundle = std::make_shared<CoverBundle>();
+                        /* JPEG is decoded here, off the LVGL thread (LVGL's JPEG decoder only reads files). */
+                        bool ok = cover_decode(img, MUSIC_UI_COVER_SIZE, bundle->cover);
+                        if(ok) cover_background(bundle->cover, SCREEN_W, SCREEN_H, MUSIC_UI_BG_BASE_COLOR, bundle->bg);
+                        if(!ok && img.size() > 8 && img[0] == 0x89 && img[1] == 'P' && img[2] == 'N' && img[3] == 'G') {
+                            bundle->png = std::move(img);
+                            ok          = true;
+                        }
+                        if(ok) {
+                            cover_for     = cover_key;
+                            art_cache_key = cover_key;
+                            art_cache     = bundle;
+                            u->art        = bundle;
+                        }
                     }
-                    if(ok) cover_for = cover_key;
                 }
             }
             if(cover_key.empty() && !cover_for.empty()) { /* e.g. another player was picked and it has no track */

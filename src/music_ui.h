@@ -71,6 +71,11 @@ void music_ui_set_capabilities(unsigned caps);
  * feed back). LVGL thread only. */
 void music_ui_set_browse_cb(browse_cb_t cb);
 
+/* Blank what the display shows of the track: title, artists, cover, ambient background, lyrics, progress and times. Called when the
+ * connection to the music service is lost: the data is long out of date, and the poller keeps what it needs to show it again if the
+ * same track comes back. The controls and the banner are not touched. LVGL thread only. */
+void music_ui_clear_content(void);
+
 /* Show/hide the "connection lost" banner (hidden by default; only shown while disconnected).
  * LVGL thread only. */
 void music_ui_set_connected(bool connected);

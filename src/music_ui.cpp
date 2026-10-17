@@ -551,6 +551,26 @@ void music_ui_set_connected(bool connected)
  * progress bar keeps displaying position but stops reacting to touches. */
 static void set_browse_open(bool open);
 
+void music_ui_clear_content(void)
+{
+    g_duration_sec = 0;
+    pos_base_ms    = 0;
+    pos_tick       = lv_tick_get();
+    set_label_if_changed(title, "");
+    set_label_if_changed(artists, "");
+    set_label_if_changed(current_time_lbl, "00:00");
+    set_label_if_changed(duration_time_lbl, "00:00");
+    set_label_if_changed(quality_lbl, "");
+    if(progress_bar) lv_slider_set_value(progress_bar, 0, LV_ANIM_OFF);
+    music_ui_clear_album_art();
+    for(lv_obj_t * bg : bg_img) { /* show the plain base color; the next background fades in from there */
+        if(!bg) continue;
+        lv_anim_delete(bg, bg_opa_anim_cb);
+        lv_obj_set_style_opa(bg, LV_OPA_TRANSP, 0);
+    }
+    music_ui_set_lyrics_message(""); /* the layout stays as it is: it animates when the lyrics come back */
+}
+
 void music_ui_set_capabilities(unsigned caps)
 {
     supported_caps = caps;
