@@ -19,7 +19,7 @@ So the device is the server and the center:
 
 ```
  source (PC bridge, Linux)  ──┐                          ┌─ MPRIS players
- source (PC bridge, Windows) ─┼─ ws://device:47900/source ─▶ DEVICE (hub): shows the focused player,
+ source (PC bridge, Windows) ─┼─ ws://device:18322/source ─▶ DEVICE (hub): shows the focused player,
  source (...)               ──┘      (sources connect)     └─ sends commands back over the same socket
 ```
 
@@ -28,7 +28,7 @@ Terms: **device** = the hub (ESP32 / simulator). **source** = a program that con
 
 ## Transport
 
-- WebSocket (RFC 6455), plain `ws://` (TLS is an open question, see the end), on TCP port **47900** of the device, path
+- WebSocket (RFC 6455), plain `ws://` (TLS is an open question, see the end), on TCP port **18322** of the device, path
   `/source`. The device runs the server (ESP-IDF `esp_http_server` with WebSocket support, or a small library in the
   simulator); the source is the client and reconnects with back-off (1 s doubling to 30 s).
 - **Text frames** carry one JSON object each, `{"t": "<type>", ...}`. Unknown types and fields are ignored.
@@ -174,5 +174,5 @@ S3 (no hardware decoder), real internal-RAM headroom with the WebSocket server r
 4. ~~Lyrics from the source~~: done (`lyrics.rs`, see "What the source does"); the device shows "Loading lyrics..." while it waits (up to 25 s).
 5. Several devices and one source: allowed (the source connects to each), but volume/shuffle state then belongs to the
    player, not the device; the `state` stream keeps the devices consistent.
-6. The default port 47900 (like tidal-hifi's 47836) lies inside Linux's ephemeral port range (32768-60999): once in a while an outgoing connection of some program holds it and `bind` fails with EADDRINUSE (seen once in testing). A port below 32768 would avoid it; not changed yet.
+6. ~~The default port 47900 lies inside Linux's ephemeral port range~~: settled, the hub's port is 18322 (the bridge's own server 18801, tidal-hifi keeps its 47836), all below 32768.
 7. Quick source/player switching on the main screen (gesture or button): still undecided, see AGENTS.md "Encoder UX".

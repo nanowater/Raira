@@ -34,7 +34,7 @@ Windows GSMTC **(unverified)**: now-playing, cover thumbnail, position, play/pau
 
 ## Transport and conventions
 
-- HTTP/1.1 + JSON (UTF-8), base `http://<host>:<port>/v0`. Same style as tidal-hifi so the device's `HttpClient` is enough. Default port: 47900 (the bridge's `--port`; 47836 is tidal-hifi's).
+- HTTP/1.1 + JSON (UTF-8), base `http://<host>:<port>/v0`. Same style as tidal-hifi so the device's `HttpClient` is enough. Default port: 18801 (the bridge's `--port`; 47836 is tidal-hifi's). The bridge listens on `127.0.0.1` by default; a device on the network needs `--bind 0.0.0.0` (and then the token).
 - Commands are `POST`; reads are `GET`. Bodies are small JSON objects.
 - Errors: non-2xx with `{"error": "<code>", "message": "<text>"}`. Codes: `no_player`, `unsupported`, `bad_request`, `upstream_failed`, `auth_required`.
 - Polling first (`GET /state` every ~500 ms like today). Optional later: `GET /events` as Server-Sent Events carrying the same payload as `/state`, so the device can stop polling. Not needed for v0.
