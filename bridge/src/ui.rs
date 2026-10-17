@@ -69,8 +69,9 @@ pub async fn status(State(s): State<Ui>) -> Json<Value> {
     let st = s.access.stats();
     let cfg = s.config.lock().unwrap().clone();
 
-    let want_bind = cfg.bind.clone().unwrap_or_else(|| s.bind.clone());
-    let want_port = cfg.port.unwrap_or(s.port);
+    // what the next start without command-line options will use
+    let want_bind = cfg.bind.clone().unwrap_or_else(|| config::DEFAULT_BIND.to_string());
+    let want_port = cfg.port.unwrap_or(config::DEFAULT_PORT);
     Json(json!({
         "version": env!("CARGO_PKG_VERSION"),
         "bind": s.bind,
@@ -141,8 +142,8 @@ pub async fn set_config(State(s): State<Ui>, Json(b): Json<ConfigBody>) -> Respo
 
     {
         let mut cfg = s.config.lock().unwrap();
-        cfg.bind = Some(bind);
-        cfg.port = Some(b.port);
+        cfg.bind = (bind != config::DEFAULT_BIND).then_some(bind); // a default is not pinned in the file
+        cfg.port = (b.port != config::DEFAULT_PORT).then_some(b.port);
         cfg.tidal_hifi = Some(tidal_spec);
         if let Err(e) = config::save(&cfg) {
             return (StatusCode::INTERNAL_SERVER_ERROR, format!("cannot save {}: {e}", config::path().display())).into_response();

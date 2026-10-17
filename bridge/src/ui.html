@@ -67,7 +67,9 @@
   </section>
 
   <section>
-    <h2>Connect a device (older: the device polls this PC)</h2>
+    <h2>Older mode: a device that polls this PC</h2>
+    <div class="note dim" id="legacy-off" hidden>Not in use. The bridge listens on this PC only (the default), which is all the way above needs: the bridge connects to the device itself. Only a device that polls this PC would need the listen address 0.0.0.0 (Network, below) and the token.</div>
+    <div id="legacy-body">
     <div class="row"><span class="dim">Address</span><span id="addr" class="grow"></span></div>
     <div class="row">
       <span class="dim">Token</span>
@@ -80,6 +82,7 @@
     <div class="note dim" id="authnote"></div>
     <div class="row" style="margin-top:12px"><span class="dim">Device</span><span id="device" class="grow"></span></div>
     <div class="note" id="denied"></div>
+    </div>
   </section>
 
   <section>
@@ -173,6 +176,11 @@ function render(d) {
   renderNearby(d.nearby || []);
   renderDevices(d.devices || []);
   $('ver').textContent = 'v' + d.version;
+  // shown only when it matters: the bridge listens on the network, or a device has already called it
+  const local = /^(127\.|localhost|::1)/.test(d.bind);
+  const legacyIdle = local && d.device.requests === 0 && d.device.denied === 0;
+  $('legacy-body').hidden = legacyIdle;
+  $('legacy-off').hidden = !legacyIdle;
   const host = d.lan_ip || '<this PC\'s IP>';
   $('addr').replaceChildren(Object.assign(document.createElement('code'), { textContent: host + ':' + d.port }));
   $('token').textContent = shown ? d.auth.token : '•'.repeat(d.auth.token.length);
@@ -181,7 +189,7 @@ function render(d) {
   $('regen').title = d.auth.fixed ? 'The token was set with --token' : '';
   setNote($('authnote'), d.auth.enforced ? 'dim' : 'warn',
     d.auth.enforced ? 'Every request needs this token.'
-      : (/^(127\.|localhost|::1)/.test(d.bind) ? 'Not required while the bridge listens on this PC only. Enter it on the device if you open the bridge to the network.'
+      : (local ? 'Not required while the bridge listens on this PC only.'
                                                 : 'No token is required: anyone on the network can control the players (started with --no-auth).'));
 
   const dv = d.device;

@@ -15,7 +15,7 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::config::{self, Config, DeviceCfg};
 use crate::hub::{Cmd, Hub};
 
-const DEFAULT_PORT: u16 = 47900;
+const DEFAULT_PORT: u16 = 18322; // the hub (device) port when an address is typed without one
 const TICK: Duration = Duration::from_millis(500);
 const HEARTBEAT: Duration = Duration::from_secs(30);
 

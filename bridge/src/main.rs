@@ -120,8 +120,10 @@ async fn main() {
         let c = cfg.lock().unwrap();
         (c.bind.clone(), c.port, c.tidal_hifi.clone())
     };
-    let bind = arg("--bind").or(cfg_bind).unwrap_or_else(|| "0.0.0.0".into());
-    let port: u16 = arg("--port").and_then(|p| p.parse().ok()).or(cfg_port).unwrap_or(47900);
+    // Listening on this PC only by default: the hub design needs no incoming connection (the bridge connects out), and the
+    // settings page and the older v0 API are for this PC. A device that polls this PC (v0) needs --bind 0.0.0.0 (and the token).
+    let bind = arg("--bind").or(cfg_bind).unwrap_or_else(|| config::DEFAULT_BIND.into());
+    let port: u16 = arg("--port").and_then(|p| p.parse().ok()).or(cfg_port).unwrap_or(config::DEFAULT_PORT);
 
     // Access: --no-auth = open, --token X = that token, otherwise a stored token, required unless bound to loopback.
     let access = auth::Access::new(&bind, flag("--no-auth"), arg("--token"));

@@ -5,6 +5,11 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+/// What the bridge listens on when neither the command line nor the settings file says otherwise. The settings page stores bind and
+/// port only when they differ from these, so a later change of a default reaches everyone who never chose a value.
+pub const DEFAULT_BIND: &str = "127.0.0.1";
+pub const DEFAULT_PORT: u16 = 18801;
+
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]
 pub struct Config {
     pub bind: Option<String>,
