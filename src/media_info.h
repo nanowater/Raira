@@ -18,6 +18,9 @@ struct MediaInfo {
     std::string image_url; /* cover URL; changes when the artwork changes */
     double volume = -1;   /* 0.0..1.0, -1 when the service did not report it */
     int current_sec  = 0;
+    /* Position in milliseconds when the source knows it that precisely (the hub, the bridge), else -1 and only
+     * current_sec (whole seconds) is valid. The lyrics clock uses it to stay within a few hundred ms instead of +-1 s. */
+    int64_t position_ms = -1;
     int duration_sec = 0;
     /* MediaCapability bits the service supports right now, -1 = not reported (the source's capabilities()
      * stands). A host bridge fills it: what the selected player can do changes when the player does. */

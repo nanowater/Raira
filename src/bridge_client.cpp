@@ -158,7 +158,10 @@ bool BridgeSource::get_current(MediaInfo & out)
         m.image_url = str_of(*tr, "cover"); /* opaque cover key; get_cover() turns it into a request */
     }
     auto pos = j.find("position_ms");
-    if(pos != j.end() && pos->is_number()) m.current_sec = (int)(pos->get<double>() / 1000.0);
+    if(pos != j.end() && pos->is_number()) {
+        m.position_ms = (int64_t)pos->get<double>();
+        m.current_sec = (int)(m.position_ms / 1000);
+    }
     auto vol = j.find("volume");
     if(vol != j.end() && vol->is_number()) m.volume = vol->get<double>();
     auto sh = j.find("shuffle");

@@ -394,7 +394,8 @@ bool HubSource::get_current(MediaInfo & out)
             if(pl->playing)
                 pos += (int64_t)(pl->rate * (double)std::chrono::duration_cast<std::chrono::milliseconds>(clk::now() - pl->arrival).count());
             if(m.duration_sec > 0 && pos > (int64_t)m.duration_sec * 1000) pos = (int64_t)m.duration_sec * 1000;
-            m.current_sec = (int)(pos / 1000);
+            m.current_sec  = (int)(pos / 1000);
+            m.position_ms  = pos;
             if(!pl->cover.empty()) m.image_url = src->id + "|" + pl->cover;
         }
         /* tell each source which of its players the user is looking at (once per change) */

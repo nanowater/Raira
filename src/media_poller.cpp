@@ -264,7 +264,8 @@ void apply_update(const Update * u)
                         quality.c_str(), quality_tier(u->info), u->info.status == "playing", u->info.shuffle,
                         u->info.repeat == "single" ? MUSIC_UI_REPEAT_SINGLE
                         : u->info.repeat == "all"  ? MUSIC_UI_REPEAT_ALL
-                                                   : MUSIC_UI_REPEAT_OFF};
+                                                   : MUSIC_UI_REPEAT_OFF,
+                        u->info.position_ms >= 0 ? (int)u->info.position_ms : -1};
     music_ui_update(&st);
     if(u->clear_cover) music_ui_clear_album_art();
     if(!u->cover.data.empty())

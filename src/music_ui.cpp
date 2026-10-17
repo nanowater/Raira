@@ -521,8 +521,12 @@ static void lyrics_sync_position(const music_ui_state_t * st, bool hold)
         pos_playing = st->playing;
         return;
     }
-    int32_t reported = st->current_sec * 1000 + 500; /* polls report whole seconds */
-    bool keep        = pos_playing && st->playing && std::abs(position_ms() - reported) <= 1000;
+    /* A source that knows the position in ms gets it as it is and may drift only a little before we resync; one that reports
+     * whole seconds (tidal-hifi direct) is taken at the middle of its second, +-1 s. */
+    const bool precise  = st->position_ms >= 0;
+    const int32_t reported = precise ? st->position_ms : st->current_sec * 1000 + 500;
+    const int32_t tolerance = precise ? 300 : 1000;
+    bool keep        = pos_playing && st->playing && std::abs(position_ms() - reported) <= tolerance;
     pos_playing      = st->playing;
     if(!keep) {
         pos_base_ms = reported;

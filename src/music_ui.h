@@ -28,6 +28,7 @@ typedef struct {
     bool playing;
     bool shuffle;
     int repeat; /* music_ui_repeat_t */
+    int position_ms; /* -1: only current_sec (whole seconds) is known; else the position in ms, as of this update */
 } music_ui_state_t;
 
 /* Declared in the order tidal-hifi cycles them: off -> all -> single -> off. */
