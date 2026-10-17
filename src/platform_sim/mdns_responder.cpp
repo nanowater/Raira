@@ -1,6 +1,7 @@
 #include "platform/mdns.h"
 #include <arpa/inet.h>
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <ifaddrs.h>
@@ -294,14 +295,16 @@ private:
 
     void loop_()
     {
-        for(int i = 0; i < 2 && running_; i++) { /* announce twice, a second apart (RFC 6762 §8.3) */
-            announce(TTL);
-            for(int w = 0; w < 10 && running_; w++) usleep(100 * 1000);
-        }
-        int idle = 0;
+        using clock = std::chrono::steady_clock;
+        /* Announce twice, a second apart (RFC 6762 section 8.3), but without sleeping: questions that arrive meanwhile are
+         * answered at once (a sleeping loop left the responder deaf for the first two seconds). */
+        announce(TTL);
+        const auto second_at = clock::now() + std::chrono::seconds(1);
+        bool second_sent     = false;
+        auto last_refresh    = clock::now();
         while(running_) {
             pollfd pf{fd_, POLLIN, 0};
-            if(poll(&pf, 1, 500) > 0 && (pf.revents & POLLIN)) {
+            if(poll(&pf, 1, second_sent ? 500 : 100) > 0 && (pf.revents & POLLIN)) {
                 uint8_t buf[9000];
                 alignas(cmsghdr) char ctrl[256];
                 sockaddr_in from{};
@@ -321,8 +324,12 @@ private:
                     handle(buf, (size_t)n, from, ifindex);
                 }
             }
-            if(++idle >= 20) { /* about every 10 s: pick up interfaces that came up later */
-                idle = 0;
+            if(!second_sent && clock::now() >= second_at) {
+                second_sent = true;
+                announce(TTL);
+            }
+            if(clock::now() - last_refresh >= std::chrono::seconds(10)) { /* pick up interfaces that came up later */
+                last_refresh = clock::now();
                 refresh_interfaces();
             }
         }
