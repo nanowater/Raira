@@ -95,6 +95,7 @@ fn arg(name: &str) -> Option<String> {
 /// `music-bridge --lyrics-test <title> <artists> <album> <seconds>`: one network lookup, the result as JSON on stdout (to compare
 /// with the device's own implementation, src/lyrics.cpp).
 async fn lyrics_test(a: &[String]) {
+    tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).with_writer(std::io::stderr).init();
     let t = lyrics::Track { title: a[0].clone(), artists: a[1].clone(), album: a[2].clone(), duration_sec: a[3].parse().unwrap_or(0) };
     match lyrics::lookup_network(&t).await {
         Ok(Some(l)) => println!("{}", serde_json::json!({ "synced": l.synced, "lines": l.lines.iter().map(|x| serde_json::json!([x.ms, x.text])).collect::<Vec<_>>() })),
@@ -106,6 +107,20 @@ async fn lyrics_test(a: &[String]) {
 #[tokio::main]
 async fn main() {
     let argv: Vec<String> = std::env::args().collect();
+    // `--lyrics-test-full`: like --lyrics-test but through the cache and the retry (what the device's request goes through)
+    if let Some(i) = argv.iter().position(|a| a == "--lyrics-test-full") {
+        tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).with_writer(std::io::stderr).init();
+        if argv.len() >= i + 5 {
+            let a = &argv[i + 1..i + 5];
+            let t = lyrics::Track { title: a[0].clone(), artists: a[1].clone(), album: a[2].clone(), duration_sec: a[3].parse().unwrap_or(0) };
+            match lyrics::lookup(&t).await {
+                Ok(Some(l)) => println!("found ({} lines)", l.lines.len()),
+                Ok(None) => println!("none"),
+                Err(()) => println!("error"),
+            }
+            return;
+        }
+    }
     if let Some(i) = argv.iter().position(|a| a == "--lyrics-test") {
         if argv.len() >= i + 5 {
             lyrics_test(&argv[i + 1..i + 5]).await;

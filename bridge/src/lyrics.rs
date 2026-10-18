@@ -11,9 +11,18 @@ use serde_json::Value;
 use tokio::sync::Semaphore;
 
 const BASE: &str = "https://lrclib.net/api/";
+
+/// LRCLIB's address; `MUSIC_BRIDGE_LRCLIB` replaces it (tests against a fake server).
+fn base() -> String {
+    std::env::var("MUSIC_BRIDGE_LRCLIB").unwrap_or_else(|_| BASE.to_string())
+}
 /// A message to the device may be 64 KB at most (docs/HUB_PROTOCOL.md): longer lyrics are cut.
 pub const MAX_LINES_BYTES: usize = 60 * 1024;
-const NEGATIVE_TTL: Duration = Duration::from_secs(7 * 24 * 3600);
+/// How long "LRCLIB has nothing" is believed. Short on purpose: it also comes out when LRCLIB was only briefly unwell, and a week of
+/// believing that meant a song without lyrics for a week.
+const NEGATIVE_TTL: Duration = Duration::from_secs(3600);
+/// A lookup that came back empty or failed is repeated once after this pause before it is believed.
+const RETRY_AFTER: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Line {
@@ -294,10 +303,21 @@ async fn get(url: &str) -> Answer {
         match client().get(url).send().await {
             Ok(resp) if resp.status().is_success() => return resp.text().await.map(Answer::Body).unwrap_or(Answer::Failed),
             Ok(resp) if resp.status().as_u16() == 404 => return Answer::NotFound,
-            Ok(resp) if resp.status().as_u16() == 429 => tokio::time::sleep(Duration::from_millis(1500 * (attempt + 1))).await,
-            _ => return Answer::Failed,
+            Ok(resp) if resp.status().as_u16() == 429 => {
+                tracing::warn!("lyrics: LRCLIB answered 429 (attempt {}) for {url}", attempt + 1);
+                tokio::time::sleep(Duration::from_millis(1500 * (attempt + 1))).await
+            }
+            Ok(resp) => {
+                tracing::warn!("lyrics: LRCLIB answered {} for {url}", resp.status());
+                return Answer::Failed;
+            }
+            Err(e) => {
+                tracing::warn!("lyrics: request failed for {url}: {e}");
+                return Answer::Failed;
+            }
         }
     }
+    tracing::warn!("lyrics: still 429 after the retries for {url}");
     Answer::Failed
 }
 
@@ -327,8 +347,10 @@ pub async fn lookup_network(t: &Track) -> Result<Option<Lyrics>, ()> {
     // website, which also finds entries filed under another title form ("あぶく - Bubble" for "Bubble"). We rank them ourselves.
     let mut cands: Vec<(Value, bool)> = Vec::new();
     let mut answered = false;
+    let mut failed = false; // a request that gave no usable answer
 
-    let mut url = format!("{BASE}get?track_name={}&artist_name={}", esc(&t.title), esc(&t.artists));
+    let base = base();
+    let mut url = format!("{base}get?track_name={}&artist_name={}", esc(&t.title), esc(&t.artists));
     if !t.album.is_empty() {
         url += &format!("&album_name={}", esc(&t.album));
     }
@@ -345,11 +367,11 @@ pub async fn lookup_network(t: &Track) -> Result<Option<Lyrics>, ()> {
             }
         }
         Answer::NotFound => answered = true,
-        Answer::Failed => {}
+        Answer::Failed => failed = true,
     }
 
     let q = format!("{} {}", strip_suffix(&t.title), first_artist(&t.artists));
-    match get(&format!("{BASE}search?q={}", esc(&q))).await {
+    match get(&format!("{base}search?q={}", esc(&q))).await {
         Answer::Body(b) => {
             answered = true;
             if let Ok(Value::Array(items)) = serde_json::from_str::<Value>(&b) {
@@ -357,12 +379,15 @@ pub async fn lookup_network(t: &Track) -> Result<Option<Lyrics>, ()> {
             }
         }
         Answer::NotFound => answered = true,
-        Answer::Failed => {}
+        Answer::Failed => failed = true,
     }
-    if !answered {
+    // "nothing found" is only believed when both requests were answered: with one of them lost the candidates may simply be missing
+    if !answered || (failed && cands.is_empty()) {
         return Err(());
     }
-    Ok(pick(&cands, t))
+    let picked = pick(&cands, t);
+    tracing::info!("lyrics: \"{}\" — {} candidate(s), {}", t.title, cands.len(), if picked.is_some() { "found" } else { "none usable" });
+    Ok(picked)
 }
 
 // ---- cache ----
@@ -383,6 +408,9 @@ fn key_of(t: &Track) -> String {
 #[derive(Serialize, Deserialize)]
 struct Cached {
     at: u64, // unix seconds
+    /// "title — artists", only to tell the entries apart when looking into the cache by hand
+    #[serde(default)]
+    track: String,
     lyrics: Option<Lyrics>,
 }
 
@@ -403,7 +431,7 @@ fn cache_read(t: &Track) -> Option<Option<Lyrics>> {
 fn cache_write(t: &Track, lyrics: &Option<Lyrics>) {
     let dir = cache_dir();
     if std::fs::create_dir_all(&dir).is_ok() {
-        let c = Cached { at: now(), lyrics: lyrics.clone() };
+        let c = Cached { at: now(), track: format!("{} — {}", t.title, t.artists), lyrics: lyrics.clone() };
         let _ = std::fs::write(dir.join(format!("{}.json", key_of(t))), serde_json::to_string(&c).unwrap_or_default());
     }
 }
@@ -418,7 +446,15 @@ pub async fn lookup(t: &Track) -> Result<Option<Lyrics>, ()> {
     if let Some(hit) = cache_read(t) { // another request may have filled it while we waited
         return Ok(hit);
     }
-    let found = lookup_network(t).await?;
+    let mut found = lookup_network(t).await;
+    if !matches!(found, Ok(Some(_))) {
+        tokio::time::sleep(RETRY_AFTER).await; // a blip of LRCLIB rarely lasts twice
+        let again = lookup_network(t).await;
+        if matches!(again, Ok(Some(_))) || found.is_err() {
+            found = again;
+        }
+    }
+    let found = found?; // Err: not remembered, the next request for this track asks again
     cache_write(t, &found);
     Ok(found)
 }
