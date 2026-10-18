@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The automatic checks, one after the other. None of them touches your settings or needs a real player or a real device.
 #
-#   tools/run_checks.sh              unit tests of the bridge, WebSocket server, mDNS responder, the device's Automatic focus and
+#   tools/run_checks.sh              unit tests of the bridge, WebSocket server, mDNS responder, the lyrics lookup against a failing fake
+#                                    LRCLIB, the device's Automatic focus and
 #                                    its cache after a reconnect (the last two need a built build/bin/lvglsim, Xvfb and ImageMagick;
 #                                    they are skipped without them)
 #   tools/run_checks.sh --network    also the C++/Rust lyrics comparison (asks LRCLIB, takes a minute)
@@ -26,6 +27,7 @@ if [ -x "$ROOT/build/bin/lvglsim" ] && command -v Xvfb >/dev/null && command -v 
 else
   results+=("skipped device checks (need build/bin/lvglsim, Xvfb, ImageMagick)")
 fi
+run "lyrics: a lost request is not \"no lyrics\" (lyrics_retry)" "$ROOT/tools/lyrics_retry/run.sh"
 [ "$NETWORK" = 1 ] && run "lyrics: device vs bridge (lyrics_compare)" "$ROOT/tools/lyrics_compare/compare.sh"
 
 echo; echo "=== summary"
