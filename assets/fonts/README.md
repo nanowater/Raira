@@ -4,16 +4,14 @@
 punctuation, kana, Hangul jamo/syllables, fullwidth forms (！？～…), Latin Extended, Greek, Cyrillic, arrows, geometric shapes and misc symbols (★♪♡), and ~7k Han characters (KS X 1001 hanja + JIS X 0208 kanji). Embedded via `src/fonts/noto_sans_kr.c` and rendered
 with LVGL TinyTTF at runtime (any size, one file).
 
-Regenerate (needs `pip install fonttools`). The Han code points are every CJK ideograph that decodes
-in Python's `euc_kr` (lead bytes 0xCA-0xFD) or `shift_jis` (lead bytes 0x88-0x9F, 0xE0-0xEA) codecs,
-appended to the unicode list below:
-
-    pyftsubset NotoSansCJK-Regular.ttc --font-number=1 \
-      --unicodes="U+0020-007E,U+00A0-00FF,U+0100-024F,U+0370-03FF,U+0400-04FF,U+2000-206F,U+2190-21FF,U+25A0-25FF,U+2600-26FF,U+3000-303F,U+3040-30FF,U+3130-318F,U+AC00-D7A3,U+FF00-FFEF,<han...>" \
-      --layout-features='' --output-file=NotoSansKR-Regular-subset.otf
+Regenerate with `python3 assets/fonts/make_subset.py` (needs `pip install fonttools` and the system's Noto Sans CJK, default
+`/usr/share/fonts/noto-cjk`). The Han set is every CJK ideograph that decodes in Python's `euc_kr` (lead bytes 0xCA-0xFD) or `shift_jis`
+(lead bytes 0x88-0x9F, 0xE0-0xEA, trail bytes 0x40-0xFC) codecs; the script fails if one of them is missing from the result. (An earlier hand-made build
+lacked 132 JIS X 0208 kanji such as 洒 and 滲, which showed up as blank glyphs in lyrics; box-drawing characters U+2500-257F were added at the same time.)
+Kanji outside JIS X 0208 (JIS X 0213 level 3/4, +2918 kanji) would cost about 0.85 MB per face and none of 104 real lyrics needed them.
 
 `NotoSansKR-Bold-subset.otf` is the same glyph set from `NotoSansCJK-Bold.ttc` (used for lyrics);
-regenerate it with the same command, swapping the input file.
+the script builds both.
 
 Simplified-Chinese-only characters (GB2312, ~+0.9MB) are not included. The font is the KR face, so
 Japanese kanji are drawn with Korean glyph variants.
