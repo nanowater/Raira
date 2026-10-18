@@ -3,7 +3,7 @@
 #
 #   tools/run_checks.sh              unit tests of the bridge, WebSocket server, mDNS responder, the lyrics lookup against a failing fake
 #                                    LRCLIB, the device's Automatic focus and
-#                                    its cache after a reconnect (the last two need a built build/bin/lvglsim, Xvfb and ImageMagick;
+#                                    its cache after a reconnect and its lyrics retry (the device checks need a built build/bin/lvglsim, Xvfb and ImageMagick;
 #                                    they are skipped without them)
 #   tools/run_checks.sh --network    also the C++/Rust lyrics comparison (asks LRCLIB, takes a minute)
 #
@@ -24,6 +24,9 @@ run "mDNS responder (mdns_probe)" "$ROOT/tools/mdns_probe/run.sh"
 if [ -x "$ROOT/build/bin/lvglsim" ] && command -v Xvfb >/dev/null && command -v import >/dev/null; then
   run "device: Automatic follows the source's pick (ui_run pick)" "$ROOT/tools/ui_run.sh" --scenario pick --shots 1
   run "device: cover and lyrics are kept across a reconnect (ui_run reconnect)" "$ROOT/tools/ui_run.sh" --scenario reconnect --features cover,lyrics --shots 1
+  run "device: a failed lyrics lookup is asked again (ui_run lyrics_retry)" "$ROOT/tools/ui_run.sh" --scenario lyrics_retry --features lyrics --shots 1
+  run "device: no lyrics is not asked again (ui_run lyrics_none)" "$ROOT/tools/ui_run.sh" --scenario lyrics_none --features lyrics --shots 1
+  run "device: a new track ends the retrying (ui_run lyrics_retry_track_change)" "$ROOT/tools/ui_run.sh" --scenario lyrics_retry_track_change --features lyrics --shots 1
 else
   results+=("skipped device checks (need build/bin/lvglsim, Xvfb, ImageMagick)")
 fi

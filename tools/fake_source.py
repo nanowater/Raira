@@ -13,7 +13,9 @@ feature the device would not ask); otherwise cover_err / "not found".
 A step may carry "expect_focus": the player id the device must be showing (it announces its choice with a `focus` message) when
 the step ends, and "expect_counts": {"cover_req": N, "lyrics_req": M}, how many of those requests the device has sent so far; a
 mismatch makes the exit code 1. That is how the Automatic rule and the device's cache after a reconnect are checked without
-looking at the screen. A step {"disconnect": S} closes the connection, stays away S seconds and connects again.
+looking at the screen. A step {"disconnect": S} closes the connection, stays away S seconds and connects again. A step may also carry
+"lyrics_answers": ["error", "ok"], how the next lyrics_req are answered (the last entry repeats): "ok" the lyrics, "none" found:false
+(there are none), "error" found:false with an error (the lookup failed; the device asks again later). Needs --features lyrics.
 
 Exit code: 0 when the scenario ran to its end and every expectation held, 1 when the connection, the authentication or an
 expectation failed.
@@ -144,6 +146,27 @@ SCENARIOS = {
         {"send": [players("p", ("p", "Fake player", "other", "playing")), state("p", "Song B", "playing", 5000, cover="b")], "wait": 5,
          "expect_focus": "p", "expect_counts": {"cover_req": 2, "lyrics_req": 2}},
     ],
+    # a lookup that FAILED is asked again (8 s later), one that found nothing is not; a new track ends the retrying. Needs --features lyrics
+    "lyrics_retry": [
+        {"lyrics_answers": ["error", "ok"],
+         "send": [players("p", ("p", "Fake player", "other", "playing")), state("p", "Song A", "playing", 20000)], "wait": 4,
+         "expect_counts": {"lyrics_req": 1}},
+        {"wait": 8, "expect_counts": {"lyrics_req": 2}},
+        {"wait": 12, "expect_counts": {"lyrics_req": 2}},  # found: no more requests
+    ],
+    "lyrics_none": [
+        {"lyrics_answers": ["none"],
+         "send": [players("p", ("p", "Fake player", "other", "playing")), state("p", "Song A", "playing", 20000)], "wait": 4,
+         "expect_counts": {"lyrics_req": 1}},
+        {"wait": 14, "expect_counts": {"lyrics_req": 1}},  # nothing there: not asked again
+    ],
+    "lyrics_retry_track_change": [
+        {"lyrics_answers": ["error"],
+         "send": [players("p", ("p", "Fake player", "other", "playing")), state("p", "Song A", "playing", 20000)], "wait": 3,
+         "expect_counts": {"lyrics_req": 1}},
+        {"lyrics_answers": ["ok"], "send": [state("p", "Song B", "playing", 5000)], "wait": 4, "expect_counts": {"lyrics_req": 2}},
+        {"wait": 12, "expect_counts": {"lyrics_req": 2}},  # Song A's retry (8 s) must not fire any more
+    ],
     # the source's own pick must win over a newer playing player (docs/HUB_PROTOCOL.md, Automatic)
     "pick": [{"send": [players(sel, ("tidal", "tidal-hifi", "tidal", "paused"), ("web", "Firefox", "browser", "playing")),
                        state("tidal", "TIDAL song (paused)", "paused", 40000),
@@ -170,6 +193,7 @@ def main():
     features = [f for f in a.features.split(",") if f]
     counts = {"cover_req": 0, "lyrics_req": 0}  # what the device asked for, over all connections of this run
     focus = [None]                              # what the device last said it is showing
+    answers = [[], 0]                           # the "lyrics_answers" of the current step and how many were used
     session = [None]
 
     def open_session(pair_code=None):
@@ -210,8 +234,12 @@ def main():
                 ws.send({"t": "cover_err", "id": m.get("id")})
         elif m["t"] == "lyrics_req":
             counts["lyrics_req"] += 1
-            if "lyrics" in features:
+            kind = answers[0][min(answers[1], len(answers[0]) - 1)] if answers[0] else "ok"
+            answers[1] += 1
+            if "lyrics" in features and kind == "ok":
                 ws.send({"t": "lyrics", "id": m.get("id"), "found": True, "synced": True, "lines": LYRICS})
+            elif "lyrics" in features and kind == "error":
+                ws.send({"t": "lyrics", "id": m.get("id"), "found": False, "error": "upstream_failed"})
             else:
                 ws.send({"t": "lyrics", "id": m.get("id"), "found": False})
 
@@ -233,6 +261,8 @@ def main():
             print(f"{label}: connected again", flush=True)
             focus[0] = None  # the device announces its focus again when it has one
             continue
+        if "lyrics_answers" in step:
+            answers[0], answers[1] = step["lyrics_answers"], 0
         for msg in step.get("send", []):
             session[0].send(msg)
         print(f"{label} sent, waiting {step.get('wait', 1)} s", flush=True)
