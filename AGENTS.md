@@ -127,7 +127,7 @@ UI/service code should depend on a common normalized `MediaInfo`-like model, not
 - Do not attempt to use the official TIDAL OpenAPI for now-playing or control (INTERNAL tier).
 - Do not block the LVGL main loop with synchronous HTTP, and do not touch LVGL from other threads.
 - Do not ship hardcoded host IP; make it configurable (NVS/flash settings for device; `-s` / `TIDAL_HIFI_HOST` for sim — the sim default `localhost` is fine).
-- Do not hammer LRCLIB (it rate-limits with HTTP 429): at most one lookup (≤2 requests) per settled track.
+- Do not hammer LRCLIB (it rate-limits with HTTP 429): at most one lookup (≤2 requests) per settled track. The only repeat is after a lookup that FAILED (not one that found nothing): the bridge repeats once after 2 s, and the device asks again after 8, 30 and 90 s while the same track plays (`LYRICS_RETRY_AFTER_S` in `media_poller.cpp`; `Lyrics::failed` tells failure from "none").
 
 ## Open / TBD
 
