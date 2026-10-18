@@ -1,6 +1,6 @@
 //! Player registry, selection and the mapping from raw MPRIS data to the protocol's types.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -62,10 +62,14 @@ pub struct Hub {
     mpris: Mpris,
     inner: Mutex<Inner>,
     tidal: RwLock<Option<Arc<Tidal>>>,
+    /// players the user switched off for devices: they take no part in the selection, the list, the states or the commands
+    disabled: RwLock<HashSet<String>>,
 }
 
 struct Snapshot {
     players: Vec<(String, Raw)>,
+    /// running players that are switched off (only the settings page lists them)
+    hidden: Vec<(String, Raw)>,
     selected: Option<String>,
 }
 
@@ -150,7 +154,12 @@ fn capabilities(raw: &Raw) -> Vec<&'static str> {
 
 impl Hub {
     pub async fn new(tidal: Option<Tidal>) -> zbus::Result<Arc<Self>> {
-        Ok(Arc::new(Self { mpris: Mpris::connect().await?, inner: Mutex::new(Inner::default()), tidal: RwLock::new(tidal.map(Arc::new)) }))
+        Ok(Arc::new(Self {
+            mpris: Mpris::connect().await?,
+            inner: Mutex::new(Inner::default()),
+            tidal: RwLock::new(tidal.map(Arc::new)),
+            disabled: RwLock::new(HashSet::new()),
+        }))
     }
 
     /// The tidal-hifi supplement, for the player it belongs to.
@@ -161,6 +170,15 @@ impl Hub {
     /// Switch the tidal-hifi supplement on (Some) or off (None) at runtime.
     pub fn set_tidal(&self, t: Option<Tidal>) {
         *self.tidal.write().unwrap() = t.map(Arc::new);
+    }
+
+    /// Replace the set of players that are not sent to devices.
+    pub fn set_disabled(&self, ids: impl IntoIterator<Item = String>) {
+        *self.disabled.write().unwrap() = ids.into_iter().collect();
+    }
+
+    pub fn disabled(&self) -> HashSet<String> {
+        self.disabled.read().unwrap().clone()
     }
 
     /// (address, answers right now) of the tidal-hifi supplement, None when it is off.
@@ -181,6 +199,9 @@ impl Hub {
             let id = if *n == 1 { base } else { format!("{base}-{n}") };
             players.push((id, raw));
         }
+        // switched-off players are set aside before the selection is settled, so neither the automatic pick nor a device can land on one
+        let disabled = self.disabled.read().unwrap().clone();
+        let (hidden, players): (Vec<_>, Vec<_>) = players.into_iter().partition(|(id, _)| disabled.contains(id));
 
         let mut inner = self.inner.lock().unwrap();
         let now = Instant::now();
@@ -207,7 +228,7 @@ impl Hub {
             }
         }
         let selected = inner.explicit.clone().or_else(|| inner.auto.clone());
-        Snapshot { players, selected }
+        Snapshot { players, hidden, selected }
     }
 
     fn pick<'a>(snap: &'a Snapshot, player: Option<&str>) -> Result<&'a (String, Raw), ApiError> {
@@ -236,6 +257,13 @@ impl Hub {
                 })
                 .collect(),
         }
+    }
+
+    /// What the settings page lists: the players devices see (with the selection) and, apart, the running ones that are switched off.
+    pub async fn players_with_hidden(&self) -> (Players, Vec<PlayerEntry>) {
+        let snap = self.snapshot().await;
+        let entry = |(id, raw): &(String, Raw)| PlayerEntry { id: id.clone(), name: raw.identity.clone(), service: service_of(raw), status: status_of(raw) };
+        (Players { selected: snap.selected.clone(), players: snap.players.iter().map(entry).collect() }, snap.hidden.iter().map(entry).collect())
     }
 
     pub async fn select(&self, id: &str) -> Result<(), ApiError> {

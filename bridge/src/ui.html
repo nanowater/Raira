@@ -37,6 +37,7 @@
   label.field span { display: block; font-size: 13px; color: var(--dim); margin-bottom: 3px; }
   .player { display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-radius: 8px; }
   .player:hover { background: var(--field); }
+  .player.off .grow { opacity: .55; }
   .dev { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 6px; border-top: 1px solid var(--line); }
   .dev:first-child { border-top: 0; }
   .dev input[type=text] { width: 9em; }
@@ -87,7 +88,7 @@
 
   <section>
     <h2>Players</h2>
-    <div class="dim small">The one you pick is what a device on <i>Automatic</i> shows, even if another player (a browser video) starts later. A device can still pin its own choice.</div>
+    <div class="dim small">The one you pick is what a device on <i>Automatic</i> shows, even if another player (a browser video) starts later. A device can still pin its own choice. Switch <i>send to devices</i> off for a player (say a browser) to hide it from the devices altogether.</div>
     <div id="players"></div>
     <div class="note dim" id="now"></div>
   </section>
@@ -206,11 +207,15 @@ function render(d) {
   if (!d.players.players.length) list.append(Object.assign(document.createElement('div'), { className: 'dim', textContent: 'No player is running. Start Spotify, TIDAL or a browser player.' }));
   for (const p of d.players.players) {
     const row = document.createElement('label'); row.className = 'player';
-    const radio = Object.assign(document.createElement('input'), { type: 'radio', name: 'player', checked: p.id === d.players.selected });
+    row.classList.toggle('off', !p.enabled);
+    const radio = Object.assign(document.createElement('input'), { type: 'radio', name: 'player', checked: p.id === d.players.selected, disabled: !p.enabled });
     radio.onchange = async () => { try { await api('/ui/select', 'POST', { id: p.id }); refresh(); } catch (e) { toast(e.message); } };
     const name = Object.assign(document.createElement('span'), { className: 'grow', textContent: p.name });
     const kind = Object.assign(document.createElement('span'), { className: 'tag', textContent: p.service });
-    row.append(radio, name, kind, dot(p.status === 'playing' ? 'good' : '', p.status));
+    const send = Object.assign(document.createElement('input'), { type: 'checkbox', checked: p.enabled, title: 'Send this player to devices' });
+    send.onchange = async () => { try { await api('/ui/players/enabled', 'POST', { id: p.id, enabled: send.checked }); } catch (e) { toast(e.message); } refresh(); };
+    const sendLabel = Object.assign(document.createElement('span'), { className: 'tag', textContent: 'send to devices' });
+    row.append(radio, name, kind, p.running ? dot(p.status === 'playing' ? 'good' : '', p.status) : dot('', 'not running'), sendLabel, send);
     list.append(row);
   }
   const n = d.now;

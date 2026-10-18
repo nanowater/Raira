@@ -63,7 +63,7 @@ fn ago(t: Option<Instant>) -> Value {
 }
 
 pub async fn status(State(s): State<Ui>) -> Json<Value> {
-    let players = s.hub.players().await;
+    let (players, hidden) = s.hub.players_with_hidden().await;
     let now = s.hub.state(None).await.ok();
     let tidal = s.hub.tidal_status().await;
     let st = s.access.stats();
@@ -86,7 +86,7 @@ pub async fn status(State(s): State<Ui>) -> Json<Value> {
             "last_denied_s": ago(st.last_denied.map(|(t, _)| t)),
             "last_denied_ip": st.last_denied.map(|(_, ip)| ip.to_string()),
         },
-        "players": players,
+        "players": players_json(&players, &hidden, &s.hub.disabled()),
         "now": now.map(|n| json!({ "title": n.track.title, "artists": n.track.artists, "status": n.status, "player": n.player })),
         "devices": s.clients.statuses(),
         "nearby": s.discovery.nearby(&s.clients.configured()),
@@ -99,6 +99,51 @@ pub async fn status(State(s): State<Ui>) -> Json<Value> {
             "restart_needed": want_bind != s.bind || want_port != s.port,
         },
     }))
+}
+
+/// The players for the page: every one with `enabled` (the switch "send to devices"); switched-off players that are not running right now
+/// are listed too, by their id, so that they can be switched on again.
+fn players_json(players: &crate::model::Players, hidden: &[crate::model::PlayerEntry], disabled: &std::collections::HashSet<String>) -> Value {
+    let mut list: Vec<Value> = Vec::new();
+    for p in &players.players {
+        list.push(json!({ "id": p.id, "name": p.name, "service": p.service, "status": p.status, "enabled": true, "running": true }));
+    }
+    for p in hidden {
+        list.push(json!({ "id": p.id, "name": p.name, "service": p.service, "status": p.status, "enabled": false, "running": true }));
+    }
+    let mut absent: Vec<&String> = disabled.iter().filter(|id| !hidden.iter().any(|p| &p.id == *id)).collect();
+    absent.sort();
+    for id in absent {
+        list.push(json!({ "id": id, "name": id, "service": "", "status": "", "enabled": false, "running": false }));
+    }
+    json!({ "selected": players.selected, "players": list })
+}
+
+#[derive(Deserialize)]
+pub struct EnabledBody {
+    id: String,
+    enabled: bool,
+}
+
+/// The switch "send to devices" of one player: applies at once (the hub client's next push drops or adds the player) and is saved.
+pub async fn set_player_enabled(State(s): State<Ui>, Json(b): Json<EnabledBody>) -> Response {
+    let mut disabled = s.hub.disabled();
+    if b.enabled {
+        disabled.remove(&b.id);
+    } else {
+        disabled.insert(b.id.clone());
+    }
+    let mut list: Vec<String> = disabled.iter().cloned().collect();
+    list.sort();
+    {
+        let mut cfg = s.config.lock().unwrap();
+        cfg.disabled_players = list.clone();
+        if let Err(e) = config::save(&cfg) {
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("cannot save {}: {e}", config::path().display())).into_response();
+        }
+    }
+    s.hub.set_disabled(list);
+    StatusCode::NO_CONTENT.into_response()
 }
 
 #[derive(Deserialize)]

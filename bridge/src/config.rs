@@ -19,6 +19,9 @@ pub struct Config {
     /// this bridge's identity towards devices (generated on first use)
     pub source_id: Option<String>,
     pub source_name: Option<String>,
+    /// ids of players that are not sent to devices (the switch on the settings page); remembered even while a player is not running
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disabled_players: Vec<String>,
     /// the devices (hubs) this bridge connects to
     #[serde(default)]
     pub devices: Vec<DeviceCfg>,

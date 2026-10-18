@@ -137,6 +137,7 @@ async fn main() {
     let tidal_spec = arg("--tidal-hifi").or(cfg_tidal).unwrap_or_else(|| ui::DEFAULT_TIDAL.into());
     let tidal = if flag("--no-tidal-hifi") { None } else { tidal::Tidal::new(&tidal_spec) };
     let hub = Hub::new(tidal).await.expect("cannot connect to the D-Bus session bus");
+    hub.set_disabled(cfg.lock().unwrap().disabled_players.clone());
 
     // the devices' API: /v0, with the token check
     let v0 = Router::new()
@@ -169,6 +170,7 @@ async fn main() {
         .route("/", get(ui::page))
         .route("/ui/status", get(ui::status))
         .route("/ui/select", post(ui::select))
+        .route("/ui/players/enabled", post(ui::set_player_enabled))
         .route("/ui/token/regenerate", post(ui::regenerate_token))
         .route("/ui/config", post(ui::set_config))
         .route("/ui/devices/add", post(ui::add_device))
