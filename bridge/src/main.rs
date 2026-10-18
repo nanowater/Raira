@@ -140,6 +140,22 @@ async fn main() {
     let bind = arg("--bind").or(cfg_bind).unwrap_or_else(|| config::DEFAULT_BIND.into());
     let port: u16 = arg("--port").and_then(|p| p.parse().ok()).or(cfg_port).unwrap_or(config::DEFAULT_PORT);
 
+    // Take the port before anything else is started: it is what keeps a second copy out. A second copy that got as far as the hub clients
+    // would connect to the devices a second time under the same source id. "Already running" is not an error (exit code 0), so that a
+    // service manager does not restart it in a loop.
+    let addr = format!("{bind}:{port}");
+    let listener = match tokio::net::TcpListener::bind(&addr).await {
+        Ok(l) => l,
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+            println!("music-bridge is already running (port {port} is taken): settings at http://127.0.0.1:{port}/");
+            return;
+        }
+        Err(e) => {
+            eprintln!("music-bridge: cannot listen on {addr}: {e}");
+            std::process::exit(1);
+        }
+    };
+
     // Access: --no-auth = open, --token X = that token, otherwise a stored token, required unless bound to loopback.
     let access = auth::Access::new(&bind, flag("--no-auth"), arg("--token"));
     if access.enforced() {
@@ -195,8 +211,6 @@ async fn main() {
         .layer(axum::middleware::from_fn_with_state(ui_state, ui::guard));
 
     let app = v0.merge(settings);
-    let addr = format!("{bind}:{port}");
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap_or_else(|e| panic!("cannot listen on {addr}: {e}"));
     let page = format!("http://127.0.0.1:{port}/");
     tracing::info!("music-bridge listening on http://{addr}/v0 — settings: {page}");
 
