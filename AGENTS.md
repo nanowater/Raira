@@ -50,6 +50,8 @@ The device is a *controller*, not a player: it displays now-playing metadata and
 - `cd build && cmake .. && ninja`, then `build/bin/lvglsim [-s host[:port]]` (default `localhost:47836`).
 - Changing a `.incbin`-embedded font is tracked via `OBJECT_DEPENDS`; if a font change does not show up, re-run cmake.
 
+- Install the bridge for the current user (Linux): `tools/install_bridge.sh` (release build, `~/.local/bin/music-bridge`, systemd user service started at every login, restarted 3 s after a crash; `--status`, `--uninstall` (keeps the settings and the cache; `--uninstall --purge` deletes them too after a question, `--yes` skips it), `--dry-run`, `--no-autostart`). The bridge takes its port first, so a second copy only says "already running" and exits with code 0.
+
 ## Official TIDAL API constraints (do not fight them)
 
 - Official OpenAPI (`tidal-music.github.io/.../tidal-api-oas.json`) has PlaybackState / PlayQueue endpoints, but they require `r_usr`/`w_usr` scopes and `required-access-tier: INTERNAL` (TIDAL first-party only).

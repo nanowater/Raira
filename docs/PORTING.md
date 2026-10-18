@@ -53,7 +53,8 @@ on ESP-IDF's `esp_http_server` with WebSocket support (`CONFIG_HTTPD_WS_SUPPORT`
 sources (e.g. an ESP-IDF component that points at this tree).
 6. **Fonts** are embedded with `.incbin` (`src/fonts/noto_sans_kr.c`, two ~3.6 MB OTF files in `assets/fonts/`).
    In ESP-IDF use `EMBED_FILES` or keep that asm; they live in flash (16 MB), mapped read-only. With OTA, two
-   app slots need to fit the ~7.3 MB of fonts each — consider a separate read-only font partition.
+   app slots would each need the ~7.1 MB of fonts: **decided: a separate read-only `fonts` data partition**, see "Flash layout"
+   below (`src/fonts/noto_sans_kr.c` then maps the partition instead of using `.incbin`).
 7. **C++ exceptions**: nlohmann_json can throw. The code uses `parse(..., nullptr, false)` and checks types
    before `get<>`, but ESP-IDF builds with exceptions off by default: either enable
    `CONFIG_COMPILER_CXX_EXCEPTIONS` or build with `JSON_NOEXCEPTION` and re-check the `get<>` calls.
@@ -77,3 +78,21 @@ a single background image instead of two (no cross-fade), or the 250 px cover on
 ## Not portable / sim only
 `src/main.cpp` (CLI/env host config, SDL backends), `src/lib/`, `install_volume_input()` (mouse wheel),
 `docs/JC8048W550/` (vendor demos, not part of the build).
+
+## Flash layout (plan, 16 MB, to be confirmed when the first firmware is built)
+
+Sizes are estimates: the app size is unknown until ESP-IDF builds it (LVGL, WiFi, `esp_http_server`, mdns), so `ota_*` may need
+to grow. The fonts are the two `assets/fonts/NotoSansKR-*-subset.otf` files (3.46 + 3.60 MB).
+
+| Partition | Type | Size | Notes |
+|---|---|---|---|
+| bootloader, partition table | | ~64 KB | |
+| `nvs` | data | 24 KB | settings, WiFi credentials, hub secrets (encrypt the secrets) |
+| `otadata`, `phy_init` | data | 8 KB + 4 KB | |
+| `ota_0`, `ota_1` | app | 2.5 MB each (estimate) | code only, so an update downloads a few MB, not the fonts |
+| `fonts` | data | 7.5 MB, read-only | both OTF files back to back; the code mmaps it (`esp_partition_mmap`) and hands the pointers to TinyTTF; written only by a full flash, not by OTA |
+| spare | | ~3 MB | room for the apps to grow |
+
+First install = one merged image (`esptool merge_bin`: bootloader + partition table + app + fonts) written by the web flasher
+(ESP Web Tools: a `manifest.json` that lists the image, served over HTTPS; Chrome/Edge WebSerial). Later updates: OTA from the
+bridge's settings page (a possible extension), which only replaces the app slot.
