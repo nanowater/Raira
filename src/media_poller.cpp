@@ -181,6 +181,9 @@ struct LyricsResult {
 const uint32_t SCREEN_W = 800, SCREEN_H = 480; /* the background is rendered at the panel size */
 const int POLL_INTERVAL_MS = 500; /* /current is ~1 KB and answers in <1 ms locally */
 const int LYRICS_SETTLE_MS = 500;
+/* A lookup that FAILED (not one that found nothing) is asked again while the same track plays: after these pauses, in seconds. The PC
+ * already retries once itself, so these are long on purpose (LRCLIB rate-limits, and a lasting outage must not be hammered). */
+const int LYRICS_RETRY_AFTER_S[] = {8, 30, 90};
 const int CONNECTION_LOST_AFTER_FAILS = 3;
 
 std::mutex g_lyr_mu;
@@ -231,17 +234,25 @@ void lyrics_loop()
         }
         if(superseded) continue; /* the newer request is already pending */
 
-        auto r  = std::make_shared<LyricsResult>();
-        r->gen  = req.gen;
-        uint64_t gen     = req.gen;
-        auto cancelled   = [gen] { return g_lyr_gen.load() != gen; };
-        r->found         = g_lyrics_provider ? g_lyrics_provider(req.info, r->lyrics, cancelled) : lyrics_fetch(req.info, r->lyrics, cancelled);
-        if(r->found && g_lyr_gen.load() == gen) {
-            std::lock_guard<std::mutex> lk(g_lyr_cache_mu);
-            g_lyr_cache     = r;
-            g_lyr_cache_key = req.key;
+        uint64_t gen   = req.gen;
+        auto cancelled = [gen] { return g_lyr_gen.load() != gen; };
+        for(size_t attempt = 0;; attempt++) {
+            auto r = std::make_shared<LyricsResult>();
+            r->gen = gen;
+            r->found = g_lyrics_provider ? g_lyrics_provider(req.info, r->lyrics, cancelled) : lyrics_fetch(req.info, r->lyrics, cancelled);
+            if(cancelled()) break; /* another track: its request is pending, this answer is of no use */
+            if(r->found) {
+                std::lock_guard<std::mutex> lk(g_lyr_cache_mu);
+                g_lyr_cache     = r;
+                g_lyr_cache_key = req.key;
+            }
+            /* "No lyrics" is shown at once (the big-cover layout) even when the lookup failed; a retry that finds them switches over */
+            post_to_ui([r] { apply_lyrics(r.get()); });
+            if(r->found || !r->lyrics.failed || attempt >= sizeof(LYRICS_RETRY_AFTER_S) / sizeof(LYRICS_RETRY_AFTER_S[0])) break;
+            for(int waited = 0; waited < LYRICS_RETRY_AFTER_S[attempt] * 1000 && !cancelled(); waited += 100)
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            if(cancelled()) break;
         }
-        post_to_ui([r] { apply_lyrics(r.get()); });
     }
 }
 

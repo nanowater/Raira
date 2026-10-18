@@ -10,7 +10,8 @@ using nlohmann::json;
 using CancelFn = std::function<bool()>;
 
 /* LRCLIB answers 429 when requests come in bursts; back off and retry a couple of times. */
-static bool http_get_url(HttpClient & http, const std::string & url, std::string & body, const CancelFn & cancelled)
+/* `lost` is set when there was no usable answer (network error, 5xx, 429 that did not clear); a 404 is an answer ("not there"). */
+static bool http_get_url(HttpClient & http, const std::string & url, std::string & body, const CancelFn & cancelled, bool & lost)
 {
     HttpRequest req;
     req.url               = url;
@@ -26,13 +27,17 @@ static bool http_get_url(HttpClient & http, const std::string & url, std::string
             body = std::move(res.body);
             return true;
         }
-        if(res.status != 429) return false;
+        if(res.status != 429) {
+            lost = res.status != 404 && !(cancelled && cancelled());
+            return false;
+        }
         /* back off in short slices so a cancel is noticed quickly */
         for(int waited = 0; waited < 1500 * (attempt + 1); waited += 100) {
             if(cancelled && cancelled()) return false;
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     }
+    lost = true;
     return false;
 }
 
@@ -290,12 +295,13 @@ bool lyrics_fetch(const MediaInfo & info, Lyrics & out, const std::function<bool
      * title form (e.g. "あぶく - Bubble" for "Bubble"). We rank them ourselves. */
     std::vector<json> cands;
     std::vector<bool> is_exact;
+    bool lost = false; /* a request gave no usable answer */
 
     std::string body;
     std::string get = base + "get?track_name=" + escape(info.title) + "&artist_name=" + escape(info.artists);
     if(!info.album.empty()) get += "&album_name=" + escape(info.album);
     if(info.duration_sec > 0) get += "&duration=" + std::to_string(info.duration_sec);
-    if(http_get_url(*http, get, body, cancelled)) {
+    if(http_get_url(*http, get, body, cancelled, lost)) {
         json j = json::parse(body, nullptr, false);
         if(j.is_object()) {
             cands.push_back(std::move(j));
@@ -305,7 +311,7 @@ bool lyrics_fetch(const MediaInfo & info, Lyrics & out, const std::function<bool
 
     body.clear();
     std::string q = strip_suffix(info.title) + " " + first_artist(info.artists);
-    if(http_get_url(*http, base + "search?q=" + escape(q), body, cancelled)) {
+    if(http_get_url(*http, base + "search?q=" + escape(q), body, cancelled, lost)) {
         json arr = json::parse(body, nullptr, false);
         if(arr.is_array()) {
             for(auto & item : arr) {
@@ -317,6 +323,11 @@ bool lyrics_fetch(const MediaInfo & info, Lyrics & out, const std::function<bool
     }
 
     if(cancelled && cancelled()) return false;
+    /* "nothing found" is only believed when no request was lost: with one of them gone the candidates may simply be missing */
+    if(cands.empty() && lost) {
+        out.failed = true;
+        return false;
+    }
 
     const json * best = nullptr;
     int best_score    = -1;

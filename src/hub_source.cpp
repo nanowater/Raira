@@ -272,6 +272,7 @@ void HubSource::on_text(WsConnId id, const std::string & text)
                 if(w != lyrics_waits_.end()) {
                     Lyrics l;
                     l.synced = j.value("synced", false);
+                    l.failed = j.contains("error"); /* the source could not find out (not "there are none") */
                     auto lines = j.find("lines");
                     if(j.value("found", false) && lines != j.end() && lines->is_array())
                         for(const auto & e : *lines)
@@ -474,7 +475,11 @@ bool HubSource::request_lyrics(const MediaInfo & info, Lyrics & out, const std::
     }
     LyricsWait w = lyrics_waits_[req];
     lyrics_waits_.erase(req);
-    if(!w.done || !w.found) return false;
+    if(!w.done || !w.found) {
+        /* no answer in time or the source went away = failed (unless this lookup was cancelled); an answer says itself */
+        out.failed = w.done ? w.lyrics.failed : !(cancelled && cancelled());
+        return false;
+    }
     out = std::move(w.lyrics);
     return true;
 }
