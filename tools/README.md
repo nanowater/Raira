@@ -7,12 +7,13 @@ ports (18397-18399) are outside the real ones (hub 18322, bridge 18801). Run the
     tools/run_checks.sh              # bridge unit tests, WebSocket server, mDNS responder, the device's "Automatic" focus
     tools/run_checks.sh --network    # + the C++ vs Rust lyrics comparison (asks LRCLIB, about a minute)
 
-The device checks (`pick`, `reconnect`, `lyrics_retry`, `lyrics_none`, `lyrics_retry_track_change`) need `build/bin/lvglsim` (`cd build && ninja`), Xvfb and ImageMagick's `import`; it is skipped without them.
+The device checks (`pick`, `reconnect`, `lyrics_retry`, `lyrics_none`, `lyrics_retry_track_change`) need `build/bin/lvglsim` (`cmake -B build && cmake --build build -j`), Xvfb and ImageMagick's `import`; it is skipped without them.
 
 | tool | what it checks |
 |---|---|
 | `ws_conformance/run.sh` | The simulator's `WsServer` (libwebsockets) against a hand-written client: RFC 6455 example handshake, text and binary echo incl. 64-bit lengths, ping/pong, fragmentation, close, other paths refused, garbage survived. |
 | `mdns_probe/run.sh` | The simulator's mDNS responder: PTR/SRV/TXT/A answers and TTL, service enumeration, no answer for other services. Other responders on the machine (a real hub, KDE Connect) may answer the same questions; the probe collects all replies and looks for its own. The first question comes 0.5 s after the start, which also guards against a responder that is deaf while it announces. |
+| `firmware_build.sh` | Builds `firmware/` with ESP-IDF to check that the portable core still compiles and links for the ESP32-S3; prints the app size and the number of warnings. `--clean` starts from nothing. Exit code 2 when ESP-IDF is not installed (the check is then skipped). Part of `run_checks.sh`. |
 | `install_bridge.sh` | Not a check: installs the bridge for the current user and registers the systemd user service (see the script's header; `--dry-run` shows what it would do). |
 | `lyrics_retry/run.sh` | The bridge's lyrics lookup against a fake LRCLIB (`fake_lrclib.py`) whose search breaks once, twice or for good: one lost request must not become "no lyrics" (it used to, and was remembered for a week), a blip is retried once after 2 s, a lasting failure is an error that is not stored. Port 18398, throw-away cache. |
 | `lyrics_compare/compare.sh [songs.tsv]` | `src/lyrics.cpp` (device) and `bridge/src/lyrics.rs` (PC) must give identical line lists. Songs: `title<TAB>artists<TAB>album<TAB>seconds`. A song LRCLIB does not answer for is skipped, not failed. |

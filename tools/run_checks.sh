@@ -31,6 +31,11 @@ else
   results+=("skipped device checks (need build/bin/lvglsim, Xvfb, ImageMagick)")
 fi
 run "lyrics: a lost request is not \"no lyrics\" (lyrics_retry)" "$ROOT/tools/lyrics_retry/run.sh"
+if [ -f "${IDF_PATH:-$HOME/projects/esp-idf}/export.sh" ]; then
+  run "firmware: the core compiles for the ESP32-S3 (firmware_build.sh)" "$ROOT/tools/firmware_build.sh"
+else
+  results+=("skipped firmware build (ESP-IDF not found, see docs/PORTING.md)")
+fi
 [ "$NETWORK" = 1 ] && run "lyrics: device vs bridge (lyrics_compare)" "$ROOT/tools/lyrics_compare/compare.sh"
 
 echo; echo "=== summary"
