@@ -1,0 +1,31 @@
+# Flash: the JC8048W550 has 16 MB
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# PSRAM: 8 MB (octal on the usual N16R8 module; confirm with the first boot log on the board)
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+
+# C++ exceptions: nlohmann_json can throw
+CONFIG_COMPILER_CXX_EXCEPTIONS=y
+
+# Our partition table (OTA slots for the code, a read-only partition for the fonts)
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# LVGL: what the core uses (the simulator's configs/get_started.defconfig also has demos, SDL, GIF, Lottie, ... that the device does not need)
+# 16-bit colour: the panel is RGB565
+CONFIG_LV_COLOR_DEPTH_16=y
+# LVGL allocates through malloc (CONFIG_SPIRAM_USE_MALLOC sends the big blocks to PSRAM), like the simulator build
+CONFIG_LV_USE_CLIB_MALLOC=y
+CONFIG_LV_USE_CLIB_STRING=y
+CONFIG_LV_USE_CLIB_SPRINTF=y
+# the Montserrat sizes the UI code names (14 is on by default); the Noto text fonts come through TinyTTF
+CONFIG_LV_FONT_MONTSERRAT_16=y
+CONFIG_LV_FONT_MONTSERRAT_22=y
+CONFIG_LV_FONT_MONTSERRAT_28=y
+CONFIG_LV_FONT_MONTSERRAT_36=y
+CONFIG_LV_FONT_MONTSERRAT_44=y
+CONFIG_LV_FONT_MONTSERRAT_48=y
+CONFIG_LV_USE_TINY_TTF=y
+# PNG covers (the fallback when a cover is not a JPEG)
+CONFIG_LV_USE_LODEPNG=y
