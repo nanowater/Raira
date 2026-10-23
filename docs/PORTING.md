@@ -17,6 +17,32 @@ Entry point for both: `music_app_start(std::unique_ptr<MediaSource>)` (LVGL init
 `main()` / `app_main` builds the service (`std::make_unique<TidalClient>(cfg)`) and passes it in.
 Volume input hook: `media_poller_volume_step(int delta)` (call from the encoder driver).
 
+## ESP-IDF status (2026-10-23)
+
+ESP-IDF **v6.1** is installed in `~/projects/esp-idf` (clone + `./install.sh esp32s3`; it works with the system's Python 3.14; the cross
+compiler is GCC 15.2). `firmware/` is the ESP-IDF project; **the core compiles and links for the ESP32-S3** (nothing has run: there is no
+board yet).
+
+| Part | How |
+|---|---|
+| Build | `tools/firmware_build.sh` (or by hand: `. ~/projects/esp-idf/export.sh`, `cd firmware`, `idf.py set-target esp32s3`, `idf.py build`). It is part of `tools/run_checks.sh` when ESP-IDF is found. |
+| LVGL | the repository's own `lvgl/` (10.0.0-dev) as a component: `EXTRA_COMPONENT_DIRS` in `firmware/CMakeLists.txt` points at it, nothing is copied. Its Kconfig supplies the LVGL options. |
+| Core | `firmware/components/music_core/` lists the same `src/*.cpp` files the simulator builds (no copies; `platform_sim/`, `main.cpp`, `lib/` are not part of it). |
+| nlohmann_json | `firmware/components/nlohmann_json/`: the 3.12.0 single header (same version as the simulator), MIT. |
+| C++ standard | **C++23** for the simulator (`CMAKE_CXX_STANDARD`) and the firmware (`-std=gnu++23` per component; ESP-IDF's default is gnu++26). |
+| Settings | `firmware/sdkconfig.defaults` (16 MB flash, octal PSRAM, C++ exceptions, `partitions.csv`, LVGL: 16-bit colour, clib malloc, the Montserrat sizes the UI names, TinyTTF, LodePNG). It is only read when `sdkconfig` is created: after changing it, `tools/firmware_build.sh --clean`. |
+| Partitions | `firmware/partitions.csv`, as in "Flash layout" below; checked with ESP-IDF's `gen_esp32part.py`. |
+
+Size of the first build: the app is about 380 KB of the 2.5 MB slot (the core is not linked into it yet), internal SRAM 118 KB of 334 KB.
+
+**What is still missing to link the core** (found by rooting `music_app_start` for the linker; these are the only undefined symbols):
+
+1. `http_client_create()` (`platform/http.h`): `esp_http_client`.
+2. `jpeg_decode_bgrx()` (`platform/jpeg.h`): `esp_jpeg` (or JPEGDEC); the progressive-JPEG question below still applies.
+3. `noto_sans_kr_get()` / `noto_sans_kr_bold_get()` (`src/fonts/noto_sans_kr.c` is left out of the firmware build, it `.incbin`s 7 MB): return pointers into the `fonts` partition (`esp_partition_mmap`).
+
+The WebSocket server (`platform/ws_server.h`), mDNS (`platform/mdns.h`), WiFi and the settings store are not called by the core: `app_main` creates them and hands them over (`MusicAppDeps`, `HubSource`). ESP-IDF 6.0 changed that the `esp_http_server` WebSocket handler is no longer called during the handshake (the migration guide, "ESP HTTP Server"): the `ws_server` implementation has to learn about a new connection another way. The default C library is now Picolibc (check `nlohmann_json` number parsing and `std::thread` there).
+
 ## What the ESP32 side has to provide
 
 (The hub direction in `docs/HUB_PROTOCOL.md` adds one more platform piece: an implementation of `platform/ws_server.h`

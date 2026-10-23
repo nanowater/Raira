@@ -41,13 +41,14 @@ The device is a *controller*, not a player: it displays now-playing metadata and
 - `tools/` — automatic checks and helpers (see `tools/README.md`): `tools/run_checks.sh [--network]` runs the bridge unit tests, a conformance suite for the simulator's WebSocket server, a probe for its mDNS responder, the device's Automatic-focus rule against a fake source, and with `--network` the C++/Rust lyrics comparison; `fake_source.py` (a hub source without a real player, scenarios with expectations), `lyrics_retry/` (the bridge's lookup against a fake LRCLIB that fails in different ways), `seed_device.py`, `ui_run.sh` (simulator + fake source on a virtual display + screenshots). Run `tools/run_checks.sh` before committing a change to the hub, the bridge or the lyrics code.
 - `docs/tidal-hifi-swagger.json` — tidal-hifi local API spec (OpenAPI 3.1.0, v8.1.3, 28 paths). **Use this, not the old official TIDAL OAS**, for integration work.
 - `docs/JC8048W550/` — vendor reference demos; not part of the build.
+- `firmware/` — the ESP-IDF project for the ESP32-S3 (v6.1, `~/projects/esp-idf`): `components/music_core` compiles the same `src/` core files as the simulator, `components/nlohmann_json` is the vendored single header, `main/` holds `app_main`, `sdkconfig.defaults` and `partitions.csv` fix the settings (read only when `sdkconfig` is created). Build and size check: `tools/firmware_build.sh`. What is still missing before the core links, and the flash layout: `docs/PORTING.md`.
 - `boards/` — configs for various embedded boards (NXP i.MX93, etc.); ESP32 target config to be added.
 - `CMakeLists.txt`, `Kconfig`, `lv_conf.defaults`, `configs/get_started.defconfig` — build/config.
 
 ## Build / run (simulator)
 
 - Needs libcurl, libturbojpeg (pkg-config), libwebsockets (the hub's WebSocket server), nlohmann_json, SDL2.
-- `cd build && cmake .. && ninja`, then `build/bin/lvglsim [-s host[:port]]` (default `localhost:47836`).
+- `cmake -B build && cmake --build build -j`, then `build/bin/lvglsim [-s host[:port]]` (default `localhost:47836`). The generator does not matter (an existing `build/` may be Unix Makefiles or Ninja), so use `cmake --build`, not `ninja`. The project is **C++23** (`CMAKE_CXX_STANDARD`), the firmware too, so that one source means the same on both.
 - Changing a `.incbin`-embedded font is tracked via `OBJECT_DEPENDS`; if a font change does not show up, re-run cmake.
 
 - Install the bridge for the current user (Linux): `tools/install_bridge.sh` (release build, `~/.local/bin/music-bridge`, systemd user service started at every login, restarted 3 s after a crash; `--status`, `--uninstall` (keeps the settings and the cache; `--uninstall --purge` deletes them too after a question, `--yes` skips it), `--dry-run`, `--no-autostart`). The bridge takes its port first, so a second copy only says "already running" and exits with code 0.
