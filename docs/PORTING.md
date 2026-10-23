@@ -65,15 +65,20 @@ sources (e.g. an ESP-IDF component that points at this tree).
 
 | Item | Size | Where |
 |---|---|---|
-| Fonts (Regular + Bold subset) | 3.58 + 3.73 MB | flash |
+| Fonts (Regular + Bold subset) | 3.46 + 3.60 MB | flash (the `fonts` partition, see "Flash layout") |
 | Cover shown by the UI (400×400 XRGB8888) | 640 KB | PSRAM |
 | Ambient background, two images for the cross-fade (800×480 RGB565) | 2 × 768 KB | PSRAM |
 | Track change, transient on the poll thread | decoded JPEG (640×640 BGRX, 1.6 MB, freed after decode) + cover 640 KB + background 768 KB (until the UI took them) | PSRAM |
+| Last cover as downloaded, kept to show it again after a reconnect or when switching back to the track | the encoded JPEG, tens of KB to ~100 KB | PSRAM |
 | LVGL draw buffers (800×480, RGB565) | 0.4-0.8 MB | internal/PSRAM |
 
 So a track change peaks at roughly 5 MB of the 8 MB PSRAM. First things to try if that is too much: a
 decoder that downscales to 1/2 (640→320 for the small layout), a smaller background (e.g. 400×240 scaled),
 a single background image instead of two (no cross-fade), or the 250 px cover only.
+
+The poller keeps the last cover *encoded*, not decoded (`art_cache_img` in `media_poller.cpp`): keeping the decoded cover and
+background would have cost another 1.4 MB for good. A restore after a reconnect decodes it again (on the poll thread, like a new
+track); measure that time on the device (JPEG decode of a 400 px cover on the ESP32-S3) before relying on it being instant.
 
 ## Not portable / sim only
 `src/main.cpp` (CLI/env host config, SDL backends), `src/lib/`, `install_volume_input()` (mouse wheel),
