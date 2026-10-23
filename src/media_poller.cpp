@@ -73,8 +73,9 @@ void post_conn_state(int state)
     });
 }
 
-/* Everything derived from one cover. Shared (immutable) so the poller can keep the last one and show it again, e.g. after the
- * connection came back with the same track, without downloading and decoding it once more. */
+/* Everything derived from one cover, handed to the UI thread as one immutable piece. It is NOT kept after the UI took it: the decoded
+ * cover (640 KB) and background (768 KB) would sit in PSRAM for good. The poller keeps only the downloaded image (a few KB to 100 KB)
+ * of the last cover and decodes it again when the same artwork is due once more. */
 struct CoverBundle {
     CoverPixels cover;
     CoverPixels bg;                   /* full-screen ambient background for this cover, empty = none */
@@ -338,7 +339,7 @@ void poll_loop(std::unique_ptr<MediaSource> source)
     auto last_poll = std::chrono::steady_clock::now() - std::chrono::milliseconds(POLL_INTERVAL_MS);
     int failed_polls = 0;              /* consecutive failed polls, reset when the endpoint changes */
     bool lost_handled = false;         /* the poller's own state was reset for the current loss of the connection */
-    std::shared_ptr<const CoverBundle> art_cache; /* the last cover that was decoded, and the key it belongs to */
+    std::vector<unsigned char> art_cache_img; /* the last cover as downloaded (still encoded), and the key it belongs to */
     std::string art_cache_key;
     while(true) {
         /* Sleep until the next poll, or wake early for a transport command, a seek or a volume step. */
@@ -460,28 +461,29 @@ void poll_loop(std::unique_ptr<MediaSource> source)
              * and a new URL means new artwork is due. */
             const std::string cover_key = info.image_url.empty() ? info.track_id : info.image_url;
             if(!cover_key.empty() && cover_key != cover_for) {
-                if(art_cache && art_cache_key == cover_key) { /* the same artwork again: reconnected, or switched back to it */
-                    u->art    = art_cache;
-                    cover_for = cover_key;
+                std::vector<unsigned char> img;
+                bool got = false;
+                if(art_cache_key == cover_key && !art_cache_img.empty()) { /* the same artwork again: reconnected, or switched back to it */
+                    img = art_cache_img;
+                    got = true;
                 } else {
-                    std::vector<unsigned char> img;
                     /* The source picks where the cover comes from and a size that is enough for the widget. */
-                    const bool got = source->get_cover(info, MUSIC_UI_COVER_SIZE, img);
-                    if(got) {
-                        auto bundle = std::make_shared<CoverBundle>();
-                        /* JPEG is decoded here, off the LVGL thread (LVGL's JPEG decoder only reads files). */
-                        bool ok = cover_decode(img, MUSIC_UI_COVER_SIZE, bundle->cover);
-                        if(ok) cover_background(bundle->cover, SCREEN_W, SCREEN_H, MUSIC_UI_BG_BASE_COLOR, bundle->bg);
-                        if(!ok && img.size() > 8 && img[0] == 0x89 && img[1] == 'P' && img[2] == 'N' && img[3] == 'G') {
-                            bundle->png = std::move(img);
-                            ok          = true;
-                        }
-                        if(ok) {
-                            cover_for     = cover_key;
-                            art_cache_key = cover_key;
-                            art_cache     = bundle;
-                            u->art        = bundle;
-                        }
+                    got = source->get_cover(info, MUSIC_UI_COVER_SIZE, img);
+                }
+                if(got) {
+                    auto bundle = std::make_shared<CoverBundle>();
+                    /* JPEG is decoded here, off the LVGL thread (LVGL's JPEG decoder only reads files). */
+                    bool ok = cover_decode(img, MUSIC_UI_COVER_SIZE, bundle->cover);
+                    if(ok) cover_background(bundle->cover, SCREEN_W, SCREEN_H, MUSIC_UI_BG_BASE_COLOR, bundle->bg);
+                    if(!ok && img.size() > 8 && img[0] == 0x89 && img[1] == 'P' && img[2] == 'N' && img[3] == 'G') {
+                        bundle->png = img;
+                        ok          = true;
+                    }
+                    if(ok) {
+                        cover_for      = cover_key;
+                        art_cache_key  = cover_key;
+                        art_cache_img  = std::move(img);
+                        u->art         = bundle;
                     }
                 }
             }
