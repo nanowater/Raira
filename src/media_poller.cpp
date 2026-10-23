@@ -246,9 +246,18 @@ void lyrics_loop()
                 g_lyr_cache     = r;
                 g_lyr_cache_key = req.key;
             }
-            /* "No lyrics" is shown at once (the big-cover layout) even when the lookup failed; a retry that finds them switches over */
-            post_to_ui([r] { apply_lyrics(r.get()); });
-            if(r->found || !r->lyrics.failed || attempt >= sizeof(LYRICS_RETRY_AFTER_S) / sizeof(LYRICS_RETRY_AFTER_S[0])) break;
+            /* A lookup that FAILED is not an answer yet: while a retry is still to come the layout stays as it is (a short note in the lyrics
+             * area), so a blip does not flip the screen to the big cover and back. "No lyrics" (the big-cover layout) is shown when the track
+             * has none, or when the last retry failed too. */
+            const bool will_retry = !r->found && r->lyrics.failed && attempt < sizeof(LYRICS_RETRY_AFTER_S) / sizeof(LYRICS_RETRY_AFTER_S[0]);
+            if(will_retry) {
+                post_to_ui([gen] {
+                    if(gen == g_lyr_gen.load()) music_ui_set_lyrics_message(str::LYRICS_RETRYING);
+                });
+            } else {
+                post_to_ui([r] { apply_lyrics(r.get()); });
+                break;
+            }
             for(int waited = 0; waited < LYRICS_RETRY_AFTER_S[attempt] * 1000 && !cancelled(); waited += 100)
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             if(cancelled()) break;
