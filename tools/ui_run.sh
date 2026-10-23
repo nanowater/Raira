@@ -28,7 +28,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 for need in Xvfb import python3; do command -v "$need" >/dev/null || { echo "missing: $need"; exit 2; }; done
-[ -x "$SIM" ] || { echo "build the simulator first: cd build && ninja"; exit 2; }
+[ -x "$SIM" ] || { echo "build the simulator first: cmake -B build && cmake --build build -j"; exit 2; }
 if ss -ltn 2>/dev/null | grep -q ":$PORT "; then echo "port $PORT is in use (--port N)"; exit 2; fi
 
 TMP=$(mktemp -d)

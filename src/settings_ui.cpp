@@ -193,28 +193,6 @@ void layout_tiles(lv_obj_t * page, const std::vector<TileSpec> & specs)
     }
 }
 
-lv_obj_t * make_row(lv_obj_t * parent, int y, const char * title, lv_obj_t ** value_out, lv_event_cb_t cb)
-{
-    lv_obj_t * r = lv_obj_create(parent);
-    lv_obj_set_size(r, 740, 76);
-    lv_obj_set_pos(r, 30, y);
-    lv_obj_set_style_radius(r, 14, 0);
-    lv_obj_set_style_bg_color(r, lv_color_hex(COLOR_ROW), 0);
-    lv_obj_set_style_bg_opa(r, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(r, lv_color_hex(COLOR_ROW_PRESSED), LV_STATE_PRESSED);
-    lv_obj_set_style_border_width(r, 0, 0);
-    lv_obj_set_style_pad_hor(r, 24, 0);
-    lv_obj_set_scrollable(r, false);
-    lv_obj_add_event_cb(r, cb, LV_EVENT_CLICKED, nullptr);
-    lv_obj_t * t = make_label(r, title, 24, 0xFFFFFF);
-    lv_obj_align(t, LV_ALIGN_LEFT_MID, 0, 0);
-    lv_obj_t * chev = make_label(r, LV_SYMBOL_RIGHT, 22, COLOR_DIM);
-    lv_obj_align(chev, LV_ALIGN_RIGHT_MID, 0, 0);
-    *value_out = make_label(r, "", 20, COLOR_DIM);
-    lv_obj_align(*value_out, LV_ALIGN_RIGHT_MID, -36, 0);
-    return r;
-}
-
 void set_status(lv_obj_t * lbl, const std::string & text, uint32_t color)
 {
     lv_label_set_text(lbl, text.c_str());
