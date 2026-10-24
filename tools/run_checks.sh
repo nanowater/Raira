@@ -21,6 +21,7 @@ run() {
 run "bridge unit tests (cargo test)" bash -c "cd '$ROOT/bridge' && cargo test 2>&1 | tail -n 5 && cargo test >/dev/null 2>&1"
 run "WebSocket server (ws_conformance)" "$ROOT/tools/ws_conformance/run.sh"
 run "mDNS responder (mdns_probe)" "$ROOT/tools/mdns_probe/run.sh"
+run "firmware font image format (font_image)" "$ROOT/tools/font_image/run.sh"
 if [ -x "$ROOT/build/bin/lvglsim" ] && command -v Xvfb >/dev/null && command -v import >/dev/null; then
   run "device: Automatic follows the source's pick (ui_run pick)" "$ROOT/tools/ui_run.sh" --scenario pick --shots 1
   run "device: cover and lyrics are kept across a reconnect (ui_run reconnect)" "$ROOT/tools/ui_run.sh" --scenario reconnect --features cover,lyrics --shots 1

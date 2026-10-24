@@ -33,13 +33,17 @@ board yet).
 | Settings | `firmware/sdkconfig.defaults` (16 MB flash, octal PSRAM, C++ exceptions, `partitions.csv`, LVGL: 16-bit colour, clib malloc, the Montserrat sizes the UI names, TinyTTF, LodePNG). It is only read when `sdkconfig` is created: after changing it, `tools/firmware_build.sh --clean`. |
 | Partitions | `firmware/partitions.csv`, as in "Flash layout" below; checked with ESP-IDF's `gen_esp32part.py`. |
 
-Size of the first build: the app is about 380 KB of the 2.5 MB slot (the core is not linked into it yet), internal SRAM 118 KB of 334 KB.
+**The core links** (since `app_main` has a never-taken call to `music_app_start`, the linker must resolve everything the core needs; the earlier link-less builds proved nothing about that). `firmware/components/music_platform_esp/` is the ESP32 side of `src/platform/`, linked as a whole archive (the core only calls into it):
 
-**What is still missing to link the core** (found by rooting `music_app_start` for the linker; these are the only undefined symbols):
+| File | Implements | How |
+|---|---|---|
+| `font_partition.cpp` | `noto_sans_kr_get()`, `noto_sans_kr_bold_get()` (`src/fonts/noto_sans_kr.c`, which `.incbin`s 7 MB, is not in the firmware) | `esp_partition_mmap()` of the `fonts` partition; the image format is `src/fonts/font_image.h` (parser tested on the PC: `tools/font_image/`), written by `tools/make_fonts_image.py`. Without a valid image the getters return null and `ui_fonts.cpp` falls back to the built-in Montserrat. |
+| `jpeg_esp.cpp` | `jpeg_decode_bgrx()` | the **TJpgDec in the chip's ROM** (no flash, no extra component); baseline JPEG only, 1/2, 1/4, 1/8 downscale. The bridge re-encodes covers as baseline, so the hub path works; a progressive JPEG (TIDAL's CDN, direct tidal-hifi mode only) is refused. |
+| `http_esp.cpp` | `http_client_create()` | `esp_http_client` with keep-alive, redirects, the certificate bundle, cancel through its events |
 
-1. `http_client_create()` (`platform/http.h`): `esp_http_client`.
-2. `jpeg_decode_bgrx()` (`platform/jpeg.h`): `esp_jpeg` (or JPEGDEC); the progressive-JPEG question below still applies.
-3. `noto_sans_kr_get()` / `noto_sans_kr_bold_get()` (`src/fonts/noto_sans_kr.c` is left out of the firmware build, it `.incbin`s 7 MB): return pointers into the `fonts` partition (`esp_partition_mmap`).
+**None of these three has run on a chip.** The font format is tested on the PC; the JPEG and HTTP code only compiled. The questions for the board: does the 7.5 MB mmap succeed, is TJpgDec's pool of 16 KB enough for every cover and how long does a 640 px cover take, does `esp_http_client_cancel_request()` from inside an event end the request cleanly, and does a stalled transfer end with the timeout.
+
+Size of the app with the core linked (still without WiFi, `esp_http_server`, mDNS): **1.40 MB of the 2.5 MB slot** (44 % free), of that LVGL 644 KB, the core 165 KB, mbedTLS about 100 KB; flash code 804 KB + read-only data 592 KB; internal SRAM 63 KB of 334 KB. The WiFi stack, the HTTP/WebSocket server and mDNS will add to it, so the OTA slots may have to grow (3.4 MB of the flash are spare).
 
 The WebSocket server (`platform/ws_server.h`), mDNS (`platform/mdns.h`), WiFi and the settings store are not called by the core: `app_main` creates them and hands them over (`MusicAppDeps`, `HubSource`). ESP-IDF 6.0 changed that the `esp_http_server` WebSocket handler is no longer called during the handshake (the migration guide, "ESP HTTP Server"): the `ws_server` implementation has to learn about a new connection another way. The default C library is now Picolibc (check `nlohmann_json` number parsing and `std::thread` there).
 
