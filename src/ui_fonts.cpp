@@ -13,7 +13,7 @@ const lv_font_t * ui_noto_font(int32_t px, const lv_font_t * fallback, bool bold
 
     size_t size                = 0;
     const unsigned char * data = bold ? noto_sans_kr_bold_get(&size) : noto_sans_kr_get(&size);
-    lv_font_t * f              = lv_tiny_ttf_create_data(data, size, px);
+    lv_font_t * f              = (data && size) ? lv_tiny_ttf_create_data(data, size, px) : nullptr; /* no font data: the fallback */
     const lv_font_t * result   = fallback;
     if(f) {
         f->fallback = fallback; /* glyphs outside the subset (e.g. symbols) */
