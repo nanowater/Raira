@@ -25,6 +25,7 @@ extern "C" void app_main(void)
     if(s_start_app) {
         MusicAppDeps deps;
         deps.store = settings_store_create();
+        deps.wifi  = wifi_manager_create();
         music_app_start(std::move(deps));
     }
 }
