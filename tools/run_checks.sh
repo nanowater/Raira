@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The automatic checks, one after the other. None of them touches your settings or needs a real player or a real device.
 #
-#   tools/run_checks.sh              unit tests of the bridge, WebSocket server, mDNS responder, the lyrics lookup against a failing fake
+#   tools/run_checks.sh              unit tests of the bridge, formatting and lint, WebSocket server, mDNS responder, the lyrics lookup against a failing fake
 #                                    LRCLIB, the device's Automatic focus and
 #                                    its cache after a reconnect and its lyrics retry (the device checks need a built build/bin/lvglsim, Xvfb and ImageMagick;
 #                                    they are skipped without them)
@@ -19,6 +19,7 @@ run() {
 }
 
 run "bridge unit tests (cargo test)" bash -c "cd '$ROOT/bridge' && cargo test 2>&1 | tail -n 5 && cargo test >/dev/null 2>&1"
+run "formatting and lint (format_check: clang-format, cargo fmt, clippy)" "$ROOT/tools/format_check.sh"
 run "WebSocket server (ws_conformance)" "$ROOT/tools/ws_conformance/run.sh"
 run "mDNS responder (mdns_probe)" "$ROOT/tools/mdns_probe/run.sh"
 run "firmware font image format (font_image)" "$ROOT/tools/font_image/run.sh"

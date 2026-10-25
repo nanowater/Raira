@@ -4,13 +4,14 @@ Checks that need neither a real player nor a real device nor your own settings. 
 simulator, a fake source, test servers) is stopped again by PID, temp files go to `mktemp -d` (honours `$TMPDIR`) and the test
 ports (18397-18399) are outside the real ones (hub 18322, bridge 18801). Run them before committing:
 
-    tools/run_checks.sh              # bridge unit tests, WebSocket server, mDNS responder, the device's "Automatic" focus
+    tools/run_checks.sh              # bridge unit tests, formatting and lint, WebSocket server, mDNS responder, the device's "Automatic" focus
     tools/run_checks.sh --network    # + the C++ vs Rust lyrics comparison (asks LRCLIB, about a minute)
 
 The device checks (`pick`, `reconnect`, `lyrics_retry`, `lyrics_none`, `lyrics_retry_track_change`) need `build/bin/lvglsim` (`cmake -B build && cmake --build build -j`), Xvfb and ImageMagick's `import`; it is skipped without them.
 
 | tool | what it checks |
 |---|---|
+| `format_check.sh [--fix]` | Formatting and lint of our own code: `clang-format` with the repository's `.clang-format` over `src/` (not `src/lib/`), `firmware/components/music_platform_esp/`, `firmware/main/` and the C++ tools; `cargo fmt --check` and `cargo clippy -D warnings` for the bridge. `--fix` rewrites the files (clippy findings are only reported). Part of `run_checks.sh`. |
 | `ws_conformance/run.sh` | The simulator's `WsServer` (libwebsockets) against a hand-written client: RFC 6455 example handshake, text and binary echo incl. 64-bit lengths, ping/pong, fragmentation, close, other paths refused, garbage survived. |
 | `mdns_probe/run.sh` | The simulator's mDNS responder: PTR/SRV/TXT/A answers and TTL, service enumeration, no answer for other services. Other responders on the machine (a real hub, KDE Connect) may answer the same questions; the probe collects all replies and looks for its own. The first question comes 0.5 s after the start, which also guards against a responder that is deaf while it announces. |
 | `font_image/run.sh` | The format of the firmware's `fonts` flash partition (`src/fonts/font_image.*`): builds a real image with `make_fonts_image.py`, parses it (both fonts byte for byte, 16-byte aligned) and then damaged ones (erased flash, wrong magic/version/count, entries outside the image or overflowing, cut image). |

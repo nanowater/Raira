@@ -122,6 +122,7 @@ UI/service code should depend on a common normalized `MediaInfo`-like model, not
 - LVGL's `anim_duration` for scrolling labels is the *total* travel time; derive it from text width for a constant speed (see `TITLE_SCROLL_PX_PER_S`).
 - Fonts: text uses Noto Sans KR via LVGL TinyTTF from data embedded with `.incbin` (Regular for UI, Bold for lyrics; glyphs: Latin, kana, Hangul, ~7k Han from KS X 1001 + JIS X 0208, no simplified-only Chinese). Times use the generated mono bitmap font. Both subsets are the KR face, so Japanese kanji show Korean glyph variants.
 - HTTP/JSON parsing: JSON uses `nlohmann/json`; HTTP and JPEG go through `src/platform/` (libcurl / libjpeg-turbo on the sim, ESP-IDF equivalents later). Keep `curl`/`turbojpeg` includes out of the core files (`music_core` target); new OS dependencies get an interface in `src/platform/` first. tidal-hifi itself is plain HTTP; LRCLIB and the TIDAL image CDN are HTTPS.
+- Formatting: the repository's `.clang-format` for C++ (also for the firmware files), `cargo fmt` for the bridge, and the bridge stays clippy-clean. `tools/format_check.sh` checks all three (part of `run_checks.sh`), `--fix` rewrites. The whole tree was formatted once on 2026-10-25 (commits in `.git-blame-ignore-revs`).
 - Update `docs/tidal-hifi-swagger.json` if tidal-hifi version changes.
 - When a test starts background processes (simulator, bridge, Xvfb), stop them by PID: `pkill -f` matches the shell that runs it, and a leftover simulator keeps its port (a stale `lvglsim -S` once blocked the hub's port).
 
