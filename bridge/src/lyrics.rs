@@ -204,10 +204,10 @@ fn from_json(j: &Value, allow_synced: bool) -> Option<Lyrics> {
 fn strip_suffix(t: &str) -> String {
     let mut t = t.to_string();
     for open in [" (", " ["] {
-        if let Some(p) = t.rfind(open) {
-            if p > 0 {
-                t.truncate(p);
-            }
+        if let Some(p) = t.rfind(open)
+            && p > 0
+        {
+            t.truncate(p);
         }
     }
     t
@@ -284,14 +284,14 @@ fn score(item: &Value, rank: usize, exact: bool, t: &Track) -> i64 {
         return -1;
     }
     let mut score: i64 = 0;
-    if t.duration_sec > 0 {
-        if let Some(d) = item.get("duration").and_then(Value::as_f64) {
-            let diff = (d - t.duration_sec as f64).abs();
-            if diff > 5.0 {
-                return -1;
-            }
-            score += 100 - (diff * 10.0) as i64; // closer length = same recording
+    if t.duration_sec > 0
+        && let Some(d) = item.get("duration").and_then(Value::as_f64)
+    {
+        let diff = (d - t.duration_sec as f64).abs();
+        if diff > 5.0 {
+            return -1;
         }
+        score += 100 - (diff * 10.0) as i64; // closer length = same recording
     }
     let use_synced = synced_fits(item, t);
     if !use_synced && plain.is_empty() {
@@ -420,10 +420,10 @@ pub async fn lookup_network(t: &Track) -> Result<Option<Lyrics>, ()> {
     match get(&url).await {
         Answer::Body(b) => {
             answered = true;
-            if let Ok(v) = serde_json::from_str::<Value>(&b) {
-                if v.is_object() {
-                    cands.push((v, true));
-                }
+            if let Ok(v) = serde_json::from_str::<Value>(&b)
+                && v.is_object()
+            {
+                cands.push((v, true));
             }
         }
         Answer::NotFound => answered = true,

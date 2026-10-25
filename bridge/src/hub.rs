@@ -143,13 +143,13 @@ fn now_ms() -> u64 {
 
 fn track_id(raw: &Raw) -> String {
     let m = &raw.meta;
-    if let Some(u) = &m.xesam_url {
-        if let Some(id) = u.split("open.spotify.com/track/").nth(1) {
-            return format!(
-                "spotify:track:{}",
-                id.split(['?', '/']).next().unwrap_or(id)
-            );
-        }
+    if let Some(u) = &m.xesam_url
+        && let Some(id) = u.split("open.spotify.com/track/").nth(1)
+    {
+        return format!(
+            "spotify:track:{}",
+            id.split(['?', '/']).next().unwrap_or(id)
+        );
     }
     match &m.trackid {
         Some(t) if t != "/org/mpris/MediaPlayer2/TrackList/NoTrack" && t != "/" => t.clone(),

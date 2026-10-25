@@ -93,10 +93,10 @@ fn parse_meta(m: &HashMap<String, OwnedValue>) -> Meta {
     if let Some(v) = m.get("xesam:artist") {
         out.artists = Vec::<String>::try_from(v.clone()).unwrap_or_default();
     }
-    if out.artists.is_empty() {
-        if let Some(v) = m.get("xesam:albumArtist") {
-            out.artists = Vec::<String>::try_from(v.clone()).unwrap_or_default();
-        }
+    if out.artists.is_empty()
+        && let Some(v) = m.get("xesam:albumArtist")
+    {
+        out.artists = Vec::<String>::try_from(v.clone()).unwrap_or_default();
     }
     if let Some(v) = m.get("xesam:album") {
         out.album = as_string(v).unwrap_or_default();
@@ -195,7 +195,7 @@ impl Mpris {
             Command::SeekAbsoluteUs(us) => {
                 // SetPosition needs the current track's object path (a stale one is ignored by the player)
                 let path = raw.meta.trackid.as_deref().unwrap_or("/");
-                let path = ObjectPath::try_from(path).map_err(zbus::Error::from)?;
+                let path = ObjectPath::try_from(path)?;
                 p.call_method("SetPosition", &(path, us)).await.map(drop)
             }
             Command::Volume(v) => p.set_property("Volume", v).await.map_err(Into::into),

@@ -171,11 +171,11 @@ async fn main() {
             return;
         }
     }
-    if let Some(i) = argv.iter().position(|a| a == "--lyrics-test") {
-        if argv.len() >= i + 5 {
-            lyrics_test(&argv[i + 1..i + 5]).await;
-            return;
-        }
+    if let Some(i) = argv.iter().position(|a| a == "--lyrics-test")
+        && argv.len() >= i + 5
+    {
+        lyrics_test(&argv[i + 1..i + 5]).await;
+        return;
     }
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
