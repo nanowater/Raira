@@ -6,7 +6,8 @@
 
 /* JPEG decoding the app core needs. Simulator: libjpeg-turbo (src/platform_sim); ESP32: an ESP JPEG
  * decoder. Note TIDAL serves progressive JPEGs, which some embedded decoders do not support. */
-struct RawImage {
+struct RawImage
+{
     std::vector<uint8_t> data; /* BGRX8888: bytes B,G,R,X per pixel, stride = w * 4 */
     uint32_t w = 0;
     uint32_t h = 0;

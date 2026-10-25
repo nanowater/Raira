@@ -68,21 +68,25 @@ void post_conn_state(int state)
     if(g_conn_posted.exchange(state) == state) return;
     post_to_ui([state, cb = g_conn_cb.load()] {
         if(state != MEDIA_CONN_UNKNOWN) music_ui_set_connected(state == MEDIA_CONN_CONNECTED);
-        if(state == MEDIA_CONN_LOST) music_ui_clear_content(); /* what is shown may be long out of date; the poller keeps the data */
+        if(state == MEDIA_CONN_LOST)
+            music_ui_clear_content(); /* what is shown may be long out of date; the poller keeps the data */
         if(cb) cb(static_cast<media_conn_state_t>(state));
     });
 }
 
-/* Everything derived from one cover, handed to the UI thread as one immutable piece. It is NOT kept after the UI took it: the decoded
- * cover (640 KB) and background (768 KB) would sit in PSRAM for good. The poller keeps only the downloaded image (a few KB to 100 KB)
- * of the last cover and decodes it again when the same artwork is due once more. */
-struct CoverBundle {
+/* Everything derived from one cover, handed to the UI thread as one immutable piece. It is NOT kept after the UI took
+ * it: the decoded cover (640 KB) and background (768 KB) would sit in PSRAM for good. The poller keeps only the
+ * downloaded image (a few KB to 100 KB) of the last cover and decodes it again when the same artwork is due once more.
+ */
+struct CoverBundle
+{
     CoverPixels cover;
-    CoverPixels bg;                   /* full-screen ambient background for this cover, empty = none */
-    std::vector<unsigned char> png;   /* fallback for covers that are not JPEG */
+    CoverPixels bg;                 /* full-screen ambient background for this cover, empty = none */
+    std::vector<unsigned char> png; /* fallback for covers that are not JPEG */
 };
 
-struct Update {
+struct Update
+{
     MediaInfo info;
     std::shared_ptr<const CoverBundle> art; /* null = the cover is unchanged */
     bool clear_cover = false;               /* nothing is playing any more: drop the old cover */
@@ -94,20 +98,20 @@ std::condition_variable g_cv;
 std::deque<music_ui_cmd_t> g_cmds;
 /* Volume: steps update g_vol_target at once (the UI has nothing to show, but a fast turn must build
  * on the previous step, not on the stale polled value); the newest target is sent at most every 80 ms. */
-const double VOLUME_STEP         = 0.02;
+const double VOLUME_STEP          = 0.02;
 const int VOLUME_SEND_INTERVAL_MS = 80;
-const int VOLUME_FOLLOW_MS        = 2000; /* after the last step, trust the polled volume again */
-double g_vol_polled = -1;                  /* last volume reported by /current */
-double g_vol_target = -1;                  /* wanted volume, -1 = just follow the polled one */
-bool g_vol_dirty    = false;               /* g_vol_target not sent yet */
+const int VOLUME_FOLLOW_MS        = 2000;  /* after the last step, trust the polled volume again */
+double g_vol_polled               = -1;    /* last volume reported by /current */
+double g_vol_target               = -1;    /* wanted volume, -1 = just follow the polled one */
+bool g_vol_dirty                  = false; /* g_vol_target not sent yet */
 std::chrono::steady_clock::time_point g_vol_last_send, g_vol_last_step;
 std::string g_endpoint; /* new service endpoint to apply on the poller thread, "" = none */
 std::string g_token;    /* new access token to apply on the poller thread */
 bool g_token_dirty = false;
-std::string g_player;   /* new player choice to apply on the poller thread */
+std::string g_player; /* new player choice to apply on the poller thread */
 bool g_player_dirty = false;
 media_players_cb_t g_players_cb; /* pending list request: answered on the poller thread, delivered on the LVGL thread */
-int g_seek_sec = -1; /* latest requested seek position, -1 = none (only the newest matters) */
+int g_seek_sec = -1;             /* latest requested seek position, -1 = none (only the newest matters) */
 
 void volume_sync_polled(double polled)
 {
@@ -168,23 +172,26 @@ void on_transport(music_ui_cmd_t cmd)
 
 /* ---- Lyrics: fetched on their own thread so a slow LRCLIB never stalls polling ---- */
 
-struct LyricsRequest {
+struct LyricsRequest
+{
     MediaInfo info;
     uint64_t gen = 0;
     std::string key; /* the metadata key the poller derived from `info` */
 };
-struct LyricsResult {
+struct LyricsResult
+{
     uint64_t gen = 0;
     bool found   = false;
     Lyrics lyrics;
 };
 
 const uint32_t SCREEN_W = 800, SCREEN_H = 480; /* the background is rendered at the panel size */
-const int POLL_INTERVAL_MS = 500; /* /current is ~1 KB and answers in <1 ms locally */
+const int POLL_INTERVAL_MS = 500;              /* /current is ~1 KB and answers in <1 ms locally */
 const int LYRICS_SETTLE_MS = 500;
-/* A lookup that FAILED (not one that found nothing) is asked again while the same track plays: after these pauses, in seconds. The PC
- * already retries once itself, so these are long on purpose (LRCLIB rate-limits, and a lasting outage must not be hammered). */
-const int LYRICS_RETRY_AFTER_S[] = {8, 30, 90};
+/* A lookup that FAILED (not one that found nothing) is asked again while the same track plays: after these pauses, in
+ * seconds. The PC already retries once itself, so these are long on purpose (LRCLIB rate-limits, and a lasting outage
+ * must not be hammered). */
+const int LYRICS_RETRY_AFTER_S[]      = {8, 30, 90};
 const int CONNECTION_LOST_AFTER_FAILS = 3;
 
 std::mutex g_lyr_mu;
@@ -192,9 +199,9 @@ std::condition_variable g_lyr_cv;
 bool g_lyr_has_req = false;
 LyricsRequest g_lyr_req;
 std::atomic<uint64_t> g_lyr_gen{0}; /* newest requested track; older results are dropped */
-/* The last lyrics that were found, with the key of their track: shown again without a lookup when the same track comes back
- * (after a reconnect, or when switching back to it). Only found lyrics are kept: a lookup that failed for a moment must not
- * turn into "no lyrics" for good. */
+/* The last lyrics that were found, with the key of their track: shown again without a lookup when the same track comes
+ * back (after a reconnect, or when switching back to it). Only found lyrics are kept: a lookup that failed for a moment
+ * must not turn into "no lyrics" for good. */
 std::mutex g_lyr_cache_mu;
 std::shared_ptr<LyricsResult> g_lyr_cache;
 std::string g_lyr_cache_key;
@@ -238,19 +245,21 @@ void lyrics_loop()
         uint64_t gen   = req.gen;
         auto cancelled = [gen] { return g_lyr_gen.load() != gen; };
         for(size_t attempt = 0;; attempt++) {
-            auto r = std::make_shared<LyricsResult>();
-            r->gen = gen;
-            r->found = g_lyrics_provider ? g_lyrics_provider(req.info, r->lyrics, cancelled) : lyrics_fetch(req.info, r->lyrics, cancelled);
+            auto r   = std::make_shared<LyricsResult>();
+            r->gen   = gen;
+            r->found = g_lyrics_provider ? g_lyrics_provider(req.info, r->lyrics, cancelled)
+                                         : lyrics_fetch(req.info, r->lyrics, cancelled);
             if(cancelled()) break; /* another track: its request is pending, this answer is of no use */
             if(r->found) {
                 std::lock_guard<std::mutex> lk(g_lyr_cache_mu);
                 g_lyr_cache     = r;
                 g_lyr_cache_key = req.key;
             }
-            /* A lookup that FAILED is not an answer yet: while a retry is still to come the layout stays as it is (a short note in the lyrics
-             * area), so a blip does not flip the screen to the big cover and back. "No lyrics" (the big-cover layout) is shown when the track
-             * has none, or when the last retry failed too. */
-            const bool will_retry = !r->found && r->lyrics.failed && attempt < sizeof(LYRICS_RETRY_AFTER_S) / sizeof(LYRICS_RETRY_AFTER_S[0]);
+            /* A lookup that FAILED is not an answer yet: while a retry is still to come the layout stays as it is (a
+             * short note in the lyrics area), so a blip does not flip the screen to the big cover and back. "No lyrics"
+             * (the big-cover layout) is shown when the track has none, or when the last retry failed too. */
+            const bool will_retry = !r->found && r->lyrics.failed &&
+                                    attempt < sizeof(LYRICS_RETRY_AFTER_S) / sizeof(LYRICS_RETRY_AFTER_S[0]);
             if(will_retry) {
                 post_to_ui([gen] {
                     if(gen == g_lyr_gen.load()) music_ui_set_lyrics_message(str::LYRICS_RETRYING);
@@ -275,8 +284,8 @@ std::shared_ptr<LyricsResult> cached_lyrics(const std::string & key)
 
 void show_cached_lyrics(const std::shared_ptr<LyricsResult> & cached)
 {
-    auto r  = std::make_shared<LyricsResult>(*cached);
-    r->gen  = ++g_lyr_gen; /* also drops whatever lookup of an older track may still be running */
+    auto r = std::make_shared<LyricsResult>(*cached);
+    r->gen = ++g_lyr_gen; /* also drops whatever lookup of an older track may still be running */
     post_to_ui([r] { apply_lyrics(r.get()); });
 }
 
@@ -314,8 +323,14 @@ int quality_tier(const MediaInfo & m)
 void apply_update(const Update * u)
 {
     const std::string quality = quality_text(u->info);
-    music_ui_state_t st{u->info.title.c_str(), u->info.artists.c_str(), u->info.current_sec, u->info.duration_sec,
-                        quality.c_str(), quality_tier(u->info), u->info.status == "playing", u->info.shuffle,
+    music_ui_state_t st{u->info.title.c_str(),
+                        u->info.artists.c_str(),
+                        u->info.current_sec,
+                        u->info.duration_sec,
+                        quality.c_str(),
+                        quality_tier(u->info),
+                        u->info.status == "playing",
+                        u->info.shuffle,
                         u->info.repeat == "single" ? MUSIC_UI_REPEAT_SINGLE
                         : u->info.repeat == "all"  ? MUSIC_UI_REPEAT_ALL
                                                    : MUSIC_UI_REPEAT_OFF,
@@ -336,36 +351,39 @@ void poll_loop(std::unique_ptr<MediaSource> source)
 {
     std::string cover_for;  /* cover key (image URL) the displayed cover belongs to */
     std::string lyrics_for; /* metadata key lyrics were requested for */
-    auto last_poll = std::chrono::steady_clock::now() - std::chrono::milliseconds(POLL_INTERVAL_MS);
-    int failed_polls = 0;              /* consecutive failed polls, reset when the endpoint changes */
-    bool lost_handled = false;         /* the poller's own state was reset for the current loss of the connection */
-    std::vector<unsigned char> art_cache_img; /* the last cover as downloaded (still encoded), and the key it belongs to */
+    auto last_poll    = std::chrono::steady_clock::now() - std::chrono::milliseconds(POLL_INTERVAL_MS);
+    int failed_polls  = 0;     /* consecutive failed polls, reset when the endpoint changes */
+    bool lost_handled = false; /* the poller's own state was reset for the current loss of the connection */
+    std::vector<unsigned char>
+        art_cache_img; /* the last cover as downloaded (still encoded), and the key it belongs to */
     std::string art_cache_key;
     while(true) {
         /* Sleep until the next poll, or wake early for a transport command, a seek or a volume step. */
         std::deque<music_ui_cmd_t> cmds;
-        int seek_sec     = -1;
+        int seek_sec = -1;
         std::string endpoint; /* non-empty: switch the source to this endpoint */
         bool new_token = false;
         std::string token;
         bool new_player = false;
         std::string player;
         media_players_cb_t list_cb;
-        double volume    = -1; /* >= 0: send this level */
+        double volume = -1; /* >= 0: send this level */
         {
             using clk = std::chrono::steady_clock;
             std::unique_lock<std::mutex> lk(g_mu);
-            g_cv.wait_until(lk, last_poll + std::chrono::milliseconds(POLL_INTERVAL_MS),
-                            [] { return !g_cmds.empty() || g_seek_sec >= 0 || g_vol_dirty || !g_endpoint.empty() || g_token_dirty || g_player_dirty || g_players_cb; });
+            g_cv.wait_until(lk, last_poll + std::chrono::milliseconds(POLL_INTERVAL_MS), [] {
+                return !g_cmds.empty() || g_seek_sec >= 0 || g_vol_dirty || !g_endpoint.empty() || g_token_dirty ||
+                       g_player_dirty || g_players_cb;
+            });
             cmds.swap(g_cmds);
             seek_sec   = g_seek_sec;
             g_seek_sec = -1;
             endpoint.swap(g_endpoint);
-            new_token    = g_token_dirty;
-            token        = g_token;
-            g_token_dirty = false;
-            new_player    = g_player_dirty;
-            player        = g_player;
+            new_token      = g_token_dirty;
+            token          = g_token;
+            g_token_dirty  = false;
+            new_player     = g_player_dirty;
+            player         = g_player;
             g_player_dirty = false;
             list_cb.swap(g_players_cb);
             if(g_vol_dirty) {
@@ -393,8 +411,8 @@ void poll_loop(std::unique_ptr<MediaSource> source)
         if(new_token) source->set_token(token);
         if(new_player) source->set_player(player);
         if(list_cb) {
-            auto players = std::make_shared<std::vector<PlayerInfo>>();
-            auto pick    = std::make_shared<std::string>();
+            auto players  = std::make_shared<std::vector<PlayerInfo>>();
+            auto pick     = std::make_shared<std::string>();
             const bool ok = source->list_players(*players, *pick);
             post_to_ui([list_cb, ok, players, pick] { list_cb(ok, *players, *pick); });
         }
@@ -410,7 +428,8 @@ void poll_loop(std::unique_ptr<MediaSource> source)
 
         /* Poll when due, or right after a command/seek (volume steps alone must not trigger a poll each). */
         const bool force = !cmds.empty() || seek_sec >= 0 || !endpoint.empty() || new_token || new_player;
-        if(!force && std::chrono::steady_clock::now() < last_poll + std::chrono::milliseconds(POLL_INTERVAL_MS)) continue;
+        if(!force && std::chrono::steady_clock::now() < last_poll + std::chrono::milliseconds(POLL_INTERVAL_MS))
+            continue;
         last_poll = std::chrono::steady_clock::now();
 
         MediaInfo info;
@@ -424,9 +443,9 @@ void poll_loop(std::unique_ptr<MediaSource> source)
         } else if(++failed_polls >= CONNECTION_LOST_AFTER_FAILS) {
             post_conn_state(MEDIA_CONN_LOST);
             if(!lost_handled) {
-                /* The screen is blanked (post_conn_state). Forget what it showed, so the first poll after the connection
-                 * is back fills it again - from the cached cover and lyrics when the track is the same - and cancel a
-                 * lyrics lookup that is still running: its answer must not appear on the blank screen. */
+                /* The screen is blanked (post_conn_state). Forget what it showed, so the first poll after the
+                 * connection is back fills it again - from the cached cover and lyrics when the track is the same - and
+                 * cancel a lyrics lookup that is still running: its answer must not appear on the blank screen. */
                 lost_handled = true;
                 cover_for.clear();
                 lyrics_for.clear();
@@ -448,14 +467,16 @@ void poll_loop(std::unique_ptr<MediaSource> source)
             /* Key on the fields the lookup uses, not just the track URL: while skipping, tidal-hifi can
              * report the new URL before title/artist/duration catch up, and a lookup made from that
              * half-updated state would show the previous song's lyrics. */
-            const std::string lyrics_key = info.track_id + '|' + info.title + '|' + info.artists + '|' + info.album + '|' +
-                                           std::to_string(info.duration_sec);
+            const std::string lyrics_key = info.track_id + '|' + info.title + '|' + info.artists + '|' + info.album +
+                                           '|' + std::to_string(info.duration_sec);
             if(!info.title.empty() && lyrics_key != lyrics_for) {
                 lyrics_for = lyrics_key;
-                if(auto cached = cached_lyrics(lyrics_key)) show_cached_lyrics(cached);
-                else request_lyrics(info, lyrics_key);
+                if(auto cached = cached_lyrics(lyrics_key))
+                    show_cached_lyrics(cached);
+                else
+                    request_lyrics(info, lyrics_key);
             }
-            auto u = std::make_shared<Update>();
+            auto u  = std::make_shared<Update>();
             u->info = info;
             /* Key the cover by its image URL: consecutive tracks of one album keep the cover,
              * and a new URL means new artwork is due. */
@@ -463,7 +484,8 @@ void poll_loop(std::unique_ptr<MediaSource> source)
             if(!cover_key.empty() && cover_key != cover_for) {
                 std::vector<unsigned char> img;
                 bool got = false;
-                if(art_cache_key == cover_key && !art_cache_img.empty()) { /* the same artwork again: reconnected, or switched back to it */
+                if(art_cache_key == cover_key &&
+                   !art_cache_img.empty()) { /* the same artwork again: reconnected, or switched back to it */
                     img = art_cache_img;
                     got = true;
                 } else {
@@ -480,10 +502,10 @@ void poll_loop(std::unique_ptr<MediaSource> source)
                         ok          = true;
                     }
                     if(ok) {
-                        cover_for      = cover_key;
-                        art_cache_key  = cover_key;
-                        art_cache_img  = std::move(img);
-                        u->art         = bundle;
+                        cover_for     = cover_key;
+                        art_cache_key = cover_key;
+                        art_cache_img = std::move(img);
+                        u->art        = bundle;
                     }
                 }
             }
@@ -505,7 +527,7 @@ void media_post_to_ui(std::function<void()> fn)
 
 void media_poller_start(std::unique_ptr<MediaSource> source, media_browse_mode_t browse)
 {
-    g_browse_mode = browse;
+    g_browse_mode     = browse;
     g_lyrics_provider = source->lyrics_provider();
     /* capabilities() runs on the creating thread here, before the source moves over to the poller. */
     g_caps = with_browse_mode(source->capabilities());
@@ -524,7 +546,7 @@ void media_poller_volume_step(int delta)
         if(!(g_caps & MEDIA_CAP_VOLUME)) return; /* the service has no volume to adjust */
         double base = g_vol_target >= 0 ? g_vol_target : g_vol_polled;
         if(base < 0 || delta == 0) return; /* volume not known yet */
-        double v = std::round((base + delta * VOLUME_STEP) * 100.0) / 100.0;
+        double v        = std::round((base + delta * VOLUME_STEP) * 100.0) / 100.0;
         g_vol_target    = v < 0 ? 0 : v > 1 ? 1 : v;
         g_vol_dirty     = true;
         g_vol_last_step = std::chrono::steady_clock::now();

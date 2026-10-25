@@ -13,27 +13,29 @@
  * UI work to media_post_to_ui(). send_*()/close() may be called from any thread. */
 using WsConnId = uint32_t;
 
-struct WsHandlers {
+struct WsHandlers
+{
     std::function<bool(WsConnId, const std::string & path)> on_open; /* return false to refuse the connection */
     std::function<void(WsConnId, const std::string & text)> on_text;
     std::function<void(WsConnId, const std::string & data)> on_binary;
     std::function<void(WsConnId)> on_close;
 };
 
-struct WsLimits {
+struct WsLimits
+{
     size_t max_connections = 4;
     size_t max_message     = 256 * 1024; /* larger frames close the connection */
 };
 
 class WsServer {
-public:
-    virtual ~WsServer() = default;
+  public:
+    virtual ~WsServer()                                                     = default;
     virtual bool start(uint16_t port, WsHandlers handlers, WsLimits limits) = 0; /* false: cannot listen */
-    virtual void stop()                                                       = 0;
-    virtual bool send_text(WsConnId id, const std::string & text)             = 0; /* false: gone or send failed */
-    virtual bool send_binary(WsConnId id, const std::string & data)           = 0;
-    virtual void close(WsConnId id)                                           = 0;
-    virtual std::string peer(WsConnId id)                                     = 0; /* "ip" of the remote end, for logs/UI */
+    virtual void stop()                                                     = 0;
+    virtual bool send_text(WsConnId id, const std::string & text)           = 0; /* false: gone or send failed */
+    virtual bool send_binary(WsConnId id, const std::string & data)         = 0;
+    virtual void close(WsConnId id)                                         = 0;
+    virtual std::string peer(WsConnId id) = 0; /* "ip" of the remote end, for logs/UI */
 };
 
 /* Provided by the platform layer. */

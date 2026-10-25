@@ -5,7 +5,7 @@ using nlohmann::json;
 
 bool TidalConfig::parse(const std::string & spec)
 {
-    std::string s = spec;
+    std::string s            = spec;
     const std::string scheme = "http://";
     if(s.compare(0, scheme.size(), scheme) == 0) s.erase(0, scheme.size());
     while(!s.empty() && s.back() == '/') s.pop_back();
@@ -40,7 +40,7 @@ bool TidalClient::set_endpoint(const std::string & spec)
 bool TidalClient::http_get(const std::string & path, std::string & body)
 {
     HttpRequest req;
-    req.url = cfg_.base_url() + path;
+    req.url          = cfg_.base_url() + path;
     HttpResponse res = http_->perform(req);
     body             = std::move(res.body);
     return res.ok() && !body.empty();

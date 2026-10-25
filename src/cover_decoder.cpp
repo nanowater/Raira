@@ -9,8 +9,8 @@ bool cover_decode(const std::vector<unsigned char> & encoded, uint32_t size, Cov
 
     RawImage raw;
     if(!jpeg_decode_bgrx(encoded.data(), encoded.size(), size, raw)) return false;
-    const int dw                 = (int)raw.w;
-    const int dh                 = (int)raw.h;
+    const int dw                        = (int)raw.w;
+    const int dh                        = (int)raw.h;
     const std::vector<uint8_t> & scaled = raw.data;
 
     /* Box-filter resample to size x size (center-crop to square first). */
@@ -95,7 +95,7 @@ bool cover_background(const CoverPixels & cover, uint32_t w, uint32_t h, uint32_
     const float gain = (float)std::min(std::max(150.0 / std::max(lum, 1.0), 1.0), 3.0);
     for(size_t i = 0; i < (size_t)G * G; i++) {
         float b = grid[i * 3 + 0] * gain, g = grid[i * 3 + 1] * gain, r = grid[i * 3 + 2] * gain;
-        float l = 0.299f * r + 0.587f * g + 0.114f * b;
+        float l         = 0.299f * r + 0.587f * g + 0.114f * b;
         const float sat = 1.25f;
         grid[i * 3 + 0] = std::min(255.f, std::max(0.f, l + (b - l) * sat));
         grid[i * 3 + 1] = std::min(255.f, std::max(0.f, l + (g - l) * sat));
@@ -127,20 +127,20 @@ bool cover_background(const CoverPixels & cover, uint32_t w, uint32_t h, uint32_
             float nx = (float)x / (float)w - 0.5f, ny = (float)y / (float)h - 0.5f;
             float vig = 1.f - 0.8f * (nx * nx + ny * ny);
             float a   = strength * std::max(vig, 0.f);
-            float r = base_r * (1 - a) + col[2] * a;
-            float g = base_g * (1 - a) + col[1] * a;
-            float b = base_b * (1 - a) + col[0] * a;
+            float r   = base_r * (1 - a) + col[2] * a;
+            float g   = base_g * (1 - a) + col[1] * a;
+            float b   = base_b * (1 - a) + col[0] * a;
             /* RGB565 has only 32/64 levels, which shows as contour bands on a smooth dark gradient:
              * ordered (Bayer 4x4) dithering turns the banding into fine, invisible noise. */
             static const float BAYER[16] = {0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5};
-            const float t = (BAYER[(y & 3) * 4 + (x & 3)] + 0.5f) / 16.f;
-            int r5 = std::min(31, (int)(r * 31.f / 255.f + t));
-            int g6 = std::min(63, (int)(g * 63.f / 255.f + t));
-            int b5 = std::min(31, (int)(b * 31.f / 255.f + t));
-            uint16_t px = (uint16_t)((r5 << 11) | (g6 << 5) | b5);
-            uint8_t * o = &out.data[((size_t)y * w + x) * 2];
-            o[0] = (uint8_t)(px & 0xFF);
-            o[1] = (uint8_t)(px >> 8);
+            const float t                = (BAYER[(y & 3) * 4 + (x & 3)] + 0.5f) / 16.f;
+            int r5                       = std::min(31, (int)(r * 31.f / 255.f + t));
+            int g6                       = std::min(63, (int)(g * 63.f / 255.f + t));
+            int b5                       = std::min(31, (int)(b * 31.f / 255.f + t));
+            uint16_t px                  = (uint16_t)((r5 << 11) | (g6 << 5) | b5);
+            uint8_t * o                  = &out.data[((size_t)y * w + x) * 2];
+            o[0]                         = (uint8_t)(px & 0xFF);
+            o[1]                         = (uint8_t)(px >> 8);
         }
     }
     return true;

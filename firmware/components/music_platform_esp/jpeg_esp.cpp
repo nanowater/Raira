@@ -1,9 +1,9 @@
-// platform/jpeg.h on the ESP32-S3: the JPEG decoder (TJpgDec) that is already in the chip's ROM, so it costs no flash and needs no
-// external component.
+// platform/jpeg.h on the ESP32-S3: the JPEG decoder (TJpgDec) that is already in the chip's ROM, so it costs no flash
+// and needs no external component.
 //
-// TJpgDec decodes baseline JPEG only. The bridge re-encodes every cover as baseline (bridge/src/cover.rs), so covers that come through
-// the hub decode. A progressive JPEG (what TIDAL's own CDN serves, reached only in the direct tidal-hifi mode) is refused: jd_prepare()
-// answers JDR_FMT3 and the function returns false.
+// TJpgDec decodes baseline JPEG only. The bridge re-encodes every cover as baseline (bridge/src/cover.rs), so covers
+// that come through the hub decode. A progressive JPEG (what TIDAL's own CDN serves, reached only in the direct
+// tidal-hifi mode) is refused: jd_prepare() answers JDR_FMT3 and the function returns false.
 #include <cstring>
 #include <vector>
 
@@ -15,10 +15,12 @@ namespace {
 
 const char * TAG = "jpeg";
 
-// working memory TJpgDec needs (tables, one MCU); 3100 bytes are the documented minimum for a baseline image, this leaves room
+// working memory TJpgDec needs (tables, one MCU); 3100 bytes are the documented minimum for a baseline image, this
+// leaves room
 const size_t POOL_SIZE = 16 * 1024;
 
-struct Ctx {
+struct Ctx
+{
     const uint8_t * p;
     size_t left;
     RawImage * out;
@@ -39,10 +41,10 @@ UINT input(JDEC * jd, BYTE * buf, UINT n)
 // TJpgDec hands over one decoded rectangle as RGB888; the result is BGRX8888 (what the core wants)
 UINT output(JDEC * jd, void * bitmap, JRECT * r)
 {
-    auto * c           = static_cast<Ctx *>(jd->device);
-    const uint8_t * s  = static_cast<const uint8_t *>(bitmap);
-    const uint32_t w   = (uint32_t)r->right - r->left + 1;
-    const uint32_t h   = (uint32_t)r->bottom - r->top + 1;
+    auto * c          = static_cast<Ctx *>(jd->device);
+    const uint8_t * s = static_cast<const uint8_t *>(bitmap);
+    const uint32_t w  = (uint32_t)r->right - r->left + 1;
+    const uint32_t h  = (uint32_t)r->bottom - r->top + 1;
     if(r->right >= c->out_w || r->bottom >= c->out_h) return 0; // never write outside the image: 0 stops the decoding
     for(uint32_t y = 0; y < h; y++) {
         uint8_t * d = c->out->data.data() + ((size_t)(r->top + y) * c->out_w + r->left) * 4;
@@ -72,8 +74,8 @@ bool jpeg_decode_bgrx(const uint8_t * data, size_t size, uint32_t min_edge, RawI
     }
     if(jd.width == 0 || jd.height == 0) return false;
 
-    // Let the decoder do the cheap power-of-two downscale (1/2, 1/4, 1/8): the largest one that keeps the result at least min_edge on
-    // both sides, so later resampling only shrinks. The simulator (libjpeg-turbo) picks the same.
+    // Let the decoder do the cheap power-of-two downscale (1/2, 1/4, 1/8): the largest one that keeps the result at
+    // least min_edge on both sides, so later resampling only shrinks. The simulator (libjpeg-turbo) picks the same.
     BYTE scale = 0;
     for(int s = 3; s >= 1; s--) {
         if((jd.width >> s) >= min_edge && (jd.height >> s) >= min_edge) {

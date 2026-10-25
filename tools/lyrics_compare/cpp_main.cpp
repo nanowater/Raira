@@ -1,5 +1,5 @@
-// Prints what the device's own lyrics code (src/lyrics.cpp) finds, in the same JSON form as `music-bridge --lyrics-test`.
-// Usage: cpp_lyrics <title> <artists> <album> <seconds>
+// Prints what the device's own lyrics code (src/lyrics.cpp) finds, in the same JSON form as `music-bridge
+// --lyrics-test`. Usage: cpp_lyrics <title> <artists> <album> <seconds>
 #include <cstdio>
 #include <cstdlib>
 #include <nlohmann/json.hpp>

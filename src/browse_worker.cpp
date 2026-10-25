@@ -12,9 +12,10 @@
 
 namespace {
 
-struct Req {
+struct Req
+{
     enum Kind { REFRESH, OPEN_PLAYLIST, PLAY_TRACK, PLAY_QUEUE, THUMB, ENDPOINT, TOKEN } kind = REFRESH;
-    int index = 0;
+    int index                                                                                 = 0;
     std::string text; /* cover key, or the new endpoint */
 };
 
@@ -60,7 +61,8 @@ std::vector<browse_item_t> to_ui(const std::vector<BrowseItem> & items)
     std::vector<browse_item_t> out;
     out.reserve(items.size());
     for(const BrowseItem & i : items)
-        out.push_back({i.title.c_str(), i.subtitle.c_str(), i.playable, i.current, i.cover.empty() ? nullptr : i.cover.c_str()});
+        out.push_back(
+            {i.title.c_str(), i.subtitle.c_str(), i.playable, i.current, i.cover.empty() ? nullptr : i.cover.c_str()});
     return out;
 }
 
@@ -71,8 +73,10 @@ void post_list(Target t, std::vector<BrowseItem> items)
     auto shared = std::make_shared<std::vector<BrowseItem>>(std::move(items));
     media_post_to_ui([t, shared] {
         auto ui = to_ui(*shared);
-        if(t == Target::QUEUE) browse_ui_set_queue(ui.data(), ui.size());
-        else browse_ui_set_playlists(ui.data(), ui.size());
+        if(t == Target::QUEUE)
+            browse_ui_set_queue(ui.data(), ui.size());
+        else
+            browse_ui_set_playlists(ui.data(), ui.size());
     });
 }
 
@@ -89,7 +93,7 @@ std::vector<uint16_t> to_rgb565(const CoverPixels & px)
 
 void worker(std::unique_ptr<BrowseSource> src)
 {
-    std::vector<BrowseItem> queue, playlists, tracks; /* what the panel shows: row index -> item */
+    std::vector<BrowseItem> queue, playlists, tracks;  /* what the panel shows: row index -> item */
     const std::chrono::milliseconds QUEUE_SETTLE(700); /* the service needs a moment to update its queue */
 
     auto refresh_queue = [&] {
@@ -143,7 +147,7 @@ void worker(std::unique_ptr<BrowseSource> src)
             case Req::THUMB: {
                 CoverPixels px;
                 if(!src->get_thumb(r.text, BROWSE_THUMB_PX, px) || px.w == 0 || px.h == 0) break;
-                auto rgb = std::make_shared<std::vector<uint16_t>>(to_rgb565(px));
+                auto rgb         = std::make_shared<std::vector<uint16_t>>(to_rgb565(px));
                 const uint32_t w = px.w, h = px.h;
                 const std::string key = r.text;
                 media_post_to_ui([key, rgb, w, h] { browse_ui_set_thumb(key.c_str(), rgb->data(), w, h); });

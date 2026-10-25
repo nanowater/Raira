@@ -19,13 +19,14 @@
 
 namespace {
 
-const char * GROUP = "224.0.0.251";
+const char * GROUP  = "224.0.0.251";
 const uint16_t PORT = 5353;
-const uint32_t TTL = 120;
+const uint32_t TTL  = 120;
 
 enum : uint16_t { T_A = 1, T_PTR = 12, T_TXT = 16, T_SRV = 33, T_ANY = 255 };
 
-struct Iface {
+struct Iface
+{
     std::string name;
     unsigned index = 0;
     in_addr addr{};
@@ -55,14 +56,22 @@ void put_name(std::string & out, const std::string & name)
     out += '\0';
 }
 
-void put16(std::string & o, uint16_t v) { o += (char)(v >> 8); o += (char)v; }
-void put32(std::string & o, uint32_t v) { put16(o, v >> 16); put16(o, v & 0xFFFF); }
+void put16(std::string & o, uint16_t v)
+{
+    o += (char)(v >> 8);
+    o += (char)v;
+}
+void put32(std::string & o, uint32_t v)
+{
+    put16(o, v >> 16);
+    put16(o, v & 0xFFFF);
+}
 
 /* Reads a possibly compressed name starting at `pos`; advances `pos` past it in the *original* position. */
 bool read_name(const uint8_t * p, size_t len, size_t & pos, std::string & out)
 {
     out.clear();
-    size_t cur = pos;
+    size_t cur  = pos;
     bool jumped = false;
     int hops    = 0;
     while(true) {
@@ -88,24 +97,29 @@ bool read_name(const uint8_t * p, size_t len, size_t & pos, std::string & out)
 }
 
 class Responder : public MdnsAdvertiser {
-public:
-    ~Responder() override { stop(); }
+  public:
+    ~Responder() override
+    {
+        stop();
+    }
 
     bool start(const MdnsService & s) override
     {
-        svc_      = s;
-        type_fq_  = lower(s.type + ".local");
-        inst_fq_  = s.instance + "." + s.type + ".local";
-        host_fq_  = lower(s.host + ".local");
-        fd_       = socket(AF_INET, SOCK_DGRAM, 0);
+        svc_     = s;
+        type_fq_ = lower(s.type + ".local");
+        inst_fq_ = s.instance + "." + s.type + ".local";
+        host_fq_ = lower(s.host + ".local");
+        fd_      = socket(AF_INET, SOCK_DGRAM, 0);
         if(fd_ < 0) return false;
         int one = 1;
         setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
-        setsockopt(fd_, SOL_SOCKET, SO_REUSEPORT, &one, sizeof(one)); /* kdeconnect, systemd-resolved... share the port */
+        setsockopt(fd_, SOL_SOCKET, SO_REUSEPORT, &one,
+                   sizeof(one)); /* kdeconnect, systemd-resolved... share the port */
         setsockopt(fd_, IPPROTO_IP, IP_PKTINFO, &one, sizeof(one));
         unsigned char ttl = 255, loop = 1;
         setsockopt(fd_, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl));
-        setsockopt(fd_, IPPROTO_IP, IP_MULTICAST_LOOP, &loop, sizeof(loop)); /* a source on this same PC must hear us too */
+        setsockopt(fd_, IPPROTO_IP, IP_MULTICAST_LOOP, &loop,
+                   sizeof(loop)); /* a source on this same PC must hear us too */
         sockaddr_in a{};
         a.sin_family      = AF_INET;
         a.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -135,7 +149,7 @@ public:
         fd_ = -1;
     }
 
-private:
+  private:
     static std::vector<Iface> list_interfaces()
     {
         std::vector<Iface> out;
@@ -171,10 +185,11 @@ private:
     }
 
     /* The whole record set of our service, with `addr` as the host's address. ttl 0 = goodbye. */
-    std::string records(in_addr addr, uint32_t ttl, bool ptr, bool srv, bool txt, bool a, bool enumeration, uint16_t & count)
+    std::string records(in_addr addr, uint32_t ttl, bool ptr, bool srv, bool txt, bool a, bool enumeration,
+                        uint16_t & count)
     {
         std::string o;
-        count = 0;
+        count   = 0;
         auto rr = [&](const std::string & name, uint16_t type, bool unique, const std::string & rdata) {
             put_name(o, name);
             put16(o, type);
@@ -221,7 +236,8 @@ private:
         std::lock_guard<std::mutex> lk(send_mu_);
         setsockopt(fd_, IPPROTO_IP, IP_MULTICAST_IF, &i.addr, sizeof(i.addr));
         sockaddr_in to{};
-        if(unicast_to) to = *unicast_to;
+        if(unicast_to)
+            to = *unicast_to;
         else {
             to.sin_family = AF_INET;
             to.sin_port   = htons(PORT);
@@ -232,7 +248,7 @@ private:
 
     std::string response(const Iface & i, uint32_t ttl, bool ptr, bool srv, bool txt, bool a, bool enumeration)
     {
-        uint16_t n = 0;
+        uint16_t n       = 0;
         std::string body = records(i.addr, ttl, ptr, srv, txt, a, enumeration, n);
         std::string h;
         put16(h, 0);      /* id */
@@ -269,13 +285,16 @@ private:
             if(klass & 0x8000) unicast = true; /* QU: the asker wants a unicast answer */
             const std::string n = lower(name);
             const bool any      = type == T_ANY;
-            if(n == type_fq_ && (any || type == T_PTR)) { ptr = srv = txt = a = true; }
-            else if(n == lower(inst_fq_) && (any || type == T_SRV || type == T_TXT)) {
+            if(n == type_fq_ && (any || type == T_PTR)) {
+                ptr = srv = txt = a = true;
+            } else if(n == lower(inst_fq_) && (any || type == T_SRV || type == T_TXT)) {
                 srv = any || type == T_SRV;
                 txt = any || type == T_TXT;
                 a   = true;
-            } else if(n == host_fq_ && (any || type == T_A)) a = true;
-            else if(n == "_services._dns-sd._udp.local" && (any || type == T_PTR)) enumeration = true;
+            } else if(n == host_fq_ && (any || type == T_A))
+                a = true;
+            else if(n == "_services._dns-sd._udp.local" && (any || type == T_PTR))
+                enumeration = true;
         }
         if(!(ptr || srv || txt || a || enumeration)) return;
 
@@ -284,8 +303,15 @@ private:
         {
             std::lock_guard<std::mutex> lk(mu_);
             for(const Iface & i : joined_)
-                if(i.index == ifindex) { via = i; found = true; break; }
-            if(!found && !joined_.empty()) { via = joined_.front(); found = true; }
+                if(i.index == ifindex) {
+                    via   = i;
+                    found = true;
+                    break;
+                }
+            if(!found && !joined_.empty()) {
+                via   = joined_.front();
+                found = true;
+            }
         }
         if(!found) return;
         const std::string pkt = response(via, TTL, ptr, srv, txt, a, enumeration);
@@ -296,8 +322,8 @@ private:
     void loop_()
     {
         using clock = std::chrono::steady_clock;
-        /* Announce twice, a second apart (RFC 6762 section 8.3), but without sleeping: questions that arrive meanwhile are
-         * answered at once (a sleeping loop left the responder deaf for the first two seconds). */
+        /* Announce twice, a second apart (RFC 6762 section 8.3), but without sleeping: questions that arrive meanwhile
+         * are answered at once (a sleeping loop left the responder deaf for the first two seconds). */
         announce(TTL);
         const auto second_at = clock::now() + std::chrono::seconds(1);
         bool second_sent     = false;
@@ -316,11 +342,12 @@ private:
                 m.msg_iovlen     = 1;
                 m.msg_control    = ctrl;
                 m.msg_controllen = sizeof(ctrl);
-                const ssize_t n = recvmsg(fd_, &m, 0);
+                const ssize_t n  = recvmsg(fd_, &m, 0);
                 if(n > 0) {
                     unsigned ifindex = 0;
                     for(cmsghdr * c = CMSG_FIRSTHDR(&m); c; c = CMSG_NXTHDR(&m, c))
-                        if(c->cmsg_level == IPPROTO_IP && c->cmsg_type == IP_PKTINFO) ifindex = reinterpret_cast<in_pktinfo *>(CMSG_DATA(c))->ipi_ifindex;
+                        if(c->cmsg_level == IPPROTO_IP && c->cmsg_type == IP_PKTINFO)
+                            ifindex = reinterpret_cast<in_pktinfo *>(CMSG_DATA(c))->ipi_ifindex;
                     handle(buf, (size_t)n, from, ifindex);
                 }
             }

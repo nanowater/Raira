@@ -18,7 +18,8 @@ void music_ui_create(void);
 /* Album art widget handle (created in music_ui_create). */
 lv_obj_t * music_ui_album_art(void);
 
-typedef struct {
+typedef struct
+{
     const char * title;
     const char * artists;
     int current_sec;
@@ -27,7 +28,7 @@ typedef struct {
     int quality_tier;     /* music_ui_quality_t: picks the badge color */
     bool playing;
     bool shuffle;
-    int repeat; /* music_ui_repeat_t */
+    int repeat;      /* music_ui_repeat_t */
     int position_ms; /* -1: only current_sec (whole seconds) is known; else the position in ms, as of this update */
 } music_ui_state_t;
 
@@ -56,11 +57,11 @@ void music_ui_set_seek_cb(music_ui_seek_cb_t cb);
 /* Which transport controls to show: services that cannot drive them are reflected here (unsupported
  * ones are hidden). Bit values mirror MediaCapability in media_source.h (asserted in media_poller.cpp);
  * MEDIA_CAP_VOLUME has no control in this UI, so it has no mirror here. */
-#define MUSIC_UI_CAP_SEEK      (1u << 0)
-#define MUSIC_UI_CAP_SHUFFLE   (1u << 2)
-#define MUSIC_UI_CAP_REPEAT    (1u << 3)
+#define MUSIC_UI_CAP_SEEK (1u << 0)
+#define MUSIC_UI_CAP_SHUFFLE (1u << 2)
+#define MUSIC_UI_CAP_REPEAT (1u << 3)
 #define MUSIC_UI_CAP_PREV_NEXT (1u << 4)
-#define MUSIC_UI_CAP_BROWSE    (1u << 5) /* the playlist/queue button */
+#define MUSIC_UI_CAP_BROWSE (1u << 5) /* the playlist/queue button */
 
 /* Show only the transport controls the service supports (bitmask as above; bits not set hide their
  * control). Call once, after music_ui_create(); LVGL thread only. */
@@ -71,16 +72,18 @@ void music_ui_set_capabilities(unsigned caps);
  * feed back). LVGL thread only. */
 void music_ui_set_browse_cb(browse_cb_t cb);
 
-/* Blank what the display shows of the track: title, artists, cover, ambient background, lyrics, progress and times. Called when the
- * connection to the music service is lost: the data is long out of date, and the poller keeps what it needs to show it again if the
- * same track comes back. The controls and the banner are not touched. LVGL thread only. */
+/* Blank what the display shows of the track: title, artists, cover, ambient background, lyrics, progress and times.
+ * Called when the connection to the music service is lost: the data is long out of date, and the poller keeps what it
+ * needs to show it again if the same track comes back. The controls and the banner are not touched. LVGL thread only.
+ */
 void music_ui_clear_content(void);
 
 /* Show/hide the "connection lost" banner (hidden by default; only shown while disconnected).
  * LVGL thread only. */
 void music_ui_set_connected(bool connected);
 
-typedef struct {
+typedef struct
+{
     const char * text;
     int time_ms; /* ignored when the lyrics are not synced */
 } music_ui_lyric_line_t;

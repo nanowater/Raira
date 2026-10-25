@@ -7,7 +7,8 @@
 #include "media_source.h"
 #include "platform/http.h"
 
-struct TidalConfig {
+struct TidalConfig
+{
     std::string host = "localhost";
     int port         = 47836;
 
@@ -19,10 +20,14 @@ struct TidalConfig {
 /* MediaSource for the tidal-hifi local HTTP API (TIDAL on the host PC). The only place that knows
  * tidal-hifi's JSON and endpoints. Owns one HttpClient so connections can be reused (keep-alive). */
 class TidalClient : public MediaSource {
-public:
-    explicit TidalClient(TidalConfig cfg) : cfg_(std::move(cfg)), http_(http_client_create()) {}
+  public:
+    explicit TidalClient(TidalConfig cfg) : cfg_(std::move(cfg)), http_(http_client_create())
+    {}
 
-    const char * name() const override { return "tidal"; }
+    const char * name() const override
+    {
+        return "tidal";
+    }
     uint32_t capabilities() const override
     {
         return MEDIA_CAP_SEEK | MEDIA_CAP_VOLUME | MEDIA_CAP_SHUFFLE | MEDIA_CAP_REPEAT | MEDIA_CAP_PREV_NEXT;
@@ -34,17 +39,38 @@ public:
     bool get_cover(const MediaInfo & info, int want_px, std::vector<unsigned char> & out) override;
 
     /* Transport commands; each returns true on HTTP 200. */
-    bool play_pause() override { return http_post("/player/playpause"); }
-    bool next() override { return http_post("/player/next"); }
-    bool previous() override { return http_post("/player/previous"); }
-    bool toggle_shuffle() override { return http_post("/player/shuffle/toggle"); }
-    bool toggle_repeat() override { return http_post("/player/repeat/toggle"); }
+    bool play_pause() override
+    {
+        return http_post("/player/playpause");
+    }
+    bool next() override
+    {
+        return http_post("/player/next");
+    }
+    bool previous() override
+    {
+        return http_post("/player/previous");
+    }
+    bool toggle_shuffle() override
+    {
+        return http_post("/player/shuffle/toggle");
+    }
+    bool toggle_repeat() override
+    {
+        return http_post("/player/repeat/toggle");
+    }
     bool set_volume(double level) override; /* 0.0..1.0 */
-    bool seek_absolute(int seconds) override { return http_put("/player/seek/absolute?seconds=" + std::to_string(seconds)); }
+    bool seek_absolute(int seconds) override
+    {
+        return http_put("/player/seek/absolute?seconds=" + std::to_string(seconds));
+    }
     bool set_endpoint(const std::string & spec) override;
-    std::string endpoint() const override { return cfg_.port == 47836 ? cfg_.host : cfg_.host + ":" + std::to_string(cfg_.port); }
+    std::string endpoint() const override
+    {
+        return cfg_.port == 47836 ? cfg_.host : cfg_.host + ":" + std::to_string(cfg_.port);
+    }
 
-private:
+  private:
     bool fetch_url(const std::string & url, std::vector<unsigned char> & out);
     bool fetch_current_image(std::vector<unsigned char> & out);
     bool http_post(const std::string & path);

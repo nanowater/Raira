@@ -10,8 +10,10 @@ using nlohmann::json;
 using CancelFn = std::function<bool()>;
 
 /* LRCLIB answers 429 when requests come in bursts; back off and retry a couple of times. */
-/* `lost` is set when there was no usable answer (network error, 5xx, 429 that did not clear); a 404 is an answer ("not there"). */
-static bool http_get_url(HttpClient & http, const std::string & url, std::string & body, const CancelFn & cancelled, bool & lost)
+/* `lost` is set when there was no usable answer (network error, 5xx, 429 that did not clear); a 404 is an answer ("not
+ * there"). */
+static bool http_get_url(HttpClient & http, const std::string & url, std::string & body, const CancelFn & cancelled,
+                         bool & lost)
 {
     HttpRequest req;
     req.url               = url;
@@ -64,14 +66,16 @@ static std::string strip_invisible(const std::string & s)
         unsigned char c = (unsigned char)s[i];
         if(c == 0xE2 && i + 2 < s.size()) {
             unsigned char b = (unsigned char)s[i + 1], d = (unsigned char)s[i + 2];
-            bool zero_width_or_dir = (b == 0x80 && ((d >= 0x8B && d <= 0x8F) || (d >= 0xAA && d <= 0xAE))) || /* U+200B-200F, 202A-202E */
-                                     (b == 0x81 && d == 0xA0);                                               /* U+2060 */
+            bool zero_width_or_dir =
+                (b == 0x80 && ((d >= 0x8B && d <= 0x8F) || (d >= 0xAA && d <= 0xAE))) || /* U+200B-200F, 202A-202E */
+                (b == 0x81 && d == 0xA0);                                                /* U+2060 */
             if(zero_width_or_dir) {
                 i += 3;
                 continue;
             }
         }
-        if(c == 0xEF && i + 2 < s.size() && (unsigned char)s[i + 1] == 0xBB && (unsigned char)s[i + 2] == 0xBF) { /* U+FEFF */
+        if(c == 0xEF && i + 2 < s.size() && (unsigned char)s[i + 1] == 0xBB &&
+           (unsigned char)s[i + 2] == 0xBF) { /* U+FEFF */
             i += 3;
             continue;
         }
@@ -124,9 +128,10 @@ Lyrics lyrics_parse_plain(const std::string & text)
     Lyrics out;
     size_t pos = 0;
     while(pos <= text.size()) {
-        size_t nl        = text.find('\n', pos);
-        std::string line = trim(strip_invisible(text.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos)));
-        pos              = nl == std::string::npos ? text.size() + 1 : nl + 1;
+        size_t nl = text.find('\n', pos);
+        std::string line =
+            trim(strip_invisible(text.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos)));
+        pos = nl == std::string::npos ? text.size() + 1 : nl + 1;
         if(!line.empty()) out.lines.push_back({0, line});
     }
     return out;
@@ -170,7 +175,8 @@ static bool from_json(const json & j, Lyrics & out, bool allow_synced = true)
     std::string synced = allow_synced ? jstr(j, "syncedLyrics") : std::string();
     if(!synced.empty()) {
         Lyrics l = lyrics_parse_lrc(synced);
-        bool has_text = std::any_of(l.lines.begin(), l.lines.end(), [](const LyricLine & x) { return !x.text.empty(); });
+        bool has_text =
+            std::any_of(l.lines.begin(), l.lines.end(), [](const LyricLine & x) { return !x.text.empty(); });
         if(has_text) {
             add_end_marker(l);
             out = std::move(l);
@@ -216,7 +222,8 @@ static double native_script_ratio(const Lyrics & l)
             if(isalpha(c)) {
                 latin++;
             } else if((c & 0xF0) == 0xE0 && i + 2 < s.size()) { /* 3-byte sequence: U+0800..U+FFFF */
-                uint32_t cp = ((c & 0x0F) << 12) | (((unsigned char)s[i + 1] & 0x3F) << 6) | ((unsigned char)s[i + 2] & 0x3F);
+                uint32_t cp =
+                    ((c & 0x0F) << 12) | (((unsigned char)s[i + 1] & 0x3F) << 6) | ((unsigned char)s[i + 2] & 0x3F);
                 if((cp >= 0x3040 && cp <= 0x30FF) || (cp >= 0xAC00 && cp <= 0xD7A3) || (cp >= 0x4E00 && cp <= 0x9FFF))
                     native++;
                 i += 2;
@@ -323,7 +330,8 @@ bool lyrics_fetch(const MediaInfo & info, Lyrics & out, const std::function<bool
     }
 
     if(cancelled && cancelled()) return false;
-    /* "nothing found" is only believed when no request was lost: with one of them gone the candidates may simply be missing */
+    /* "nothing found" is only believed when no request was lost: with one of them gone the candidates may simply be
+     * missing */
     if(cands.empty() && lost) {
         out.failed = true;
         return false;

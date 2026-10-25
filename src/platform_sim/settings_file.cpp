@@ -14,7 +14,7 @@ std::string settings_dir()
 }
 
 class FileStore : public SettingsStore {
-public:
+  public:
     bool load(AppSettings & out) override
     {
         std::ifstream f(settings_dir() + "/settings.json");
@@ -41,7 +41,14 @@ public:
         const std::string dir = settings_dir();
         mkdir((dir.substr(0, dir.rfind('/'))).c_str(), 0700); /* ~/.config */
         mkdir(dir.c_str(), 0700);
-        nlohmann::json j = {{"server", s.server}, {"bridge_token", s.bridge_token}, {"player", s.player}, {"hub_device_id", s.hub_device_id}, {"hub_device_name", s.hub_device_name}, {"hub_sources", s.hub_sources}, {"wifi_ssid", s.wifi_ssid}, {"wifi_password", s.wifi_password}};
+        nlohmann::json j = {{"server", s.server},
+                            {"bridge_token", s.bridge_token},
+                            {"player", s.player},
+                            {"hub_device_id", s.hub_device_id},
+                            {"hub_device_name", s.hub_device_name},
+                            {"hub_sources", s.hub_sources},
+                            {"wifi_ssid", s.wifi_ssid},
+                            {"wifi_password", s.wifi_password}};
         std::string path = dir + "/settings.json";
         std::ofstream f(path);
         if(!f) return false;

@@ -42,7 +42,8 @@ static const uint32_t OPTIMISTIC_GRACE_MS = 2000;
 static const uint32_t ICON_ON             = 0xFFFFFF;
 static const uint32_t ICON_OFF            = 0x6B7280;
 
-struct Optimistic {
+struct Optimistic
+{
     bool active    = false;
     uint32_t since = 0;
     void start()
@@ -58,11 +59,11 @@ struct Optimistic {
     }
 };
 
-static bool shown_playing  = false;
-static bool shown_shuffle  = false;
-static int shown_repeat    = MUSIC_UI_REPEAT_OFF;
+static bool shown_playing = false;
+static bool shown_shuffle = false;
+static int shown_repeat   = MUSIC_UI_REPEAT_OFF;
 static Optimistic opt_play, opt_shuffle, opt_repeat, opt_seek;
-static int seek_target_sec = 0;
+static int seek_target_sec         = 0;
 static lv_obj_t * shuffle_label    = nullptr;
 static lv_obj_t * repeat_label     = nullptr;
 static lv_obj_t * repeat_one_label = nullptr; /* small "1" over the loop icon */
@@ -88,14 +89,15 @@ static void show_shuffle(bool on)
 static void show_repeat(int mode)
 {
     shown_repeat = mode;
-    if(repeat_label) lv_obj_set_style_text_color(repeat_label, lv_color_hex(mode != MUSIC_UI_REPEAT_OFF ? ICON_ON : ICON_OFF), 0);
+    if(repeat_label)
+        lv_obj_set_style_text_color(repeat_label, lv_color_hex(mode != MUSIC_UI_REPEAT_OFF ? ICON_ON : ICON_OFF), 0);
     if(repeat_one_label) lv_obj_set_hidden(repeat_one_label, mode != MUSIC_UI_REPEAT_SINGLE);
 }
 
 /* ---- Ambient background: two full-screen images; a new one fades in over the old one ---- */
 static const uint32_t BG_FADE_MS = 800;
-static lv_obj_t * bg_img[2]       = {nullptr, nullptr};
-static unsigned char * bg_buf[2]  = {nullptr, nullptr};
+static lv_obj_t * bg_img[2]      = {nullptr, nullptr};
+static unsigned char * bg_buf[2] = {nullptr, nullptr};
 static lv_image_dsc_t bg_dsc[2];
 static int bg_front = 0; /* the one currently on top / fully shown */
 
@@ -107,7 +109,7 @@ static void bg_opa_anim_cb(void * var, int32_t v)
 void music_ui_set_background(const void * rgb565, uint32_t w, uint32_t h)
 {
     if(!bg_img[0] || !rgb565 || w == 0 || h == 0) return;
-    const size_t size = (size_t)w * h * 2;
+    const size_t size    = (size_t)w * h * 2;
     unsigned char * copy = (unsigned char *)malloc(size);
     if(!copy) return;
     memcpy(copy, rgb565, size);
@@ -205,12 +207,12 @@ static lv_obj_t * lyrics_panel       = nullptr;
 static const lv_font_t * lyrics_font = nullptr;
 static std::vector<lv_obj_t *> lyric_labels;
 static std::vector<int> lyric_times;
-static std::vector<bool> lyric_gap; /* entry is an instrumental gap: a blank spacer, never highlighted */
-static lv_obj_t * intro_gap_spacer = nullptr; /* leading intro spacer that pulses */
-static lv_obj_t * intro_gap_dots[3]  = {nullptr, nullptr, nullptr};
-static bool intro_dots_pulsing       = false; /* the dots currently run their pulse animation */
-static bool lyrics_synced = false;
-static int lyric_cur      = -1;
+static std::vector<bool> lyric_gap;            /* entry is an instrumental gap: a blank spacer, never highlighted */
+static lv_obj_t * intro_gap_spacer  = nullptr; /* leading intro spacer that pulses */
+static lv_obj_t * intro_gap_dots[3] = {nullptr, nullptr, nullptr};
+static bool intro_dots_pulsing      = false; /* the dots currently run their pulse animation */
+static bool lyrics_synced           = false;
+static int lyric_cur                = -1;
 static bool lyrics_available        = false; /* the current track has lyrics to show */
 static bool lyrics_hidden_by_user   = false; /* swiped the lyrics away: keep the lyrics-free layout */
 static bool browse_open             = false; /* the playlist/queue panel replaces the lyrics panel */
@@ -239,12 +241,12 @@ static void lyrics_clear_labels()
 {
     /* Forget the labels before deleting them: lv_obj_clean() scrolls the panel back while it removes
      * children, and the scroll handler walks lyric_labels, which must not hold deleted objects. */
-     lyric_labels.clear();
-     lyric_times.clear();
-     lyric_gap.clear();
-     intro_gap_spacer = nullptr;
-     intro_dots_pulsing = false;
-     for(int k = 0; k < 3; k++) intro_gap_dots[k] = nullptr;
+    lyric_labels.clear();
+    lyric_times.clear();
+    lyric_gap.clear();
+    intro_gap_spacer   = nullptr;
+    intro_dots_pulsing = false;
+    for(int k = 0; k < 3; k++) intro_gap_dots[k] = nullptr;
     lyric_cur = -1;
     if(lyrics_panel) {
         lv_anim_delete(lyrics_panel, lyric_scroll_anim_cb); /* a glide for the previous lyrics must not carry over */
@@ -278,8 +280,8 @@ static void lyrics_scroll_cb(lv_event_t *)
 
 /* Smooth highlight changes: the text color eases between dim and white, and the view glides to
  * the new line with an ease-in-out curve instead of jumping. */
-static const uint32_t LYRIC_COLOR_FADE_MS   = 250;
-static const uint32_t LYRIC_SCROLL_MS       = 450;
+static const uint32_t LYRIC_COLOR_FADE_MS = 250;
+static const uint32_t LYRIC_SCROLL_MS     = 450;
 
 static void lyric_color_anim_cb(void * var, int32_t v)
 {
@@ -335,10 +337,10 @@ static void lyrics_highlight(int idx)
         animate_lyric_color(lyric_labels[lyric_cur], false);
     lyric_cur = idx;
 
-    const int n      = (int)lyric_labels.size();
-    bool leading_intro = (idx == 0 && n > 1 && !lyric_gap.empty() && lyric_gap[0] &&
-                          lyric_times.size() > 1 && lyric_times[0] == 0 && lyric_times[1] > 0);
-    lv_obj_t * focus = (idx >= 0 && idx < n && !lyric_gap[idx]) ? lyric_labels[idx] : nullptr;
+    const int n        = (int)lyric_labels.size();
+    bool leading_intro = (idx == 0 && n > 1 && !lyric_gap.empty() && lyric_gap[0] && lyric_times.size() > 1 &&
+                          lyric_times[0] == 0 && lyric_times[1] > 0);
+    lv_obj_t * focus   = (idx >= 0 && idx < n && !lyric_gap[idx]) ? lyric_labels[idx] : nullptr;
     if(leading_intro) {
         /* Intro: keep the pulsing dots on top, don't highlight the upcoming line yet. */
         glide_lyrics_to(0);
@@ -444,7 +446,7 @@ void music_ui_set_lyrics_message(const char * msg)
 {
     if(!lyrics_panel) return;
     lyrics_available = false; /* loading / not found */
-    lyrics_synced = false;
+    lyrics_synced    = false;
     lyrics_clear_labels();
     lv_obj_t * l = lv_label_create(lyrics_panel);
     lv_label_set_text(l, msg ? msg : "");
@@ -521,13 +523,13 @@ static void lyrics_sync_position(const music_ui_state_t * st, bool hold)
         pos_playing = st->playing;
         return;
     }
-    /* A source that knows the position in ms gets it as it is and may drift only a little before we resync; one that reports
-     * whole seconds (tidal-hifi direct) is taken at the middle of its second, +-1 s. */
-    const bool precise  = st->position_ms >= 0;
-    const int32_t reported = precise ? st->position_ms : st->current_sec * 1000 + 500;
+    /* A source that knows the position in ms gets it as it is and may drift only a little before we resync; one that
+     * reports whole seconds (tidal-hifi direct) is taken at the middle of its second, +-1 s. */
+    const bool precise      = st->position_ms >= 0;
+    const int32_t reported  = precise ? st->position_ms : st->current_sec * 1000 + 500;
     const int32_t tolerance = precise ? 300 : 1000;
-    bool keep        = pos_playing && st->playing && std::abs(position_ms() - reported) <= tolerance;
-    pos_playing      = st->playing;
+    bool keep               = pos_playing && st->playing && std::abs(position_ms() - reported) <= tolerance;
+    pos_playing             = st->playing;
     if(!keep) {
         pos_base_ms = reported;
         pos_tick    = lv_tick_get();
@@ -587,8 +589,8 @@ void music_ui_set_capabilities(unsigned caps)
         int visible = 1; /* play/pause is always shown */
         for(lv_obj_t * b : {btn_shuffle, btn_prev, btn_next, btn_repeat})
             if(b && !lv_obj_is_hidden(b)) visible++;
-        lv_obj_set_flex_align(controls, visible <= 1 ? LV_FLEX_ALIGN_CENTER : LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER,
-                              LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_flex_align(controls, visible <= 1 ? LV_FLEX_ALIGN_CENTER : LV_FLEX_ALIGN_SPACE_BETWEEN,
+                              LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     }
 }
 
@@ -648,7 +650,8 @@ static void on_transport_clicked(lv_event_t * e)
 }
 
 /* The row buttons change size and icon font with the layout. */
-struct TransportBtn {
+struct TransportBtn
+{
     lv_obj_t * btn;
     lv_obj_t * lbl;
     int32_t size[2];
@@ -681,7 +684,7 @@ static lv_obj_t * create_transport_button(lv_obj_t * parent, const char * symbol
 void music_ui_update(const music_ui_state_t * st)
 {
     if(!st) return;
-    g_duration_sec = st->duration_sec;
+    g_duration_sec       = st->duration_sec;
     const bool dragging  = progress_bar && lv_slider_is_dragged(progress_bar);
     const bool hold_seek = dragging || opt_seek.holds(std::abs(st->current_sec - seek_target_sec) <= 2);
     lyrics_sync_position(st, hold_seek);
@@ -784,11 +787,12 @@ void music_ui_set_album_art_raw(const void * data, uint32_t w, uint32_t h, lv_co
 /* ---- Layouts ----
  * LYRICS:      small cover, info below it, lyrics panel on the right.
  * NOW_PLAYING: big cover on the left, title/artists/progress/controls on the right (no lyrics). */
-static int layout_mode = -1;
+static int layout_mode                   = -1;
 static const lv_font_t * title_font[2]   = {nullptr, nullptr};
 static const lv_font_t * artists_font[2] = {nullptr, nullptr};
 
-struct Geo {
+struct Geo
+{
     int32_t cover_x, cover_y, cover_size; /* cover widget */
     int32_t x, w;                         /* column holding title, artists, progress, controls */
     int32_t title_y, title_h, artists_y, prog_y, prog_h, ctrl_y, ctrl_h;
@@ -851,10 +855,10 @@ static void set_cover_geo(const Geo & a, const Geo & b, float t)
  * while invisible, and fades back in ---- */
 static const uint32_t LAYOUT_ANIM_MS = 420;
 static const float COLUMN_SWITCH_AT  = 0.4f; /* fraction of the animation where the column is rearranged */
-static bool layout_animating  = false;
-static bool column_switched   = false;
-static int layout_from        = LAYOUT_LYRICS;
-static int layout_to          = LAYOUT_LYRICS;
+static bool layout_animating         = false;
+static bool column_switched          = false;
+static int layout_from               = LAYOUT_LYRICS;
+static int layout_to                 = LAYOUT_LYRICS;
 
 static void layout_anim_cb(void *, int32_t v)
 {
@@ -933,10 +937,13 @@ static void set_browse_open(bool open)
     browse_open = open;
     if(browse_btn_label) lv_label_set_text(browse_btn_label, open ? LV_SYMBOL_CLOSE : LV_SYMBOL_LIST);
 
-    const int target = open ? LAYOUT_LYRICS : (lyrics_available && !lyrics_hidden_by_user ? LAYOUT_LYRICS : LAYOUT_NOW_PLAYING);
+    const int target =
+        open ? LAYOUT_LYRICS : (lyrics_available && !lyrics_hidden_by_user ? LAYOUT_LYRICS : LAYOUT_NOW_PLAYING);
     const int current = layout_animating ? layout_to : layout_mode;
-    if(target == current) update_right_panels(current); /* no layout change: swap the panels directly */
-    else request_layout(target); /* the panels swap when the column is rearranged */
+    if(target == current)
+        update_right_panels(current); /* no layout change: swap the panels directly */
+    else
+        request_layout(target); /* the panels swap when the column is rearranged */
     if(open) browse_ui_opened();
 }
 
@@ -963,8 +970,8 @@ void music_ui_create(void)
     /* Dark theme with the Korean-capable font as default: the settings page (list, text input, keyboard)
      * is built from stock widgets, which take their colors and font from the theme. */
     lv_display_set_theme(lv_display_get_default(),
-                         lv_theme_default_init(lv_display_get_default(), lv_color_hex(0x60A5FA), lv_color_hex(0x3B82F6), true,
-                                               noto_font(20, &lv_font_montserrat_22)));
+                         lv_theme_default_init(lv_display_get_default(), lv_color_hex(0x60A5FA), lv_color_hex(0x3B82F6),
+                                               true, noto_font(20, &lv_font_montserrat_22)));
 
     lv_obj_t * screen = lv_screen_active();
 
@@ -979,9 +986,9 @@ void music_ui_create(void)
     }
 
     // 레이아웃에 따라 위치/크기가 바뀌므로 위젯은 화면에 직접 두고 apply_layout_now()/request_layout()이 배치한다
-    title_font[LAYOUT_LYRICS]       = noto_font(28, &lv_font_montserrat_28);
-    title_font[LAYOUT_NOW_PLAYING]  = noto_font(36, &lv_font_montserrat_36);
-    artists_font[LAYOUT_LYRICS]     = noto_font(20, &lv_font_montserrat_22);
+    title_font[LAYOUT_LYRICS]        = noto_font(28, &lv_font_montserrat_28);
+    title_font[LAYOUT_NOW_PLAYING]   = noto_font(36, &lv_font_montserrat_36);
+    artists_font[LAYOUT_LYRICS]      = noto_font(20, &lv_font_montserrat_22);
     artists_font[LAYOUT_NOW_PLAYING] = noto_font(26, &lv_font_montserrat_28);
 
     // 커버 이미지 placeholder
@@ -1080,20 +1087,20 @@ void music_ui_create(void)
 
     // 셔플 / 이전 / 재생 / 다음 / 반복 (한 줄, 크기는 레이아웃마다 다름: 작은 것 / 큰 것)
     /* create_transport_button() returns the icon label; the button is its parent (see repeat's "1"). */
-    shuffle_label = create_transport_button(controls, LV_SYMBOL_SHUFFLE, 40, &lv_font_montserrat_22, 52, &lv_font_montserrat_28,
-                                            MUSIC_UI_CMD_SHUFFLE);
-    btn_shuffle = lv_obj_get_parent(shuffle_label);
-    lv_obj_t * prev_lbl = create_transport_button(controls, LV_SYMBOL_PREV, 48, &lv_font_montserrat_28, 62, &lv_font_montserrat_36,
-                                                  MUSIC_UI_CMD_PREVIOUS);
-    btn_prev = lv_obj_get_parent(prev_lbl);
-    play_label = create_transport_button(controls, LV_SYMBOL_PLAY, 60, &lv_font_montserrat_36, 76, &lv_font_montserrat_44,
-                                         MUSIC_UI_CMD_PLAY_PAUSE);
-    lv_obj_t * next_lbl = create_transport_button(controls, LV_SYMBOL_NEXT, 48, &lv_font_montserrat_28, 62, &lv_font_montserrat_36,
-                                                  MUSIC_UI_CMD_NEXT);
-    btn_next = lv_obj_get_parent(next_lbl);
-    repeat_label = create_transport_button(controls, LV_SYMBOL_LOOP, 40, &lv_font_montserrat_22, 52, &lv_font_montserrat_28,
-                                           MUSIC_UI_CMD_REPEAT);
-    btn_repeat = lv_obj_get_parent(repeat_label);
+    shuffle_label       = create_transport_button(controls, LV_SYMBOL_SHUFFLE, 40, &lv_font_montserrat_22, 52,
+                                                  &lv_font_montserrat_28, MUSIC_UI_CMD_SHUFFLE);
+    btn_shuffle         = lv_obj_get_parent(shuffle_label);
+    lv_obj_t * prev_lbl = create_transport_button(controls, LV_SYMBOL_PREV, 48, &lv_font_montserrat_28, 62,
+                                                  &lv_font_montserrat_36, MUSIC_UI_CMD_PREVIOUS);
+    btn_prev            = lv_obj_get_parent(prev_lbl);
+    play_label          = create_transport_button(controls, LV_SYMBOL_PLAY, 60, &lv_font_montserrat_36, 76,
+                                                  &lv_font_montserrat_44, MUSIC_UI_CMD_PLAY_PAUSE);
+    lv_obj_t * next_lbl = create_transport_button(controls, LV_SYMBOL_NEXT, 48, &lv_font_montserrat_28, 62,
+                                                  &lv_font_montserrat_36, MUSIC_UI_CMD_NEXT);
+    btn_next            = lv_obj_get_parent(next_lbl);
+    repeat_label        = create_transport_button(controls, LV_SYMBOL_LOOP, 40, &lv_font_montserrat_22, 52,
+                                                  &lv_font_montserrat_28, MUSIC_UI_CMD_REPEAT);
+    btn_repeat          = lv_obj_get_parent(repeat_label);
 
     repeat_one_label = lv_label_create(lv_obj_get_parent(repeat_label));
     lv_label_set_text(repeat_one_label, "1");
@@ -1105,7 +1112,7 @@ void music_ui_create(void)
 
     // 가사 영역 (오른쪽)
     /* Bold; Regular for any missing glyph */
-    lyrics_font = noto_font(LYRICS_FONT_PX, noto_font(LYRICS_FONT_PX, &lv_font_montserrat_28), true);
+    lyrics_font  = noto_font(LYRICS_FONT_PX, noto_font(LYRICS_FONT_PX, &lv_font_montserrat_28), true);
     lyrics_panel = lv_obj_create(screen);
     lv_obj_set_size(lyrics_panel, 420, LYRICS_PANEL_H);
     lv_obj_align(lyrics_panel, LV_ALIGN_RIGHT_MID, -30, 0);
@@ -1113,8 +1120,9 @@ void music_ui_create(void)
     lv_obj_set_style_bg_opa(lyrics_panel, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(lyrics_panel, 0, 0);
     lv_obj_set_style_pad_row(lyrics_panel, 14, 0);
-    lv_obj_set_style_pad_top(lyrics_panel, LYRICS_ANCHOR_Y, 0);          /* current line sits above the center */
-    lv_obj_set_style_pad_bottom(lyrics_panel, LYRICS_PANEL_H - LYRICS_ANCHOR_Y, 0); /* lets the last lines reach that spot */
+    lv_obj_set_style_pad_top(lyrics_panel, LYRICS_ANCHOR_Y, 0); /* current line sits above the center */
+    lv_obj_set_style_pad_bottom(lyrics_panel, LYRICS_PANEL_H - LYRICS_ANCHOR_Y,
+                                0); /* lets the last lines reach that spot */
     lv_obj_set_style_pad_hor(lyrics_panel, 8, 0);
     lv_obj_set_scrollbar_mode(lyrics_panel, LV_SCROLLBAR_MODE_OFF);
     lv_obj_add_event_cb(lyrics_panel, lyrics_scroll_cb, LV_EVENT_SCROLL, nullptr);

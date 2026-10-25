@@ -13,7 +13,8 @@ extern "C" {
  * on the LVGL thread. Rows are addressed by index into the list last given, so no string ownership is
  * shared with the provider. */
 
-typedef struct {
+typedef struct
+{
     const char * title;
     const char * subtitle; /* artists, track count, ... ; may be NULL */
     bool playable;         /* tapping starts playback (a queue row without a known context is view-only) */

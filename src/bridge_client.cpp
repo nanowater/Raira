@@ -60,8 +60,8 @@ bool BridgeSource::post(const std::string & path, const std::string & json_body)
 {
     HttpRequest req;
     req.bearer_token = token_;
-    req.method = "POST";
-    req.url    = url(path) + player_query();
+    req.method       = "POST";
+    req.url          = url(path) + player_query();
     if(!json_body.empty()) {
         req.body         = json_body;
         req.content_type = "application/json";
@@ -109,12 +109,18 @@ static uint32_t caps_of(const json & j)
     for(const auto & c : *it) {
         if(!c.is_string()) continue;
         const std::string s = c.get<std::string>();
-        if(s == "seek") caps |= MEDIA_CAP_SEEK;
-        else if(s == "volume") caps |= MEDIA_CAP_VOLUME;
-        else if(s == "shuffle") caps |= MEDIA_CAP_SHUFFLE;
-        else if(s == "repeat") caps |= MEDIA_CAP_REPEAT;
-        else if(s == "prev_next") caps |= MEDIA_CAP_PREV_NEXT;
-        else if(s == "browse_playlists" || s == "browse_queue") caps |= MEDIA_CAP_BROWSE;
+        if(s == "seek")
+            caps |= MEDIA_CAP_SEEK;
+        else if(s == "volume")
+            caps |= MEDIA_CAP_VOLUME;
+        else if(s == "shuffle")
+            caps |= MEDIA_CAP_SHUFFLE;
+        else if(s == "repeat")
+            caps |= MEDIA_CAP_REPEAT;
+        else if(s == "prev_next")
+            caps |= MEDIA_CAP_PREV_NEXT;
+        else if(s == "browse_playlists" || s == "browse_queue")
+            caps |= MEDIA_CAP_BROWSE;
     }
     return caps;
 }
@@ -195,7 +201,8 @@ bool BridgeSource::get_cover(const MediaInfo & info, int want_px, std::vector<un
 
 /* ---- Browse ---- */
 
-BridgeBrowse::BridgeBrowse(const std::string & spec, const std::string & token) : http_(http_client_create()), token_(token)
+BridgeBrowse::BridgeBrowse(const std::string & spec, const std::string & token)
+    : http_(http_client_create()), token_(token)
 {
     cfg_.port = BridgeSource::DEFAULT_PORT;
     if(!spec.empty()) cfg_.parse(spec);
@@ -213,8 +220,8 @@ bool BridgeBrowse::get_json(const std::string & path, json & out)
 {
     HttpRequest req;
     req.bearer_token = token_;
-    req.url       = url(path);
-    req.timeout_s = 10; /* the bridge may be waiting for the service's web API */
+    req.url          = url(path);
+    req.timeout_s    = 10; /* the bridge may be waiting for the service's web API */
     HttpResponse res = http_->perform(req);
     if(!res.ok() || res.body.empty()) return false;
     out = json::parse(res.body, nullptr, false);
@@ -282,7 +289,8 @@ bool BridgeBrowse::list_playlists(std::vector<BrowseItem> & out)
         it.id    = str_of(p, "id");
         it.title = str_of(p, "name");
         auto n   = p.find("track_count");
-        if(n != p.end() && n->is_number()) it.subtitle = std::to_string(n->get<int>()) + (n->get<int>() == 1 ? " track" : " tracks");
+        if(n != p.end() && n->is_number())
+            it.subtitle = std::to_string(n->get<int>()) + (n->get<int>() == 1 ? " track" : " tracks");
         it.cover    = str_of(p, "cover");
         it.playable = true; /* opening it is always possible */
         out.push_back(std::move(it));
@@ -290,7 +298,8 @@ bool BridgeBrowse::list_playlists(std::vector<BrowseItem> & out)
     return true;
 }
 
-bool BridgeBrowse::list_tracks(const std::string & playlist_id, std::string & playlist_title, std::vector<BrowseItem> & out)
+bool BridgeBrowse::list_tracks(const std::string & playlist_id, std::string & playlist_title,
+                               std::vector<BrowseItem> & out)
 {
     (void)playlist_title; /* the caller already has the name from the playlist list */
     out.clear();
@@ -298,7 +307,8 @@ bool BridgeBrowse::list_tracks(const std::string & playlist_id, std::string & pl
     /* A page at a time (the bridge caps it); a few pages are plenty for a 5" screen. */
     for(int page = 0; page < 4; page++) {
         json j;
-        if(!get_json("/browse/playlists/" + url_escape(playlist_id) + "/tracks?limit=50&offset=" + std::to_string(offset), j))
+        if(!get_json(
+               "/browse/playlists/" + url_escape(playlist_id) + "/tracks?limit=50&offset=" + std::to_string(offset), j))
             return page > 0;
         auto items = j.find("items");
         if(items == j.end() || !items->is_array()) break;

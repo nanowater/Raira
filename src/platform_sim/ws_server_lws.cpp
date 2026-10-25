@@ -14,23 +14,28 @@
 
 namespace {
 
-struct Out {
+struct Out
+{
     enum Kind { TEXT, BINARY, CLOSE } kind;
     std::string data;
 };
 
-struct Conn {
+struct Conn
+{
     lws * wsi = nullptr;
     std::string peer;
-    std::string rx;          /* message being assembled from fragments */
+    std::string rx; /* message being assembled from fragments */
     bool rx_binary = false;
-    bool open      = false;  /* on_open accepted it */
-    std::deque<Out> out;     /* guarded by the server mutex */
+    bool open      = false; /* on_open accepted it */
+    std::deque<Out> out;    /* guarded by the server mutex */
 };
 
 class LwsWsServer : public WsServer {
-public:
-    ~LwsWsServer() override { stop(); }
+  public:
+    ~LwsWsServer() override
+    {
+        stop();
+    }
 
     bool start(uint16_t port, WsHandlers handlers, WsLimits limits) override
     {
@@ -43,7 +48,9 @@ public:
             LWS_PROTOCOL_LIST_TERM,
         };
         /* liveness: ping idle connections every 10 s, hang up on one silent for 25 s (docs/HUB_PROTOCOL.md) */
-        static const lws_retry_bo_t retry = {nullptr, 0, 0, 10, 25, 0}; /* table, count, conceal, secs_since_valid_ping, secs_since_valid_hangup, jitter */
+        static const lws_retry_bo_t retry = {
+            nullptr, 0,  0,
+            10,      25, 0}; /* table, count, conceal, secs_since_valid_ping, secs_since_valid_hangup, jitter */
 
         lws_context_creation_info info;
         memset(&info, 0, sizeof(info));
@@ -51,7 +58,7 @@ public:
         info.protocols             = protocols;
         info.user                  = this;
         info.retry_and_idle_policy = &retry;
-        ctx_ = lws_create_context(&info);
+        ctx_                       = lws_create_context(&info);
         if(!ctx_) return false;
         running_ = true;
         thread_  = std::thread([this] {
@@ -72,9 +79,18 @@ public:
         by_wsi_.clear();
     }
 
-    bool send_text(WsConnId id, const std::string & text) override { return enqueue(id, {Out::TEXT, text}); }
-    bool send_binary(WsConnId id, const std::string & data) override { return enqueue(id, {Out::BINARY, data}); }
-    void close(WsConnId id) override { enqueue(id, {Out::CLOSE, ""}); }
+    bool send_text(WsConnId id, const std::string & text) override
+    {
+        return enqueue(id, {Out::TEXT, text});
+    }
+    bool send_binary(WsConnId id, const std::string & data) override
+    {
+        return enqueue(id, {Out::BINARY, data});
+    }
+    void close(WsConnId id) override
+    {
+        enqueue(id, {Out::CLOSE, ""});
+    }
 
     std::string peer(WsConnId id) override
     {
@@ -83,7 +99,7 @@ public:
         return it == conns_.end() ? "" : it->second->peer;
     }
 
-private:
+  private:
     static int lws_cb(lws * wsi, lws_callback_reasons reason, void *, void * in, size_t len)
     {
         auto * self = static_cast<LwsWsServer *>(lws_context_user(lws_get_context(wsi)));
@@ -126,8 +142,8 @@ private:
             }
             case LWS_CALLBACK_ESTABLISHED: {
                 std::string path;
-                auto c  = std::make_shared<Conn>();
-                c->wsi  = wsi;
+                auto c      = std::make_shared<Conn>();
+                c->wsi      = wsi;
                 char ip[64] = "";
                 lws_get_peer_simple(wsi, ip, sizeof(ip));
                 c->peer = ip;
@@ -135,11 +151,14 @@ private:
                 {
                     std::lock_guard<std::mutex> lk(mu_);
                     auto p = pending_path_.find(wsi);
-                    if(p != pending_path_.end()) { path = p->second; pending_path_.erase(p); }
+                    if(p != pending_path_.end()) {
+                        path = p->second;
+                        pending_path_.erase(p);
+                    }
                     if(conns_.size() >= limits_.max_connections) return -1;
-                    id = next_id_++;
-                    conns_[id]    = c;
-                    by_wsi_[wsi]  = id;
+                    id           = next_id_++;
+                    conns_[id]   = c;
+                    by_wsi_[wsi] = id;
                 }
                 const bool ok = !h_.on_open || h_.on_open(id, path);
                 if(!ok) return -1; /* on_close is not called for a refused connection: it never opened */
@@ -160,8 +179,10 @@ private:
                 if(lws_is_final_fragment(wsi) && lws_remaining_packet_payload(wsi) == 0) {
                     std::string msg = std::move(c->rx);
                     c->rx.clear();
-                    if(c->rx_binary) { if(h_.on_binary) h_.on_binary(id, msg); }
-                    else if(h_.on_text) h_.on_text(id, msg);
+                    if(c->rx_binary) {
+                        if(h_.on_binary) h_.on_binary(id, msg);
+                    } else if(h_.on_text)
+                        h_.on_text(id, msg);
                 }
                 return 0;
             }
@@ -193,20 +214,21 @@ private:
                 }
                 std::vector<unsigned char> buf(LWS_PRE + o.data.size());
                 memcpy(buf.data() + LWS_PRE, o.data.data(), o.data.size());
-                const int n = lws_write(wsi, buf.data() + LWS_PRE, o.data.size(), o.kind == Out::TEXT ? LWS_WRITE_TEXT : LWS_WRITE_BINARY);
+                const int n = lws_write(wsi, buf.data() + LWS_PRE, o.data.size(),
+                                        o.kind == Out::TEXT ? LWS_WRITE_TEXT : LWS_WRITE_BINARY);
                 if(n < 0) return -1;
                 if(more) lws_callback_on_writable(wsi); /* one frame per writable callback */
                 return 0;
             }
             case LWS_CALLBACK_CLOSED: {
-                WsConnId id = 0;
+                WsConnId id   = 0;
                 bool was_open = false;
                 {
                     std::lock_guard<std::mutex> lk(mu_);
                     pending_path_.erase(wsi);
                     auto w = by_wsi_.find(wsi);
                     if(w != by_wsi_.end()) {
-                        id = w->second;
+                        id      = w->second;
                         auto it = conns_.find(id);
                         if(it != conns_.end()) {
                             was_open = it->second->open;

@@ -16,7 +16,7 @@ int xfer_cb(void * clientp, curl_off_t, curl_off_t, curl_off_t, curl_off_t)
 }
 
 class CurlClient : public HttpClient {
-public:
+  public:
     ~CurlClient() override
     {
         if(curl_) curl_easy_cleanup(curl_);
@@ -46,7 +46,8 @@ public:
             if(!req.body.empty() && !req.content_type.empty())
                 headers = curl_slist_append(headers, ("Content-Type: " + req.content_type).c_str());
         }
-        if(!req.bearer_token.empty()) headers = curl_slist_append(headers, ("Authorization: Bearer " + req.bearer_token).c_str());
+        if(!req.bearer_token.empty())
+            headers = curl_slist_append(headers, ("Authorization: Bearer " + req.bearer_token).c_str());
         if(headers) curl_easy_setopt(curl_, CURLOPT_HTTPHEADER, headers);
         if(req.cancelled) {
             curl_easy_setopt(curl_, CURLOPT_NOPROGRESS, 0L);
@@ -63,7 +64,7 @@ public:
         return res;
     }
 
-private:
+  private:
     CURL * curl_ = nullptr;
 };
 

@@ -11,20 +11,23 @@
 
 namespace {
 
-struct Item {
+struct Item
+{
     std::string title, subtitle;
     bool playable = false;
     bool current  = false;
     std::string cover;
 };
 
-struct Thumb {
+struct Thumb
+{
     unsigned char * buf = nullptr;
     lv_image_dsc_t dsc;
 };
 
 /* A row's thumbnail slot, so a thumbnail that arrives later can be put into the row showing its key. */
-struct RowThumb {
+struct RowThumb
+{
     lv_obj_t * row;
     lv_obj_t * img;
     lv_obj_t * placeholder;
@@ -33,19 +36,19 @@ struct RowThumb {
 
 enum Tab { TAB_QUEUE, TAB_PLAYLISTS };
 
-const uint32_t COLOR_TEXT   = 0xE5E7EB;
-const uint32_t COLOR_DIM    = 0x9CA3AF;
-const uint32_t COLOR_OFF    = 0x6B7280; /* view-only rows */
-const uint32_t COLOR_ACCENT = 0x60A5FA;
-const int32_t HEADER_H      = 48;
-const int32_t ROW_H         = 60;
-const int32_t THUMB_BOX     = 44;
+const uint32_t COLOR_TEXT    = 0xE5E7EB;
+const uint32_t COLOR_DIM     = 0x9CA3AF;
+const uint32_t COLOR_OFF     = 0x6B7280; /* view-only rows */
+const uint32_t COLOR_ACCENT  = 0x60A5FA;
+const int32_t HEADER_H       = 48;
+const int32_t ROW_H          = 60;
+const int32_t THUMB_BOX      = 44;
 const size_t THUMB_CACHE_MAX = 48; /* thumbnails kept beyond the ones on screen: 48 x 4.5 KB ~ 220 KB */
 
-lv_obj_t * panel  = nullptr;
-lv_obj_t * header = nullptr;
-lv_obj_t * list   = nullptr;
-browse_cb_t g_cb  = nullptr;
+lv_obj_t * panel                 = nullptr;
+lv_obj_t * header                = nullptr;
+lv_obj_t * list                  = nullptr;
+browse_cb_t g_cb                 = nullptr;
 browse_thumb_req_cb_t g_thumb_cb = nullptr;
 std::unordered_map<std::string, Thumb *> thumbs;
 std::unordered_set<std::string> thumbs_requested;
@@ -53,8 +56,8 @@ std::vector<RowThumb> row_thumbs; /* the rows currently built */
 
 std::vector<Item> queue_items, playlist_items, track_items;
 std::string tracks_title;
-Tab tab           = TAB_QUEUE;
-bool in_playlist  = false; /* playlists tab shows one playlist's tracks */
+Tab tab                    = TAB_QUEUE;
+bool in_playlist           = false; /* playlists tab shows one playlist's tracks */
 lv_timer_t * rebuild_timer = nullptr;
 
 void emit(browse_evt_t evt, int index)
@@ -93,8 +96,14 @@ void schedule_rebuild()
     lv_timer_set_repeat_count(rebuild_timer, 1);
 }
 
-const lv_font_t * font_title() { return ui_noto_font(20, &lv_font_montserrat_22); }
-const lv_font_t * font_sub() { return ui_noto_font(16, &lv_font_montserrat_16); }
+const lv_font_t * font_title()
+{
+    return ui_noto_font(20, &lv_font_montserrat_22);
+}
+const lv_font_t * font_sub()
+{
+    return ui_noto_font(16, &lv_font_montserrat_16);
+}
 
 lv_obj_t * plain_box(lv_obj_t * parent)
 {
@@ -223,7 +232,8 @@ void make_row(const Item & it, int index, bool chevron, browse_evt_t evt)
     lv_obj_t * t = lv_label_create(text);
     lv_label_set_text(t, it.title.c_str());
     lv_label_set_long_mode(t, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_size(t, LV_PCT(100), lv_font_get_line_height(font_title())); /* one line: DOTS only cuts a fixed-height label */
+    lv_obj_set_size(t, LV_PCT(100),
+                    lv_font_get_line_height(font_title())); /* one line: DOTS only cuts a fixed-height label */
     lv_obj_set_style_text_font(t, font_title(), 0);
     lv_obj_set_style_text_color(t, lv_color_hex(title_color), 0);
 
@@ -264,7 +274,7 @@ void make_row(const Item & it, int index, bool chevron, browse_evt_t evt)
 void request_visible_thumbs()
 {
     if(!g_thumb_cb || !list) return;
-    const int32_t top = lv_obj_get_scroll_y(list);
+    const int32_t top    = lv_obj_get_scroll_y(list);
     const int32_t bottom = top + lv_obj_get_height(list);
     for(const RowThumb & r : row_thumbs) {
         if(thumbs.count(r.key) || thumbs_requested.count(r.key)) continue;
@@ -328,7 +338,8 @@ void build_list()
         for(size_t i = 0; i < items->size(); i++) {
             if((*items)[i].current) {
                 lv_obj_update_layout(list);
-                lv_obj_scroll_to_y(list, (int32_t)i * (ROW_H + lv_obj_get_style_pad_row(list, LV_PART_MAIN)), LV_ANIM_OFF);
+                lv_obj_scroll_to_y(list, (int32_t)i * (ROW_H + lv_obj_get_style_pad_row(list, LV_PART_MAIN)),
+                                   LV_ANIM_OFF);
                 break;
             }
         }

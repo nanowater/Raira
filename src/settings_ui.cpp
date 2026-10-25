@@ -7,25 +7,35 @@
 
 namespace {
 
-enum Page { PAGE_MAIN, PAGE_WIFI, PAGE_PASSWORD, PAGE_SERVER, PAGE_TOKEN, PAGE_PLAYER, PAGE_SOURCES, PAGE_MENU, PAGE_COUNT };
+enum Page {
+    PAGE_MAIN,
+    PAGE_WIFI,
+    PAGE_PASSWORD,
+    PAGE_SERVER,
+    PAGE_TOKEN,
+    PAGE_PLAYER,
+    PAGE_SOURCES,
+    PAGE_MENU,
+    PAGE_COUNT
+};
 
-const uint32_t COLOR_BG      = 0x12151B;
-const uint32_t COLOR_ROW     = 0x1F2937;
+const uint32_t COLOR_BG          = 0x12151B;
+const uint32_t COLOR_ROW         = 0x1F2937;
 const uint32_t COLOR_ROW_PRESSED = 0x374151;
-const uint32_t COLOR_DIM     = 0x9CA3AF;
-const uint32_t COLOR_ACCENT  = 0x60A5FA;
-const uint32_t COLOR_GOOD    = 0x34D399;
-const uint32_t COLOR_BAD     = 0xF87171;
+const uint32_t COLOR_DIM         = 0x9CA3AF;
+const uint32_t COLOR_ACCENT      = 0x60A5FA;
+const uint32_t COLOR_GOOD        = 0x34D399;
+const uint32_t COLOR_BAD         = 0xF87171;
 
 SettingsServices svc;
-lv_obj_t * root        = nullptr;
-lv_obj_t * title_lbl   = nullptr;
+lv_obj_t * root              = nullptr;
+lv_obj_t * title_lbl         = nullptr;
 lv_obj_t * pages[PAGE_COUNT] = {};
-int page_now           = PAGE_MAIN;
-lv_timer_t * poll_timer = nullptr;
+int page_now                 = PAGE_MAIN;
+lv_timer_t * poll_timer      = nullptr;
 
 /* main page */
-lv_obj_t * wifi_value  = nullptr;
+lv_obj_t * wifi_value   = nullptr;
 lv_obj_t * server_value = nullptr;
 lv_obj_t * token_value  = nullptr;
 
@@ -46,25 +56,25 @@ lv_obj_t * sources_btn_lbl = nullptr;
 lv_obj_t * sources_code    = nullptr;
 lv_obj_t * sources_secs    = nullptr;
 lv_obj_t * sources_list    = nullptr;
-std::string sources_sig;   /* what the list shows now: rebuilt only when this changes */
+std::string sources_sig; /* what the list shows now: rebuilt only when this changes */
 
 /* wifi page */
 lv_obj_t * wifi_status = nullptr;
 lv_obj_t * wifi_list   = nullptr;
 bool scan_was_running  = false;
-std::string selected_ssid;       /* network being configured */
-std::string pending_password;    /* password of the connection attempt in progress */
-bool wait_for_connect  = false;
+std::string selected_ssid;    /* network being configured */
+std::string pending_password; /* password of the connection attempt in progress */
+bool wait_for_connect = false;
 
 /* password / server pages share one keyboard */
-lv_obj_t * keyboard    = nullptr;
-lv_obj_t * pw_ssid_lbl = nullptr;
-lv_obj_t * pw_input    = nullptr;
-lv_obj_t * pw_eye_lbl  = nullptr;
+lv_obj_t * keyboard     = nullptr;
+lv_obj_t * pw_ssid_lbl  = nullptr;
+lv_obj_t * pw_input     = nullptr;
+lv_obj_t * pw_eye_lbl   = nullptr;
 lv_obj_t * server_input = nullptr;
-lv_obj_t * server_msg  = nullptr;
-lv_obj_t * token_input = nullptr;
-lv_obj_t * token_msg   = nullptr;
+lv_obj_t * server_msg   = nullptr;
+lv_obj_t * token_input  = nullptr;
+lv_obj_t * token_msg    = nullptr;
 
 const lv_font_t * f(int px, bool bold = false)
 {
@@ -74,7 +84,8 @@ const lv_font_t * f(int px, bool bold = false)
 void show_page(int p);
 
 /* One row of the network list; freed when the row is deleted. */
-struct NetRow {
+struct NetRow
+{
     std::string ssid;
     bool secured;
 };
@@ -106,7 +117,8 @@ lv_obj_t * make_label(lv_obj_t * parent, const char * text, int px, uint32_t col
 }
 
 /* Rounded dark button with a text label. */
-lv_obj_t * make_button(lv_obj_t * parent, const char * text, int w, int h, uint32_t bg, lv_event_cb_t cb, void * user = nullptr)
+lv_obj_t * make_button(lv_obj_t * parent, const char * text, int w, int h, uint32_t bg, lv_event_cb_t cb,
+                       void * user = nullptr)
 {
     lv_obj_t * b = lv_button_create(parent);
     lv_obj_set_size(b, w, h);
@@ -121,9 +133,10 @@ lv_obj_t * make_button(lv_obj_t * parent, const char * text, int w, int h, uint3
     return b;
 }
 
-/* A square tile: big symbol, name below, an optional small value line under the name (returned through value_out). x = -1 leaves the
- * position to the parent (a flex container); otherwise (x, y) is the top-left corner. */
-lv_obj_t * make_tile(lv_obj_t * parent, int x, int y, int size, const char * symbol, const char * title, lv_obj_t ** value_out, lv_event_cb_t cb)
+/* A square tile: big symbol, name below, an optional small value line under the name (returned through value_out). x =
+ * -1 leaves the position to the parent (a flex container); otherwise (x, y) is the top-left corner. */
+lv_obj_t * make_tile(lv_obj_t * parent, int x, int y, int size, const char * symbol, const char * title,
+                     lv_obj_t ** value_out, lv_event_cb_t cb)
 {
     lv_obj_t * t = lv_obj_create(parent);
     lv_obj_set_size(t, size, size);
@@ -151,8 +164,8 @@ lv_obj_t * make_tile(lv_obj_t * parent, int x, int y, int size, const char * sym
     lv_obj_t * icon = make_label(group, symbol, 28, COLOR_ACCENT);
     lv_obj_set_style_text_font(icon, &lv_font_montserrat_48, 0); /* the symbols live only in the built-in font */
     lv_obj_t * name = make_label(group, title, 26, 0xFFFFFF);
-    /* one line: a longer name is cut with "..." instead of wrapping over the icon; the height is the font's line height, a smaller
-     * one cuts the descenders (g, p, y) */
+    /* one line: a longer name is cut with "..." instead of wrapping over the icon; the height is the font's line
+     * height, a smaller one cuts the descenders (g, p, y) */
     lv_obj_set_size(name, size - 24, lv_font_get_line_height(f(26)) + 2);
     lv_obj_set_style_text_align(name, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
@@ -165,31 +178,32 @@ lv_obj_t * make_tile(lv_obj_t * parent, int x, int y, int size, const char * sym
     return t;
 }
 
-struct TileSpec {
+struct TileSpec
+{
     const char * symbol;
     const char * title;
     lv_obj_t ** value_out; /* nullptr: no value line */
     lv_event_cb_t cb;
 };
 
-/* Lay the tiles of a menu page out as big as the page allows: up to three in one row (at most 300 px), four to six in two rows
- * (190 px); every row is centered, the whole block sits in the middle of the page. */
+/* Lay the tiles of a menu page out as big as the page allows: up to three in one row (at most 300 px), four to six in
+ * two rows (190 px); every row is centered, the whole block sits in the middle of the page. */
 void layout_tiles(lv_obj_t * page, const std::vector<TileSpec> & specs)
 {
     const int n = static_cast<int>(specs.size());
     if(n == 0) return;
-    const int gap  = 24;
+    const int gap    = 24;
     const int page_h = 480 - 64;
-    const int cols = n <= 3 ? n : (n + 1) / 2;
-    const int rows = (n + cols - 1) / cols;
-    const int size = n <= 3 ? std::min(300, (740 - (n - 1) * gap) / n) : 190;
-    const int top  = (page_h - (rows * size + (rows - 1) * gap)) / 2;
+    const int cols   = n <= 3 ? n : (n + 1) / 2;
+    const int rows   = (n + cols - 1) / cols;
+    const int size   = n <= 3 ? std::min(300, (740 - (n - 1) * gap) / n) : 190;
+    const int top    = (page_h - (rows * size + (rows - 1) * gap)) / 2;
     for(int i = 0; i < n; i++) {
         const int row    = i / cols;
         const int in_row = std::min(cols, n - row * cols);
         const int left   = (800 - (in_row * size + (in_row - 1) * gap)) / 2;
-        make_tile(page, left + (i % cols) * (size + gap), top + row * (size + gap), size, specs[i].symbol, specs[i].title, specs[i].value_out,
-                  specs[i].cb);
+        make_tile(page, left + (i % cols) * (size + gap), top + row * (size + gap), size, specs[i].symbol,
+                  specs[i].title, specs[i].value_out, specs[i].cb);
     }
 }
 
@@ -243,7 +257,8 @@ void refresh_main()
             connected += s.connected && s.paired;
             paired += s.paired;
         }
-        std::string text = paired == 0 ? str::NOT_SET : std::to_string(connected) + " / " + std::to_string(paired) + " connected";
+        std::string text =
+            paired == 0 ? str::NOT_SET : std::to_string(connected) + " / " + std::to_string(paired) + " connected";
         lv_label_set_text(sources_value, text.c_str());
     }
     if(player_value) lv_label_set_text(player_value, player_text().c_str());
@@ -285,13 +300,16 @@ void fill_wifi_list()
 
         auto * nr = new NetRow{n.ssid, n.secured}; /* travels with the row, freed on delete */
         lv_obj_add_event_cb(r, on_network_clicked, LV_EVENT_CLICKED, nr);
-        lv_obj_add_event_cb(r, [](lv_event_t * e) { delete static_cast<NetRow *>(lv_event_get_user_data(e)); }, LV_EVENT_DELETE, nr);
+        lv_obj_add_event_cb(
+            r, [](lv_event_t * e) { delete static_cast<NetRow *>(lv_event_get_user_data(e)); }, LV_EVENT_DELETE, nr);
 
         lv_obj_t * name = make_label(r, n.ssid.c_str(), 22, 0xFFFFFF);
         lv_obj_align(name, LV_ALIGN_LEFT_MID, 44, 0);
-        lv_obj_t * sig = make_label(r, LV_SYMBOL_WIFI, 22, n.rssi > -60 ? COLOR_GOOD : (n.rssi > -75 ? COLOR_ACCENT : COLOR_DIM));
+        lv_obj_t * sig =
+            make_label(r, LV_SYMBOL_WIFI, 22, n.rssi > -60 ? COLOR_GOOD : (n.rssi > -75 ? COLOR_ACCENT : COLOR_DIM));
         lv_obj_align(sig, LV_ALIGN_LEFT_MID, 0, 0);
-        lv_obj_t * tag = make_label(r, n.secured ? str::TAG_SECURED : (n.ssid == current ? str::TAG_CONNECTED : str::TAG_OPEN), 16, COLOR_DIM);
+        lv_obj_t * tag = make_label(
+            r, n.secured ? str::TAG_SECURED : (n.ssid == current ? str::TAG_CONNECTED : str::TAG_OPEN), 16, COLOR_DIM);
         lv_obj_align(tag, LV_ALIGN_RIGHT_MID, 0, 0);
         if(n.ssid == current) {
             lv_obj_set_style_border_width(r, 2, 0);
@@ -306,7 +324,8 @@ void fill_player_list();
 void add_player_row(const std::string & id, const std::string & name, const std::string & tag, bool selected)
 {
     lv_obj_t * tag_lbl = nullptr;
-    lv_obj_t * r = make_tile(player_list, -1, 0, 200, id.empty() ? LV_SYMBOL_REFRESH : LV_SYMBOL_AUDIO, name.c_str(), &tag_lbl, nullptr);
+    lv_obj_t * r = make_tile(player_list, -1, 0, 200, id.empty() ? LV_SYMBOL_REFRESH : LV_SYMBOL_AUDIO, name.c_str(),
+                             &tag_lbl, nullptr);
     lv_label_set_text(tag_lbl, tag.c_str());
     lv_obj_set_style_text_font(tag_lbl, f(16), 0);
     auto * idp = new std::string(id); /* travels with the tile, freed on delete */
@@ -315,10 +334,15 @@ void add_player_row(const std::string & id, const std::string & name, const std:
         [](lv_event_t * e) {
             if(svc.set_player) svc.set_player(*static_cast<std::string *>(lv_event_get_user_data(e)));
             /* the tiles are rebuilt (to move the highlight) after this click has been handled */
-            lv_async_call([](void *) { if(root && page_now == PAGE_PLAYER) fill_player_list(); }, nullptr);
+            lv_async_call(
+                [](void *) {
+                    if(root && page_now == PAGE_PLAYER) fill_player_list();
+                },
+                nullptr);
         },
         LV_EVENT_CLICKED, idp);
-    lv_obj_add_event_cb(r, [](lv_event_t * e) { delete static_cast<std::string *>(lv_event_get_user_data(e)); }, LV_EVENT_DELETE, idp);
+    lv_obj_add_event_cb(
+        r, [](lv_event_t * e) { delete static_cast<std::string *>(lv_event_get_user_data(e)); }, LV_EVENT_DELETE, idp);
     if(selected) {
         lv_obj_set_style_border_width(r, 3, 0);
         lv_obj_set_style_border_color(r, lv_color_hex(COLOR_GOOD), 0);
@@ -369,12 +393,12 @@ void add_source_row(const HubSourceInfo & s)
     lv_obj_t * n = make_label(r, label.c_str(), 22, 0xFFFFFF);
     lv_obj_align(n, LV_ALIGN_LEFT_MID, 0, 0);
 
-    const char * tag = !s.paired ? str::SOURCES_WAITING : s.connected ? str::TAG_CONNECTED : str::NOT_CONNECTED;
+    const char * tag     = !s.paired ? str::SOURCES_WAITING : s.connected ? str::TAG_CONNECTED : str::NOT_CONNECTED;
     const uint32_t color = !s.paired ? COLOR_ACCENT : s.connected ? COLOR_GOOD : COLOR_DIM;
-    lv_obj_t * t = make_label(r, tag, 18, color);
+    lv_obj_t * t         = make_label(r, tag, 18, color);
     lv_obj_align(t, LV_ALIGN_RIGHT_MID, s.paired ? -120 : 0, 0);
     if(s.paired) {
-        auto * id = new std::string(s.id);
+        auto * id     = new std::string(s.id);
         lv_obj_t * rm = make_button(
             r, str::SOURCES_REMOVE, 108, 44, 0x7F1D1D,
             [](lv_event_t * e) {
@@ -382,7 +406,9 @@ void add_source_row(const HubSourceInfo & s)
                 sources_sig.clear(); /* the list is rebuilt on the next tick, after this click is handled */
             },
             id);
-        lv_obj_add_event_cb(rm, [](lv_event_t * e) { delete static_cast<std::string *>(lv_event_get_user_data(e)); }, LV_EVENT_DELETE, id);
+        lv_obj_add_event_cb(
+            rm, [](lv_event_t * e) { delete static_cast<std::string *>(lv_event_get_user_data(e)); }, LV_EVENT_DELETE,
+            id);
         lv_obj_align(rm, LV_ALIGN_RIGHT_MID, 0, 0);
     }
 }
@@ -405,7 +431,8 @@ void refresh_sources()
 
     const std::vector<HubSourceInfo> list = svc.hub->sources();
     std::string sig;
-    for(const HubSourceInfo & s : list) sig += s.id + "|" + s.name + "|" + s.os + (s.paired ? "P" : "-") + (s.connected ? "C" : "-") + ";";
+    for(const HubSourceInfo & s : list)
+        sig += s.id + "|" + s.name + "|" + s.os + (s.paired ? "P" : "-") + (s.connected ? "C" : "-") + ";";
     if(sig == sources_sig) return;
     sources_sig = sig;
     lv_obj_clean(sources_list);
@@ -416,8 +443,10 @@ void refresh_sources()
 void on_toggle_pairing(lv_event_t *)
 {
     if(!svc.hub) return;
-    if(svc.hub->pairing_code().empty()) svc.hub->start_pairing();
-    else svc.hub->stop_pairing();
+    if(svc.hub->pairing_code().empty())
+        svc.hub->start_pairing();
+    else
+        svc.hub->stop_pairing();
     refresh_sources();
 }
 
@@ -446,12 +475,17 @@ void poll_cb(lv_timer_t *)
     if(page_now == PAGE_WIFI && scan_was_running && !svc.wifi->scan_running()) {
         scan_was_running = false;
         fill_wifi_list();
-        set_status(wifi_status, svc.wifi->state() == WifiState::Connected ? (std::string(str::CONNECTED_TO) + svc.wifi->connected_ssid()) : str::SELECT_NETWORK,
+        set_status(wifi_status,
+                   svc.wifi->state() == WifiState::Connected
+                       ? (std::string(str::CONNECTED_TO) + svc.wifi->connected_ssid())
+                       : str::SELECT_NETWORK,
                    svc.wifi->state() == WifiState::Connected ? COLOR_GOOD : COLOR_DIM);
     }
     if(wait_for_connect) {
         switch(svc.wifi->state()) {
-            case WifiState::Connecting: set_status(wifi_status, std::string(str::CONNECTING_TO) + selected_ssid + " ...", COLOR_ACCENT); break;
+            case WifiState::Connecting:
+                set_status(wifi_status, std::string(str::CONNECTING_TO) + selected_ssid + " ...", COLOR_ACCENT);
+                break;
             case WifiState::Connected:
                 wait_for_connect = false;
                 set_status(wifi_status, std::string(str::CONNECTED_TO) + svc.wifi->connected_ssid(), COLOR_GOOD);
@@ -484,8 +518,10 @@ void on_back(lv_event_t *)
         case PAGE_SOURCES: show_page(PAGE_MAIN); break;
         case PAGE_PLAYER: show_page(player_from_menu ? PAGE_MENU : PAGE_MAIN); break;
         case PAGE_MAIN:
-            if(settings_from_menu) show_page(PAGE_MENU);
-            else close_overlay();
+            if(settings_from_menu)
+                show_page(PAGE_MENU);
+            else
+                close_overlay();
             break;
         default: close_overlay(); break; /* the menu */
     }
@@ -564,7 +600,8 @@ void on_save_server(lv_event_t *)
 
 void save_token()
 {
-    if(svc.set_token) svc.set_token(lv_textarea_get_text(token_input)); /* the result appears via on_connection_state() */
+    if(svc.set_token)
+        svc.set_token(lv_textarea_get_text(token_input)); /* the result appears via on_connection_state() */
 }
 
 void on_save_token(lv_event_t *)
@@ -579,18 +616,21 @@ void on_connection_state(media_conn_state_t state)
     if(!root) return;
     lv_obj_t * msg = page_now == PAGE_TOKEN ? token_msg : server_msg; /* the page being edited shows the verdict */
     switch(state) {
-        case MEDIA_CONN_UNKNOWN:   set_status(msg, str::SERVER_CHECKING, COLOR_DIM); break;
+        case MEDIA_CONN_UNKNOWN: set_status(msg, str::SERVER_CHECKING, COLOR_DIM); break;
         case MEDIA_CONN_CONNECTED: set_status(msg, str::SERVER_CONNECTED, COLOR_GOOD); break;
-        case MEDIA_CONN_LOST:      set_status(msg, str::SERVER_UNREACHABLE, COLOR_BAD); break;
+        case MEDIA_CONN_LOST: set_status(msg, str::SERVER_UNREACHABLE, COLOR_BAD); break;
     }
 }
 
 /* Enter key on the keyboard */
 void on_keyboard_ready(lv_event_t *)
 {
-    if(page_now == PAGE_PASSWORD) connect_with_password();
-    else if(page_now == PAGE_SERVER) save_server();
-    else if(page_now == PAGE_TOKEN) save_token();
+    if(page_now == PAGE_PASSWORD)
+        connect_with_password();
+    else if(page_now == PAGE_SERVER)
+        save_server();
+    else if(page_now == PAGE_TOKEN)
+        save_token();
 }
 
 lv_obj_t * make_page(lv_obj_t * parent)
@@ -625,7 +665,7 @@ lv_obj_t * make_textarea(lv_obj_t * parent, int x, int y, int w)
 
 void settings_ui_init(SettingsServices services)
 {
-    svc = std::move(services);
+    svc               = std::move(services);
     lv_obj_t * screen = lv_screen_active();
 
     root = lv_obj_create(screen);
@@ -662,11 +702,13 @@ void settings_ui_init(SettingsServices services)
     }
 
     /* main page */
-    /* tiles; which ones exist depends on what the music service needs (tidal-hifi: server; bridge: server + token + player;
-     * hub: player + sources) */
+    /* tiles; which ones exist depends on what the music service needs (tidal-hifi: server; bridge: server + token +
+     * player; hub: player + sources) */
     std::vector<TileSpec> tiles;
-    if(svc.wifi) tiles.push_back({LV_SYMBOL_WIFI, str::WIFI, &wifi_value, on_open_wifi});
-    else wifi_value = lv_label_create(pages[PAGE_MAIN]);
+    if(svc.wifi)
+        tiles.push_back({LV_SYMBOL_WIFI, str::WIFI, &wifi_value, on_open_wifi});
+    else
+        wifi_value = lv_label_create(pages[PAGE_MAIN]);
     if(!svc.hub) {
         tiles.push_back({LV_SYMBOL_DRIVE, str::SERVER_ROW, &server_value, on_open_server});
     } else {

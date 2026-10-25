@@ -6,12 +6,14 @@
 
 namespace {
 
-struct Track {
+struct Track
+{
     const char * title;
     const char * artists;
 };
 
-struct Playlist {
+struct Playlist
+{
     const char * name;
     std::vector<Track> tracks;
 };
@@ -75,9 +77,9 @@ void make_thumb(const std::string & key, int n, CoverPixels & out)
             const int dx = x - n / 2, dy = y - n / 2;
             if(dx * dx + dy * dy < (n / 5) * (n / 5)) r = g = b = 235;
             uint8_t * p = &out.data[((size_t)y * n + x) * 4];
-            p[0] = (uint8_t)b; /* BGRX */
-            p[1] = (uint8_t)g;
-            p[2] = (uint8_t)r;
+            p[0]        = (uint8_t)b; /* BGRX */
+            p[1]        = (uint8_t)g;
+            p[2]        = (uint8_t)r;
         }
     }
 }
@@ -94,8 +96,11 @@ int playlist_of(const std::string & context)
 }
 
 class FakeBrowse : public BrowseSource {
-public:
-    bool always_available() const override { return true; }
+  public:
+    bool always_available() const override
+    {
+        return true;
+    }
 
     bool list_queue(std::vector<BrowseItem> & out) override
     {
@@ -130,20 +135,23 @@ public:
         return true;
     }
 
-    bool list_tracks(const std::string & playlist_id, std::string & playlist_title, std::vector<BrowseItem> & out) override
+    bool list_tracks(const std::string & playlist_id, std::string & playlist_title,
+                     std::vector<BrowseItem> & out) override
     {
         const int pl = playlist_of(playlist_id);
         if(pl < 0 || pl >= (int)PLAYLISTS.size()) return false;
         playlist_title = PLAYLISTS[pl].name;
         out.clear();
-        for(size_t i = 0; i < PLAYLISTS[pl].tracks.size(); i++) out.push_back(item(pl, (int)i, pl == playlist_ && (int)i == index_));
+        for(size_t i = 0; i < PLAYLISTS[pl].tracks.size(); i++)
+            out.push_back(item(pl, (int)i, pl == playlist_ && (int)i == index_));
         return true;
     }
 
     bool play_item(const BrowseItem & it) override
     {
         const int pl = playlist_of(it.context);
-        if(pl < 0 || pl >= (int)PLAYLISTS.size() || it.index < 0 || it.index >= (int)PLAYLISTS[pl].tracks.size()) return false;
+        if(pl < 0 || pl >= (int)PLAYLISTS.size() || it.index < 0 || it.index >= (int)PLAYLISTS[pl].tracks.size())
+            return false;
         playlist_ = pl;
         index_    = it.index;
         printf("[fake-browse] play \"%s\" from \"%s\"\n", PLAYLISTS[pl].tracks[it.index].title, PLAYLISTS[pl].name);
@@ -157,7 +165,7 @@ public:
         return true;
     }
 
-private:
+  private:
     static BrowseItem item(int pl, int index, bool current)
     {
         const Track & t = PLAYLISTS[pl].tracks[index];

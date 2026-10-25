@@ -8,29 +8,34 @@
  * (src/platform_sim); the ESP32 build implements it with esp_http_client (same interface).
  * POST/PUT may carry a small body (the host bridge takes JSON); the tidal-hifi player API takes its
  * parameters in the query string and sends none. */
-struct HttpRequest {
+struct HttpRequest
+{
     std::string method = "GET"; /* GET, POST, PUT */
     std::string url;
-    std::string user_agent;     /* empty = implementation default */
-    std::string body;           /* request body for POST/PUT, empty = none */
-    std::string content_type;   /* e.g. "application/json"; only used with a body */
-    std::string bearer_token;   /* non-empty: sent as "Authorization: Bearer <token>" */
+    std::string user_agent;   /* empty = implementation default */
+    std::string body;         /* request body for POST/PUT, empty = none */
+    std::string content_type; /* e.g. "application/json"; only used with a body */
+    std::string bearer_token; /* non-empty: sent as "Authorization: Bearer <token>" */
     int connect_timeout_s = 2;
     int timeout_s         = 5;
     std::function<bool()> cancelled; /* polled while transferring; returning true aborts the request */
 };
 
-struct HttpResponse {
+struct HttpResponse
+{
     bool transport_ok = false; /* false: DNS/connect/timeout/aborted */
     long status       = 0;
     std::string body;
-    bool ok() const { return transport_ok && status >= 200 && status < 300; }
+    bool ok() const
+    {
+        return transport_ok && status >= 200 && status < 300;
+    }
 };
 
 /* One instance per thread. It may keep connections open between calls (keep-alive). */
 class HttpClient {
-public:
-    virtual ~HttpClient()                            = default;
+  public:
+    virtual ~HttpClient()                                 = default;
     virtual HttpResponse perform(const HttpRequest & req) = 0;
 };
 

@@ -8,11 +8,7 @@
 
 /* Whether the poller reaches the music service, as seen in its own poll loop. UNKNOWN is the window
  * right after the endpoint was switched, before a poll could confirm the new address. */
-typedef enum {
-    MEDIA_CONN_CONNECTED,
-    MEDIA_CONN_LOST,
-    MEDIA_CONN_UNKNOWN
-} media_conn_state_t;
+typedef enum { MEDIA_CONN_CONNECTED, MEDIA_CONN_LOST, MEDIA_CONN_UNKNOWN } media_conn_state_t;
 
 /* Starts the background threads and hands them the music service to poll and control. The poller thread
  * becomes the only user of `source`. Call after music_ui_create() on the LVGL thread; results reach the UI
@@ -49,7 +45,8 @@ void media_poller_set_player(const std::string & id);
 /* Ask the service for its players. The poller thread does the (blocking) request and `done` is then called on
  * the LVGL thread: ok = false when the service could not be reached; `service_pick` is the service's own choice
  * (what "automatic" means right now). Only the newest pending request is answered. */
-typedef std::function<void(bool ok, const std::vector<PlayerInfo> & players, const std::string & service_pick)> media_players_cb_t;
+typedef std::function<void(bool ok, const std::vector<PlayerInfo> & players, const std::string & service_pick)>
+    media_players_cb_t;
 void media_poller_list_players(media_players_cb_t done);
 
 /* Called on the LVGL thread when the connection state changes (also once right after the endpoint was

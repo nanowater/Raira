@@ -20,9 +20,9 @@ void music_app_start(MusicAppDeps deps)
     g_settings = std::move(deps.settings);
     g_validate = std::move(deps.validate_server);
 
-    const bool uses_token = deps.source->uses_token();
+    const bool uses_token   = deps.source->uses_token();
     const bool picks_player = deps.source->can_select_player();
-    HubSource * deps_hub = deps.hub;
+    HubSource * deps_hub    = deps.hub;
     if(deps_hub) {
         /* the hub reports changes from its server thread: persist them on the LVGL thread */
         deps_hub->set_paired_changed_cb([](const std::vector<PairedSource> & list) {
@@ -35,8 +35,9 @@ void music_app_start(MusicAppDeps deps)
         });
     }
     music_ui_create();
-    const media_browse_mode_t browse_mode =
-        !deps.browse ? MEDIA_BROWSE_NONE : deps.browse->always_available() ? MEDIA_BROWSE_ALWAYS : MEDIA_BROWSE_WHEN_REPORTED;
+    const media_browse_mode_t browse_mode = !deps.browse                      ? MEDIA_BROWSE_NONE
+                                            : deps.browse->always_available() ? MEDIA_BROWSE_ALWAYS
+                                                                              : MEDIA_BROWSE_WHEN_REPORTED;
     media_poller_start(std::move(deps.source), browse_mode);
     browse_worker_start(std::move(deps.browse));
 

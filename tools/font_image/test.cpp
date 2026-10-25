@@ -1,4 +1,5 @@
-// Tests font_image_parse() (src/fonts/font_image.cpp) with a real image built by tools/make_fonts_image.py and with damaged ones.
+// Tests font_image_parse() (src/fonts/font_image.cpp) with a real image built by tools/make_fonts_image.py and with
+// damaged ones.
 //   test <fonts.bin> <Regular.otf> <Bold.otf>
 #include "fonts/font_image.h"
 
@@ -53,9 +54,12 @@ int main(int argc, char ** argv)
     const bool good = font_image_parse(image.data(), image.size(), f);
     check(good, "the real image parses");
     if(good) {
-        check(f.regular_size == reg.size() && std::memcmp(f.regular, reg.data(), reg.size()) == 0, "Regular is byte for byte the file");
-        check(f.bold_size == bold.size() && std::memcmp(f.bold, bold.data(), bold.size()) == 0, "Bold is byte for byte the file");
-        check(((f.regular - image.data()) % 16) == 0 && ((f.bold - image.data()) % 16) == 0, "both fonts start on a 16-byte boundary");
+        check(f.regular_size == reg.size() && std::memcmp(f.regular, reg.data(), reg.size()) == 0,
+              "Regular is byte for byte the file");
+        check(f.bold_size == bold.size() && std::memcmp(f.bold, bold.data(), bold.size()) == 0,
+              "Bold is byte for byte the file");
+        check(((f.regular - image.data()) % 16) == 0 && ((f.bold - image.data()) % 16) == 0,
+              "both fonts start on a 16-byte boundary");
         check(f.regular_size > 3000000 && std::memcmp(f.regular, "OTTO", 4) == 0, "Regular is an OpenType/CFF font");
     }
 
@@ -68,7 +72,7 @@ int main(int argc, char ** argv)
     // header layout: 0 magic, 4 version, 8 count, 12 offset0, 16 size0, 20 offset1, 24 size1
     const size_t OFF0 = 12, SIZE0 = 16, OFF1 = 20, SIZE1 = 24;
     auto bad = image;
-    bad[0] = 'X';
+    bad[0]   = 'X';
     check(!parses(bad), "wrong magic");
     bad = image;
     put_u32(bad, 4, 2);

@@ -5,7 +5,8 @@
 #include <vector>
 
 /* Decoded cover pixels in LVGL XRGB8888 layout (bytes B,G,R,X), stride = w * 4. */
-struct CoverPixels {
+struct CoverPixels
+{
     std::vector<uint8_t> data;
     uint32_t w = 0;
     uint32_t h = 0;

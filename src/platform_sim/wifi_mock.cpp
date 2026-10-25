@@ -9,7 +9,7 @@ namespace {
 using Clock = std::chrono::steady_clock;
 
 class MockWifi : public WifiManager {
-public:
+  public:
     void start_scan() override
     {
         scan_started_ = Clock::now();
@@ -24,9 +24,8 @@ public:
 
     std::vector<WifiNetwork> scan_result() const override
     {
-        return {{"HomeWiFi_5G", -42, true},      {"HomeWiFi", -55, true},
-                {"cafe-guest", -63, false},      {"iptime-A1B2", -71, true},
-                {"공유기_사무실", -78, true},    {"AndroidAP", -84, true}};
+        return {{"HomeWiFi_5G", -42, true}, {"HomeWiFi", -55, true},      {"cafe-guest", -63, false},
+                {"iptime-A1B2", -71, true}, {"공유기_사무실", -78, true}, {"AndroidAP", -84, true}};
     }
 
     void connect(const std::string & ssid, const std::string & password) override
@@ -42,17 +41,22 @@ public:
     {
         if(connecting_ && Clock::now() - started_ > std::chrono::milliseconds(1500)) {
             connecting_ = false;
-            if(ok_) connected_ = target_;
-            else failed_ = true;
+            if(ok_)
+                connected_ = target_;
+            else
+                failed_ = true;
         }
         if(connecting_) return WifiState::Connecting;
         if(!connected_.empty()) return WifiState::Connected;
         return failed_ ? WifiState::Failed : WifiState::Idle;
     }
 
-    std::string connected_ssid() const override { return state() == WifiState::Connected ? connected_ : ""; }
+    std::string connected_ssid() const override
+    {
+        return state() == WifiState::Connected ? connected_ : "";
+    }
 
-private:
+  private:
     mutable bool scanning_   = false;
     mutable bool connecting_ = false;
     mutable bool failed_     = false;
