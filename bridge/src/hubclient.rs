@@ -44,7 +44,9 @@ pub struct HubClients {
 }
 
 fn random_hex(bytes: usize) -> String {
-    (0..bytes).map(|_| format!("{:02x}", rand::random::<u8>())).collect()
+    (0..bytes)
+        .map(|_| format!("{:02x}", rand::random::<u8>()))
+        .collect()
 }
 
 fn hostname() -> String {
@@ -58,7 +60,10 @@ fn hostname() -> String {
 }
 
 fn normalize(addr: &str) -> Result<String, String> {
-    let a = addr.trim().trim_start_matches("ws://").trim_end_matches('/');
+    let a = addr
+        .trim()
+        .trim_start_matches("ws://")
+        .trim_end_matches('/');
     if a.is_empty() || a.contains(' ') || a.contains('/') {
         return Err("the address must look like host or host:port".into());
     }
@@ -79,8 +84,22 @@ impl HubClients {
             let _ = config::save(&c);
             (id, name)
         };
-        let me = Arc::new(Self { hub, cfg, source_id, source_name, tasks: Mutex::new(HashMap::new()), status: Mutex::new(HashMap::new()) });
-        let known: Vec<String> = me.cfg.lock().unwrap().devices.iter().map(|d| d.addr.clone()).collect();
+        let me = Arc::new(Self {
+            hub,
+            cfg,
+            source_id,
+            source_name,
+            tasks: Mutex::new(HashMap::new()),
+            status: Mutex::new(HashMap::new()),
+        });
+        let known: Vec<String> = me
+            .cfg
+            .lock()
+            .unwrap()
+            .devices
+            .iter()
+            .map(|d| d.addr.clone())
+            .collect();
         for addr in known {
             me.spawn(&addr);
         }
@@ -94,12 +113,21 @@ impl HubClients {
         let (name, paired) = {
             let c = self.cfg.lock().unwrap();
             let d = c.devices.iter().find(|d| d.addr == addr);
-            (d.and_then(|d| d.name.clone()), d.is_some_and(|d| d.secret.is_some()))
+            (
+                d.and_then(|d| d.name.clone()),
+                d.is_some_and(|d| d.secret.is_some()),
+            )
         };
-        self.status
-            .lock()
-            .unwrap()
-            .insert(addr.to_string(), DeviceStatus { addr: addr.to_string(), name, state: state.into(), detail: detail.into(), paired });
+        self.status.lock().unwrap().insert(
+            addr.to_string(),
+            DeviceStatus {
+                addr: addr.to_string(),
+                name,
+                state: state.into(),
+                detail: detail.into(),
+                paired,
+            },
+        );
     }
 
     fn spawn(self: &Arc<Self>, addr: &str) {
@@ -119,7 +147,12 @@ impl HubClients {
         {
             let mut c = self.cfg.lock().unwrap();
             if !c.devices.iter().any(|d| d.addr == addr) {
-                c.devices.push(DeviceCfg { addr: addr.clone(), name: None, device_id: None, secret: None });
+                c.devices.push(DeviceCfg {
+                    addr: addr.clone(),
+                    name: None,
+                    device_id: None,
+                    secret: None,
+                });
                 let _ = config::save(&c);
             }
         }
@@ -139,14 +172,24 @@ impl HubClients {
 
     /// Hand a pairing code (typed by the user from the device's screen) to that device's connection.
     pub fn pair(&self, addr: &str, code: &str) -> bool {
-        self.tasks.lock().unwrap().get(addr).is_some_and(|t| t.pair_tx.send(code.to_string()).is_ok())
+        self.tasks
+            .lock()
+            .unwrap()
+            .get(addr)
+            .is_some_and(|t| t.pair_tx.send(code.to_string()).is_ok())
     }
 
     /// A device announced itself over mDNS. If we know it by id and it moved, follow it to the new address.
     pub fn on_discovered(self: &Arc<Self>, device_id: &str, addr: &str) {
         let old = {
             let mut c = self.cfg.lock().unwrap();
-            let Some(d) = c.devices.iter_mut().find(|d| d.device_id.as_deref() == Some(device_id)) else { return };
+            let Some(d) = c
+                .devices
+                .iter_mut()
+                .find(|d| d.device_id.as_deref() == Some(device_id))
+            else {
+                return;
+            };
             if d.addr == addr {
                 return;
             }
@@ -184,7 +227,13 @@ impl HubClients {
     }
 
     fn secret_of(&self, addr: &str) -> Option<String> {
-        self.cfg.lock().unwrap().devices.iter().find(|d| d.addr == addr).and_then(|d| d.secret.clone())
+        self.cfg
+            .lock()
+            .unwrap()
+            .devices
+            .iter()
+            .find(|d| d.addr == addr)
+            .and_then(|d| d.secret.clone())
     }
 
     fn update_device(&self, addr: &str, f: impl FnOnce(&mut DeviceCfg)) {
@@ -196,7 +245,11 @@ impl HubClients {
     }
 }
 
-async fn run_device(me: Arc<HubClients>, addr: String, mut pair_rx: mpsc::UnboundedReceiver<String>) {
+async fn run_device(
+    me: Arc<HubClients>,
+    addr: String,
+    mut pair_rx: mpsc::UnboundedReceiver<String>,
+) {
     let mut backoff = 1u64;
     loop {
         me.set_status(&addr, "connecting", "");
@@ -227,12 +280,19 @@ struct Pushed {
     rate: f64,
 }
 
-async fn session(me: &Arc<HubClients>, addr: &str, pair_rx: &mut mpsc::UnboundedReceiver<String>) -> Result<(), String> {
+async fn session(
+    me: &Arc<HubClients>,
+    addr: &str,
+    pair_rx: &mut mpsc::UnboundedReceiver<String>,
+) -> Result<(), String> {
     let url = format!("ws://{addr}/source");
-    let (ws, _) = tokio::time::timeout(Duration::from_secs(5), tokio_tungstenite::connect_async(&url))
-        .await
-        .map_err(|_| "no answer (is the device on and on the same network?)".to_string())?
-        .map_err(|e| e.to_string())?;
+    let (ws, _) = tokio::time::timeout(
+        Duration::from_secs(5),
+        tokio_tungstenite::connect_async(&url),
+    )
+    .await
+    .map_err(|_| "no answer (is the device on and on the same network?)".to_string())?
+    .map_err(|e| e.to_string())?;
     let (mut sink, mut stream) = ws.split();
     let (out_tx, mut out_rx) = mpsc::unbounded_channel::<Message>();
 
@@ -328,9 +388,15 @@ async fn session(me: &Arc<HubClients>, addr: &str, pair_rx: &mut mpsc::Unbounded
 }
 
 /// Send the player list and the states that changed (or whose position drifted) since the last push.
-async fn push(me: &HubClients, out: &mpsc::UnboundedSender<Message>, players_sent: &mut String, pushed: &mut HashMap<String, Pushed>) {
+async fn push(
+    me: &HubClients,
+    out: &mpsc::UnboundedSender<Message>,
+    players_sent: &mut String,
+    pushed: &mut HashMap<String, Pushed>,
+) {
     let (players, states) = me.hub.all_states().await;
-    let list = json!({ "t": "players", "selected": players.selected, "players": players.players }).to_string();
+    let list = json!({ "t": "players", "selected": players.selected, "players": players.players })
+        .to_string();
     if list != *players_sent {
         out.send(Message::Text(list.clone().into())).ok();
         *players_sent = list;
@@ -340,7 +406,9 @@ async fn push(me: &HubClients, out: &mpsc::UnboundedSender<Message>, players_sen
 
     for st in states {
         let mut v = serde_json::to_value(&st).unwrap_or(Value::Null);
-        let Some(obj) = v.as_object_mut() else { continue };
+        let Some(obj) = v.as_object_mut() else {
+            continue;
+        };
         obj.remove("position_at_ms"); // device and PC clocks are not compared: the position is "as of arrival"
         let position = obj.get("position_ms").and_then(Value::as_i64).unwrap_or(0);
         let playing = st.status == "playing";
@@ -351,7 +419,12 @@ async fn push(me: &HubClients, out: &mpsc::UnboundedSender<Message>, players_sen
         let send = match pushed.get(&st.player) {
             None => true,
             Some(p) => {
-                let expected = p.position_ms + if p.playing { (p.rate * p.at.elapsed().as_millis() as f64) as i64 } else { 0 };
+                let expected = p.position_ms
+                    + if p.playing {
+                        (p.rate * p.at.elapsed().as_millis() as f64) as i64
+                    } else {
+                        0
+                    };
                 p.key != key || (position - expected).abs() > 1000 || p.at.elapsed() >= HEARTBEAT
             }
         };
@@ -360,7 +433,16 @@ async fn push(me: &HubClients, out: &mpsc::UnboundedSender<Message>, players_sen
         }
         obj.insert("t".into(), json!("state"));
         out.send(Message::Text(v.to_string().into())).ok();
-        pushed.insert(st.player.clone(), Pushed { key, at: Instant::now(), position_ms: position, playing, rate: st.rate });
+        pushed.insert(
+            st.player.clone(),
+            Pushed {
+                key,
+                at: Instant::now(),
+                position_ms: position,
+                playing,
+                rate: st.rate,
+            },
+        );
     }
 }
 

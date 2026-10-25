@@ -52,7 +52,10 @@ pub fn path() -> PathBuf {
 }
 
 pub fn load() -> Config {
-    std::fs::read_to_string(path()).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+    std::fs::read_to_string(path())
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
 }
 
 pub fn save(c: &Config) -> std::io::Result<()> {
@@ -63,7 +66,12 @@ pub fn save(c: &Config) -> std::io::Result<()> {
     {
         use std::io::Write;
         use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-        let mut f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(path())?;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path())?;
         f.write_all(text.as_bytes())?;
         let _ = std::fs::set_permissions(path(), std::fs::Permissions::from_mode(0o600)); // a file created earlier keeps its old mode
         Ok(())

@@ -17,8 +17,8 @@ use serde_json::{Value, json};
 
 use crate::auth::Access;
 use crate::config::{self, Config};
-use crate::hub::{ApiError, Hub};
 use crate::discovery::Discovery;
+use crate::hub::{ApiError, Hub};
 use crate::hubclient::HubClients;
 use crate::tidal::Tidal;
 
@@ -37,12 +37,31 @@ pub type Ui = Arc<UiState>;
 
 pub const DEFAULT_TIDAL: &str = "127.0.0.1:47836";
 
-pub async fn guard(State(s): State<Ui>, ConnectInfo(peer): ConnectInfo<SocketAddr>, req: Request, next: Next) -> Response {
-    let host = req.headers().get(header::HOST).and_then(|h| h.to_str().ok()).unwrap_or("");
-    let host_ok = [format!("127.0.0.1:{}", s.port), format!("localhost:{}", s.port), format!("[::1]:{}", s.port)].iter().any(|h| h == host);
+pub async fn guard(
+    State(s): State<Ui>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    req: Request,
+    next: Next,
+) -> Response {
+    let host = req
+        .headers()
+        .get(header::HOST)
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+    let host_ok = [
+        format!("127.0.0.1:{}", s.port),
+        format!("localhost:{}", s.port),
+        format!("[::1]:{}", s.port),
+    ]
+    .iter()
+    .any(|h| h == host);
     let write_ok = req.method() == Method::GET || req.headers().contains_key("x-bridge-ui");
     if !peer.ip().is_loopback() || !host_ok || !write_ok {
-        return (StatusCode::FORBIDDEN, "the settings page is only available on this PC").into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            "the settings page is only available on this PC",
+        )
+            .into_response();
     }
     next.run(req).await
 }
@@ -59,7 +78,8 @@ pub fn lan_ip() -> Option<String> {
 }
 
 fn ago(t: Option<Instant>) -> Value {
-    t.map(|t| json!(t.elapsed().as_secs_f64())).unwrap_or(Value::Null)
+    t.map(|t| json!(t.elapsed().as_secs_f64()))
+        .unwrap_or(Value::Null)
 }
 
 pub async fn status(State(s): State<Ui>) -> Json<Value> {
@@ -70,7 +90,10 @@ pub async fn status(State(s): State<Ui>) -> Json<Value> {
     let cfg = s.config.lock().unwrap().clone();
 
     // what the next start without command-line options will use
-    let want_bind = cfg.bind.clone().unwrap_or_else(|| config::DEFAULT_BIND.to_string());
+    let want_bind = cfg
+        .bind
+        .clone()
+        .unwrap_or_else(|| config::DEFAULT_BIND.to_string());
     let want_port = cfg.port.unwrap_or(config::DEFAULT_PORT);
     Json(json!({
         "version": env!("CARGO_PKG_VERSION"),
@@ -103,7 +126,11 @@ pub async fn status(State(s): State<Ui>) -> Json<Value> {
 
 /// The players for the page: every one with `enabled` (the switch "send to devices"); switched-off players that are not running right now
 /// are listed too, by their id, so that they can be switched on again.
-fn players_json(players: &crate::model::Players, hidden: &[crate::model::PlayerEntry], disabled: &std::collections::HashSet<String>) -> Value {
+fn players_json(
+    players: &crate::model::Players,
+    hidden: &[crate::model::PlayerEntry],
+    disabled: &std::collections::HashSet<String>,
+) -> Value {
     let mut list: Vec<Value> = Vec::new();
     for p in &players.players {
         list.push(json!({ "id": p.id, "name": p.name, "service": p.service, "status": p.status, "enabled": true, "running": true }));
@@ -111,7 +138,10 @@ fn players_json(players: &crate::model::Players, hidden: &[crate::model::PlayerE
     for p in hidden {
         list.push(json!({ "id": p.id, "name": p.name, "service": p.service, "status": p.status, "enabled": false, "running": true }));
     }
-    let mut absent: Vec<&String> = disabled.iter().filter(|id| !hidden.iter().any(|p| &p.id == *id)).collect();
+    let mut absent: Vec<&String> = disabled
+        .iter()
+        .filter(|id| !hidden.iter().any(|p| &p.id == *id))
+        .collect();
     absent.sort();
     for id in absent {
         list.push(json!({ "id": id, "name": id, "service": "", "status": "", "enabled": false, "running": false }));
@@ -139,7 +169,11 @@ pub async fn set_player_enabled(State(s): State<Ui>, Json(b): Json<EnabledBody>)
         let mut cfg = s.config.lock().unwrap();
         cfg.disabled_players = list.clone();
         if let Err(e) = config::save(&cfg) {
-            return (StatusCode::INTERNAL_SERVER_ERROR, format!("cannot save {}: {e}", config::path().display())).into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("cannot save {}: {e}", config::path().display()),
+            )
+                .into_response();
         }
     }
     s.hub.set_disabled(list);
@@ -151,14 +185,21 @@ pub struct SelectBody {
     id: String,
 }
 
-pub async fn select(State(s): State<Ui>, Json(b): Json<SelectBody>) -> Result<StatusCode, ApiError> {
+pub async fn select(
+    State(s): State<Ui>,
+    Json(b): Json<SelectBody>,
+) -> Result<StatusCode, ApiError> {
     s.hub.select(&b.id).await.map(|_| StatusCode::NO_CONTENT)
 }
 
 pub async fn regenerate_token(State(s): State<Ui>) -> Response {
     match s.access.regenerate() {
         Some(_) => StatusCode::NO_CONTENT.into_response(),
-        None => (StatusCode::BAD_REQUEST, "the token was set with --token and cannot be changed here").into_response(),
+        None => (
+            StatusCode::BAD_REQUEST,
+            "the token was set with --token and cannot be changed here",
+        )
+            .into_response(),
     }
 }
 
@@ -180,7 +221,11 @@ pub async fn set_config(State(s): State<Ui>, Json(b): Json<ConfigBody>) -> Respo
         return bad("the port must be 1024 or higher");
     }
     let tidal_spec = b.tidal_hifi.trim().to_string();
-    let tidal = if tidal_spec.is_empty() { None } else { Some(Tidal::new(&tidal_spec).ok_or(()).map_err(|_| ())) };
+    let tidal = if tidal_spec.is_empty() {
+        None
+    } else {
+        Some(Tidal::new(&tidal_spec).ok_or(()).map_err(|_| ()))
+    };
     if matches!(tidal, Some(Err(_))) {
         return bad("the tidal-hifi address must look like host or host:port");
     }
@@ -191,7 +236,11 @@ pub async fn set_config(State(s): State<Ui>, Json(b): Json<ConfigBody>) -> Respo
         cfg.port = (b.port != config::DEFAULT_PORT).then_some(b.port);
         cfg.tidal_hifi = Some(tidal_spec);
         if let Err(e) = config::save(&cfg) {
-            return (StatusCode::INTERNAL_SERVER_ERROR, format!("cannot save {}: {e}", config::path().display())).into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("cannot save {}: {e}", config::path().display()),
+            )
+                .into_response();
         }
     }
     s.hub.set_tidal(tidal.and_then(|t| t.ok())); // applies at once; bind and port need a restart
@@ -225,6 +274,10 @@ pub async fn pair_device(State(s): State<Ui>, Json(b): Json<PairBody>) -> Respon
     if s.clients.pair(&b.addr, b.code.trim()) {
         StatusCode::NO_CONTENT.into_response()
     } else {
-        (StatusCode::BAD_REQUEST, "that device is not connected right now".to_string()).into_response()
+        (
+            StatusCode::BAD_REQUEST,
+            "that device is not connected right now".to_string(),
+        )
+            .into_response()
     }
 }

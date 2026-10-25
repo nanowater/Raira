@@ -32,7 +32,12 @@ impl Tray for BridgeTray {
     }
     fn menu(&self) -> Vec<MenuItem<Self>> {
         vec![
-            StandardItem { label: self.status.clone(), enabled: false, ..Default::default() }.into(),
+            StandardItem {
+                label: self.status.clone(),
+                enabled: false,
+                ..Default::default()
+            }
+            .into(),
             MenuItem::Separator,
             StandardItem {
                 label: "Open settings".into(),
@@ -40,7 +45,12 @@ impl Tray for BridgeTray {
                 ..Default::default()
             }
             .into(),
-            StandardItem { label: "Quit".into(), activate: Box::new(|_| std::process::exit(0)), ..Default::default() }.into(),
+            StandardItem {
+                label: "Quit".into(),
+                activate: Box::new(|_| std::process::exit(0)),
+                ..Default::default()
+            }
+            .into(),
         ]
     }
     // a left click opens the settings, like most tray apps
@@ -51,7 +61,15 @@ impl Tray for BridgeTray {
 
 async fn status_line(hub: &Hub, access: &Access) -> String {
     let now = match hub.state(None).await {
-        Ok(s) if !s.track.title.is_empty() => format!("{}: {}", if s.status == "playing" { "Playing" } else { "Paused" }, s.track.title),
+        Ok(s) if !s.track.title.is_empty() => format!(
+            "{}: {}",
+            if s.status == "playing" {
+                "Playing"
+            } else {
+                "Paused"
+            },
+            s.track.title
+        ),
         _ => "No player".to_string(),
     };
     let device = match access.stats().last_seen {
@@ -62,7 +80,10 @@ async fn status_line(hub: &Hub, access: &Access) -> String {
 }
 
 pub async fn spawn(url: String, hub: Arc<Hub>, access: Arc<Access>) {
-    let tray = BridgeTray { url, status: "Starting...".into() };
+    let tray = BridgeTray {
+        url,
+        status: "Starting...".into(),
+    };
     let handle = match tray.spawn().await {
         Ok(h) => h,
         Err(e) => {

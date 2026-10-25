@@ -84,7 +84,10 @@ fn parse_stamp(s: &str) -> Option<(i64, usize)> {
         }
         _ => return None,
     };
-    Some(((mm.parse::<i64>().ok()? * 60 + ss.parse::<i64>().ok()?) * 1000 + ms_frac, close + 1))
+    Some((
+        (mm.parse::<i64>().ok()? * 60 + ss.parse::<i64>().ok()?) * 1000 + ms_frac,
+        close + 1,
+    ))
 }
 
 pub fn parse_lrc(lrc: &str) -> Lyrics {
@@ -93,7 +96,9 @@ pub fn parse_lrc(lrc: &str) -> Lyrics {
         let mut stamps = Vec::new();
         let mut i = 0;
         while line[i..].starts_with('[') {
-            let Some(close) = line[i..].find(']') else { break };
+            let Some(close) = line[i..].find(']') else {
+                break;
+            };
             if let Some((ms, _)) = parse_stamp(&line[i..]) {
                 stamps.push(ms);
             }
@@ -104,11 +109,17 @@ pub fn parse_lrc(lrc: &str) -> Lyrics {
         }
         let text = trim(&strip_invisible(&line[i..])).to_string();
         for ms in stamps {
-            lines.push(Line { ms, text: text.clone() });
+            lines.push(Line {
+                ms,
+                text: text.clone(),
+            });
         }
     }
     lines.sort_by_key(|l| l.ms); // stable
-    Lyrics { synced: true, lines }
+    Lyrics {
+        synced: true,
+        lines,
+    }
 }
 
 pub fn parse_plain(text: &str) -> Lyrics {
@@ -118,7 +129,10 @@ pub fn parse_plain(text: &str) -> Lyrics {
         .filter(|l| !l.is_empty())
         .map(|text| Line { ms: 0, text })
         .collect();
-    Lyrics { synced: false, lines }
+    Lyrics {
+        synced: false,
+        lines,
+    }
 }
 
 /// Synced lyrics rarely say when the last line ends, so it would stay highlighted through a long outro. Append an empty
@@ -148,7 +162,10 @@ fn add_end_marker(l: &mut Lyrics) {
     }
     let len = len.clamp(3000, 8000);
     let at = l.lines.last().map(|x| x.ms).unwrap_or(0) + len;
-    l.lines.push(Line { ms: at, text: String::new() });
+    l.lines.push(Line {
+        ms: at,
+        text: String::new(),
+    });
 }
 
 fn jstr<'a>(j: &'a Value, key: &str) -> &'a str {
@@ -159,7 +176,11 @@ fn from_json(j: &Value, allow_synced: bool) -> Option<Lyrics> {
     if !j.is_object() {
         return None;
     }
-    let synced = if allow_synced { jstr(j, "syncedLyrics") } else { "" };
+    let synced = if allow_synced {
+        jstr(j, "syncedLyrics")
+    } else {
+        ""
+    };
     if !synced.is_empty() {
         let mut l = parse_lrc(synced);
         if l.lines.iter().any(|x| !x.text.is_empty()) {
@@ -205,18 +226,36 @@ fn native_script_ratio(l: &Lyrics) -> f64 {
             let cp = c as u32;
             if c.is_ascii_alphabetic() {
                 latin += 1;
-            } else if (0x3040..=0x30FF).contains(&cp) || (0xAC00..=0xD7A3).contains(&cp) || (0x4E00..=0x9FFF).contains(&cp) {
+            } else if (0x3040..=0x30FF).contains(&cp)
+                || (0xAC00..=0xD7A3).contains(&cp)
+                || (0x4E00..=0x9FFF).contains(&cp)
+            {
                 native += 1;
             }
         }
     }
-    if native + latin == 0 { 0.0 } else { native as f64 / (native + latin) as f64 }
+    if native + latin == 0 {
+        0.0
+    } else {
+        native as f64 / (native + latin) as f64
+    }
 }
 
 /// Variants LRCLIB files next to the studio version: skipped unless the playing title has the same tag.
 fn has_variant_tag(title: &str) -> bool {
     let t = title.to_lowercase();
-    ["remix", "live", "karaoke", "instrumental", "cover", "acoustic", "sped up", "slowed"].iter().any(|tag| t.contains(tag))
+    [
+        "remix",
+        "live",
+        "karaoke",
+        "instrumental",
+        "cover",
+        "acoustic",
+        "sped up",
+        "slowed",
+    ]
+    .iter()
+    .any(|tag| t.contains(tag))
 }
 
 /// Timestamps running past the end of the track belong to a different edit (e.g. a 10 min remix).
@@ -229,7 +268,9 @@ fn synced_fits(item: &Value, t: &Track) -> bool {
         return true;
     }
     let l = parse_lrc(synced);
-    l.lines.last().is_some_and(|last| last.ms / 1000 <= t.duration_sec + 10)
+    l.lines
+        .last()
+        .is_some_and(|last| last.ms / 1000 <= t.duration_sec + 10)
 }
 
 /// Higher is better; negative means "do not use". `exact` marks the /get result.
@@ -264,7 +305,11 @@ fn score(item: &Value, rank: usize, exact: bool, t: &Track) -> i64 {
     }
     // LRCLIB holds romanized and original-script versions of one song: prefer the original only when the text is mostly in that
     // script (so English lyrics + a translation line do not win)
-    let text = if use_synced { parse_lrc(synced) } else { parse_plain(plain) };
+    let text = if use_synced {
+        parse_lrc(synced)
+    } else {
+        parse_plain(plain)
+    };
     if native_script_ratio(&text) >= 0.5 {
         score += 60;
     }
@@ -293,18 +338,27 @@ fn client() -> &'static reqwest::Client {
 
 enum Answer {
     Body(String),
-    NotFound,    // a definite "no": HTTP 404
-    Failed,      // no usable answer (network, 5xx, rate limit that did not clear)
+    NotFound, // a definite "no": HTTP 404
+    Failed,   // no usable answer (network, 5xx, rate limit that did not clear)
 }
 
 /// LRCLIB answers 429 when requests come in bursts: back off and retry a couple of times.
 async fn get(url: &str) -> Answer {
     for attempt in 0..3u64 {
         match client().get(url).send().await {
-            Ok(resp) if resp.status().is_success() => return resp.text().await.map(Answer::Body).unwrap_or(Answer::Failed),
+            Ok(resp) if resp.status().is_success() => {
+                return resp
+                    .text()
+                    .await
+                    .map(Answer::Body)
+                    .unwrap_or(Answer::Failed);
+            }
             Ok(resp) if resp.status().as_u16() == 404 => return Answer::NotFound,
             Ok(resp) if resp.status().as_u16() == 429 => {
-                tracing::warn!("lyrics: LRCLIB answered 429 (attempt {}) for {url}", attempt + 1);
+                tracing::warn!(
+                    "lyrics: LRCLIB answered 429 (attempt {}) for {url}",
+                    attempt + 1
+                );
                 tokio::time::sleep(Duration::from_millis(1500 * (attempt + 1))).await
             }
             Ok(resp) => {
@@ -322,7 +376,9 @@ async fn get(url: &str) -> Answer {
 }
 
 fn esc(s: &str) -> String {
-    reqwest::Url::parse_with_params("http://x/", &[("q", s)]).map(|u| u.query().unwrap_or("").trim_start_matches("q=").to_string()).unwrap_or_default()
+    reqwest::Url::parse_with_params("http://x/", &[("q", s)])
+        .map(|u| u.query().unwrap_or("").trim_start_matches("q=").to_string())
+        .unwrap_or_default()
 }
 
 /// The ranking part, separate from the network so it can be tested: the best candidate's lyrics, if any is usable.
@@ -350,7 +406,11 @@ pub async fn lookup_network(t: &Track) -> Result<Option<Lyrics>, ()> {
     let mut failed = false; // a request that gave no usable answer
 
     let base = base();
-    let mut url = format!("{base}get?track_name={}&artist_name={}", esc(&t.title), esc(&t.artists));
+    let mut url = format!(
+        "{base}get?track_name={}&artist_name={}",
+        esc(&t.title),
+        esc(&t.artists)
+    );
     if !t.album.is_empty() {
         url += &format!("&album_name={}", esc(&t.album));
     }
@@ -375,7 +435,12 @@ pub async fn lookup_network(t: &Track) -> Result<Option<Lyrics>, ()> {
         Answer::Body(b) => {
             answered = true;
             if let Ok(Value::Array(items)) = serde_json::from_str::<Value>(&b) {
-                cands.extend(items.into_iter().filter(Value::is_object).map(|i| (i, false)));
+                cands.extend(
+                    items
+                        .into_iter()
+                        .filter(Value::is_object)
+                        .map(|i| (i, false)),
+                );
             }
         }
         Answer::NotFound => answered = true,
@@ -386,7 +451,16 @@ pub async fn lookup_network(t: &Track) -> Result<Option<Lyrics>, ()> {
         return Err(());
     }
     let picked = pick(&cands, t);
-    tracing::info!("lyrics: \"{}\" — {} candidate(s), {}", t.title, cands.len(), if picked.is_some() { "found" } else { "none usable" });
+    tracing::info!(
+        "lyrics: \"{}\" — {} candidate(s), {}",
+        t.title,
+        cands.len(),
+        if picked.is_some() {
+            "found"
+        } else {
+            "none usable"
+        }
+    );
     Ok(picked)
 }
 
@@ -401,8 +475,18 @@ fn cache_dir() -> PathBuf {
 }
 
 fn key_of(t: &Track) -> String {
-    let k = format!("{}|{}|{}|{}", t.title.to_lowercase(), t.artists.to_lowercase(), t.album.to_lowercase(), t.duration_sec);
-    format!("{:016x}", k.bytes().fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3)))
+    let k = format!(
+        "{}|{}|{}|{}",
+        t.title.to_lowercase(),
+        t.artists.to_lowercase(),
+        t.album.to_lowercase(),
+        t.duration_sec
+    );
+    format!(
+        "{:016x}",
+        k.bytes().fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64)
+            .wrapping_mul(0x100000001b3))
+    )
 }
 
 #[derive(Serialize, Deserialize)]
@@ -415,14 +499,17 @@ struct Cached {
 }
 
 fn now() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 fn cache_read(t: &Track) -> Option<Option<Lyrics>> {
     let text = std::fs::read_to_string(cache_dir().join(format!("{}.json", key_of(t)))).ok()?;
     let c: Cached = serde_json::from_str(&text).ok()?;
     match &c.lyrics {
-        Some(_) => Some(c.lyrics),                                        // found: kept
+        Some(_) => Some(c.lyrics), // found: kept
         None if now().saturating_sub(c.at) < NEGATIVE_TTL.as_secs() => Some(None), // "none" is believed for a week
         None => None,
     }
@@ -431,8 +518,15 @@ fn cache_read(t: &Track) -> Option<Option<Lyrics>> {
 fn cache_write(t: &Track, lyrics: &Option<Lyrics>) {
     let dir = cache_dir();
     if std::fs::create_dir_all(&dir).is_ok() {
-        let c = Cached { at: now(), track: format!("{} — {}", t.title, t.artists), lyrics: lyrics.clone() };
-        let _ = std::fs::write(dir.join(format!("{}.json", key_of(t))), serde_json::to_string(&c).unwrap_or_default());
+        let c = Cached {
+            at: now(),
+            track: format!("{} — {}", t.title, t.artists),
+            lyrics: lyrics.clone(),
+        };
+        let _ = std::fs::write(
+            dir.join(format!("{}.json", key_of(t))),
+            serde_json::to_string(&c).unwrap_or_default(),
+        );
     }
 }
 
@@ -443,7 +537,8 @@ pub async fn lookup(t: &Track) -> Result<Option<Lyrics>, ()> {
         return Ok(hit);
     }
     let _permit = ONE_AT_A_TIME.acquire().await.map_err(|_| ())?;
-    if let Some(hit) = cache_read(t) { // another request may have filled it while we waited
+    if let Some(hit) = cache_read(t) {
+        // another request may have filled it while we waited
         return Ok(hit);
     }
     let mut found = lookup_network(t).await;
@@ -479,26 +574,46 @@ mod tests {
     use super::*;
 
     fn t(title: &str, artists: &str, album: &str, dur: i64) -> Track {
-        Track { title: title.into(), artists: artists.into(), album: album.into(), duration_sec: dur }
+        Track {
+            title: title.into(),
+            artists: artists.into(),
+            album: album.into(),
+            duration_sec: dur,
+        }
     }
 
     #[test]
     fn lrc_stamps_fraction_and_tags() {
         let l = parse_lrc("[ar:Someone]\n[00:12.5]one\n[01:02.345][01:30]two\n[00:05]\nno stamp\n");
         let got: Vec<(i64, &str)> = l.lines.iter().map(|x| (x.ms, x.text.as_str())).collect();
-        assert_eq!(got, vec![(5000, ""), (12500, "one"), (62345, "two"), (90000, "two")]);
+        assert_eq!(
+            got,
+            vec![(5000, ""), (12500, "one"), (62345, "two"), (90000, "two")]
+        );
     }
 
     #[test]
     fn invisible_marks_are_dropped() {
-        assert_eq!(parse_plain("\u{200E}hello\u{200B} world\n\n  \n").lines, vec![Line { ms: 0, text: "hello world".into() }]);
+        assert_eq!(
+            parse_plain("\u{200E}hello\u{200B} world\n\n  \n").lines,
+            vec![Line {
+                ms: 0,
+                text: "hello world".into()
+            }]
+        );
     }
 
     #[test]
     fn end_marker_uses_the_median_line_gap_within_limits() {
         let mut l = parse_lrc("[00:10.00]a\n[00:14.00]b\n[00:18.00]c\n");
         add_end_marker(&mut l);
-        assert_eq!(l.lines.last(), Some(&Line { ms: 22000, text: String::new() }));
+        assert_eq!(
+            l.lines.last(),
+            Some(&Line {
+                ms: 22000,
+                text: String::new()
+            })
+        );
         let mut one = parse_lrc("[00:10.00]a\n");
         add_end_marker(&mut one);
         assert_eq!(one.lines.last().map(|x| x.ms), Some(15000)); // no gaps known: 5 s
@@ -530,7 +645,15 @@ mod tests {
 
     #[test]
     fn device_cut_keeps_messages_small() {
-        let l = Lyrics { synced: true, lines: (0..5000).map(|i| Line { ms: i, text: "x".repeat(40) }).collect() };
+        let l = Lyrics {
+            synced: true,
+            lines: (0..5000)
+                .map(|i| Line {
+                    ms: i,
+                    text: "x".repeat(40),
+                })
+                .collect(),
+        };
         let cut = for_device(l);
         assert!(cut.lines.len() < 5000 && cut.lines.len() > 100);
     }

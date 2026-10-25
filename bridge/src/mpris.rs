@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use zbus::fdo::DBusProxy;
 use zbus::proxy::CacheProperties;
-use zbus::{ObjectPath, OwnedObjectPath, OwnedVariant as OwnedValue};
 use zbus::{Connection, Proxy};
+use zbus::{ObjectPath, OwnedObjectPath, OwnedVariant as OwnedValue};
 
 const PREFIX: &str = "org.mpris.MediaPlayer2.";
 const PATH: &str = "/org/mpris/MediaPlayer2";
@@ -61,7 +61,11 @@ pub struct Mpris {
     conn: Connection,
 }
 
-async fn proxy<'a>(conn: &'a Connection, bus: &'a str, iface: &'static str) -> zbus::Result<Proxy<'a>> {
+async fn proxy<'a>(
+    conn: &'a Connection,
+    bus: &'a str,
+    iface: &'static str,
+) -> zbus::Result<Proxy<'a>> {
     zbus::proxy::Builder::<Proxy>::new(conn)
         .destination(bus)
         .path(PATH)
@@ -72,7 +76,9 @@ async fn proxy<'a>(conn: &'a Connection, bus: &'a str, iface: &'static str) -> z
 }
 
 fn as_i64(v: &OwnedValue) -> Option<i64> {
-    i64::try_from(v).ok().or_else(|| u64::try_from(v).ok().map(|n| n as i64))
+    i64::try_from(v)
+        .ok()
+        .or_else(|| u64::try_from(v).ok().map(|n| n as i64))
 }
 
 fn as_string(v: &OwnedValue) -> Option<String> {
@@ -96,8 +102,14 @@ fn parse_meta(m: &HashMap<String, OwnedValue>) -> Meta {
         out.album = as_string(v).unwrap_or_default();
     }
     out.length_us = m.get("mpris:length").and_then(as_i64);
-    out.art_url = m.get("mpris:artUrl").and_then(as_string).filter(|s| !s.is_empty());
-    out.xesam_url = m.get("xesam:url").and_then(as_string).filter(|s| !s.is_empty());
+    out.art_url = m
+        .get("mpris:artUrl")
+        .and_then(as_string)
+        .filter(|s| !s.is_empty());
+    out.xesam_url = m
+        .get("xesam:url")
+        .and_then(as_string)
+        .filter(|s| !s.is_empty());
     out.trackid = m.get("mpris:trackid").and_then(|v| {
         OwnedObjectPath::try_from(v.clone())
             .ok()
@@ -109,11 +121,15 @@ fn parse_meta(m: &HashMap<String, OwnedValue>) -> Meta {
 
 impl Mpris {
     pub async fn connect() -> zbus::Result<Self> {
-        Ok(Self { conn: Connection::session().await? })
+        Ok(Self {
+            conn: Connection::session().await?,
+        })
     }
 
     pub async fn buses(&self) -> Vec<String> {
-        let Ok(dbus) = DBusProxy::new(&self.conn).await else { return vec![] };
+        let Ok(dbus) = DBusProxy::new(&self.conn).await else {
+            return vec![];
+        };
         let mut names: Vec<String> = dbus
             .list_names()
             .await
@@ -131,13 +147,26 @@ impl Mpris {
         let root = proxy(&self.conn, bus, ROOT).await.ok()?;
         let p = proxy(&self.conn, bus, PLAYER).await.ok()?;
 
-        let mut raw = Raw { bus: bus.to_string(), rate: 1.0, ..Default::default() };
-        raw.identity = root.get_property::<String>("Identity").await.unwrap_or_else(|_| bus.trim_start_matches(PREFIX).to_string());
+        let mut raw = Raw {
+            bus: bus.to_string(),
+            rate: 1.0,
+            ..Default::default()
+        };
+        raw.identity = root
+            .get_property::<String>("Identity")
+            .await
+            .unwrap_or_else(|_| bus.trim_start_matches(PREFIX).to_string());
         raw.desktop_entry = root.get_property::<String>("DesktopEntry").await.ok();
-        raw.uri_schemes = root.get_property::<Vec<String>>("SupportedUriSchemes").await.unwrap_or_default();
+        raw.uri_schemes = root
+            .get_property::<Vec<String>>("SupportedUriSchemes")
+            .await
+            .unwrap_or_default();
 
         raw.status = p.get_property::<String>("PlaybackStatus").await.ok()?;
-        if let Ok(m) = p.get_property::<HashMap<String, OwnedValue>>("Metadata").await {
+        if let Ok(m) = p
+            .get_property::<HashMap<String, OwnedValue>>("Metadata")
+            .await
+        {
             raw.meta = parse_meta(&m);
         }
         raw.position_us = p.get_property::<i64>("Position").await.ok();
@@ -147,7 +176,10 @@ impl Mpris {
         raw.loop_status = p.get_property::<String>("LoopStatus").await.ok();
         raw.can_seek = p.get_property::<bool>("CanSeek").await.unwrap_or(false);
         raw.can_next = p.get_property::<bool>("CanGoNext").await.unwrap_or(false);
-        raw.can_prev = p.get_property::<bool>("CanGoPrevious").await.unwrap_or(false);
+        raw.can_prev = p
+            .get_property::<bool>("CanGoPrevious")
+            .await
+            .unwrap_or(false);
         raw.can_control = p.get_property::<bool>("CanControl").await.unwrap_or(false);
         Some(raw)
     }

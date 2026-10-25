@@ -29,7 +29,9 @@ fn token_path() -> PathBuf {
 }
 
 fn generate() -> String {
-    (0..TOKEN_LEN).map(|_| ALPHABET[rand::random_range(0..ALPHABET.len())] as char).collect()
+    (0..TOKEN_LEN)
+        .map(|_| ALPHABET[rand::random_range(0..ALPHABET.len())] as char)
+        .collect()
 }
 
 fn store(path: &PathBuf, token: &str) {
@@ -40,7 +42,13 @@ fn store(path: &PathBuf, token: &str) {
     {
         use std::io::Write;
         use std::os::unix::fs::OpenOptionsExt;
-        if let Ok(mut f) = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(path) {
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+        {
             let _ = writeln!(f, "{token}");
         }
     }
@@ -80,7 +88,11 @@ impl Access {
         let fixed = cli_token.is_some();
         let token = cli_token.unwrap_or_else(|| {
             let path = token_path();
-            match std::fs::read_to_string(&path).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+            match std::fs::read_to_string(&path)
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+            {
                 Some(t) => t,
                 None => {
                     let t = generate();
@@ -90,7 +102,12 @@ impl Access {
             }
         });
         let enforce = !no_auth && (fixed || !is_loopback(bind));
-        Arc::new(Self { token: RwLock::new(token), fixed, enforce, stats: Mutex::new(Stats::default()) })
+        Arc::new(Self {
+            token: RwLock::new(token),
+            fixed,
+            enforce,
+            stats: Mutex::new(Stats::default()),
+        })
     }
 
     pub fn token(&self) -> String {
@@ -118,7 +135,12 @@ impl Access {
     }
 }
 
-pub async fn check(State(a): State<Arc<Access>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, req: Request, next: Next) -> Response {
+pub async fn check(
+    State(a): State<Arc<Access>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    req: Request,
+    next: Next,
+) -> Response {
     let ok = !a.enforce || {
         let given = req
             .headers()
@@ -143,7 +165,10 @@ pub async fn check(State(a): State<Arc<Access>>, ConnectInfo(peer): ConnectInfo<
     } else {
         (
             StatusCode::UNAUTHORIZED,
-            Json(ErrBody { error: "auth_required", message: "missing or wrong access token (Authorization: Bearer <token>)".into() }),
+            Json(ErrBody {
+                error: "auth_required",
+                message: "missing or wrong access token (Authorization: Bearer <token>)".into(),
+            }),
         )
             .into_response()
     }

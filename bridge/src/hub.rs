@@ -26,13 +26,24 @@ impl ApiError {
     }
 
     fn new(status: StatusCode, error: &'static str, message: impl Into<String>) -> Self {
-        Self { status, error, message: message.into() }
+        Self {
+            status,
+            error,
+            message: message.into(),
+        }
     }
 }
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        (self.status, Json(ErrBody { error: self.error, message: self.message })).into_response()
+        (
+            self.status,
+            Json(ErrBody {
+                error: self.error,
+                message: self.message,
+            }),
+        )
+            .into_response()
     }
 }
 
@@ -86,14 +97,23 @@ fn slug(s: &str) -> String {
 }
 
 fn service_of(raw: &Raw) -> &'static str {
-    let hay = format!("{} {} {}", raw.identity, raw.desktop_entry.clone().unwrap_or_default(), raw.bus).to_lowercase();
+    let hay = format!(
+        "{} {} {}",
+        raw.identity,
+        raw.desktop_entry.clone().unwrap_or_default(),
+        raw.bus
+    )
+    .to_lowercase();
     if hay.contains("kdeconnect") {
         "other" // a phone mirrored through KDE Connect: its app names say nothing about this PC's players
     } else if hay.contains("spotify") {
         "spotify"
     } else if hay.contains("tidal") {
         "tidal"
-    } else if ["chrom", "firefox", "brave", "edge", "vivaldi", "opera"].iter().any(|b| hay.contains(b)) {
+    } else if ["chrom", "firefox", "brave", "edge", "vivaldi", "opera"]
+        .iter()
+        .any(|b| hay.contains(b))
+    {
         "browser"
     } else {
         "other"
@@ -109,18 +129,26 @@ fn status_of(raw: &Raw) -> &'static str {
 }
 
 fn fnv1a(s: &str) -> u64 {
-    s.bytes().fold(0xcbf29ce484222325, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3))
+    s.bytes().fold(0xcbf29ce484222325, |h, b| {
+        (h ^ b as u64).wrapping_mul(0x100000001b3)
+    })
 }
 
 fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 fn track_id(raw: &Raw) -> String {
     let m = &raw.meta;
     if let Some(u) = &m.xesam_url {
         if let Some(id) = u.split("open.spotify.com/track/").nth(1) {
-            return format!("spotify:track:{}", id.split(['?', '/']).next().unwrap_or(id));
+            return format!(
+                "spotify:track:{}",
+                id.split(['?', '/']).next().unwrap_or(id)
+            );
         }
     }
     match &m.trackid {
@@ -164,7 +192,11 @@ impl Hub {
 
     /// The tidal-hifi supplement, for the player it belongs to.
     fn tidal_for(&self, raw: &Raw) -> Option<Arc<Tidal>> {
-        if raw.identity.eq_ignore_ascii_case("tidal-hifi") { self.tidal.read().unwrap().clone() } else { None }
+        if raw.identity.eq_ignore_ascii_case("tidal-hifi") {
+            self.tidal.read().unwrap().clone()
+        } else {
+            None
+        }
     }
 
     /// Switch the tidal-hifi supplement on (Some) or off (None) at runtime.
@@ -192,8 +224,15 @@ impl Hub {
         let mut players: Vec<(String, Raw)> = Vec::new();
         let mut taken: HashMap<String, u32> = HashMap::new();
         for bus in self.mpris.buses().await {
-            let Some(raw) = self.mpris.read(&bus).await else { continue };
-            let base = slug(raw.desktop_entry.as_deref().filter(|s| !s.is_empty()).unwrap_or(&raw.identity));
+            let Some(raw) = self.mpris.read(&bus).await else {
+                continue;
+            };
+            let base = slug(
+                raw.desktop_entry
+                    .as_deref()
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(&raw.identity),
+            );
             let n = taken.entry(base.clone()).or_insert(0);
             *n += 1;
             let id = if *n == 1 { base } else { format!("{base}-{n}") };
@@ -201,7 +240,9 @@ impl Hub {
         }
         // switched-off players are set aside before the selection is settled, so neither the automatic pick nor a device can land on one
         let disabled = self.disabled.read().unwrap().clone();
-        let (hidden, players): (Vec<_>, Vec<_>) = players.into_iter().partition(|(id, _)| disabled.contains(id));
+        let (hidden, players): (Vec<_>, Vec<_>) = players
+            .into_iter()
+            .partition(|(id, _)| disabled.contains(id));
 
         let mut inner = self.inner.lock().unwrap();
         let now = Instant::now();
@@ -219,8 +260,16 @@ impl Hub {
         if !exists(&inner.explicit) {
             inner.explicit = None;
         }
-        if !exists(&inner.auto) || !inner.playing_since.contains_key(inner.auto.as_ref().unwrap()) {
-            let newest = inner.playing_since.iter().max_by_key(|(_, t)| **t).map(|(id, _)| id.clone());
+        if !exists(&inner.auto)
+            || !inner
+                .playing_since
+                .contains_key(inner.auto.as_ref().unwrap())
+        {
+            let newest = inner
+                .playing_since
+                .iter()
+                .max_by_key(|(_, t)| **t)
+                .map(|(id, _)| id.clone());
             if let Some(id) = newest {
                 inner.auto = Some(id);
             } else if !exists(&inner.auto) {
@@ -228,7 +277,11 @@ impl Hub {
             }
         }
         let selected = inner.explicit.clone().or_else(|| inner.auto.clone());
-        Snapshot { players, hidden, selected }
+        Snapshot {
+            players,
+            hidden,
+            selected,
+        }
     }
 
     fn pick<'a>(snap: &'a Snapshot, player: Option<&str>) -> Result<&'a (String, Raw), ApiError> {
@@ -239,7 +292,11 @@ impl Hub {
     }
 
     pub async fn info(&self) -> Info {
-        Info { protocol: 0, name: "music-bridge", version: env!("CARGO_PKG_VERSION") }
+        Info {
+            protocol: 0,
+            name: "music-bridge",
+            version: env!("CARGO_PKG_VERSION"),
+        }
     }
 
     pub async fn players(&self) -> Players {
@@ -262,8 +319,19 @@ impl Hub {
     /// What the settings page lists: the players devices see (with the selection) and, apart, the running ones that are switched off.
     pub async fn players_with_hidden(&self) -> (Players, Vec<PlayerEntry>) {
         let snap = self.snapshot().await;
-        let entry = |(id, raw): &(String, Raw)| PlayerEntry { id: id.clone(), name: raw.identity.clone(), service: service_of(raw), status: status_of(raw) };
-        (Players { selected: snap.selected.clone(), players: snap.players.iter().map(entry).collect() }, snap.hidden.iter().map(entry).collect())
+        let entry = |(id, raw): &(String, Raw)| PlayerEntry {
+            id: id.clone(),
+            name: raw.identity.clone(),
+            service: service_of(raw),
+            status: status_of(raw),
+        };
+        (
+            Players {
+                selected: snap.selected.clone(),
+                players: snap.players.iter().map(entry).collect(),
+            },
+            snap.hidden.iter().map(entry).collect(),
+        )
     }
 
     pub async fn select(&self, id: &str) -> Result<(), ApiError> {
@@ -287,7 +355,12 @@ impl Hub {
             players: snap
                 .players
                 .iter()
-                .map(|(id, raw)| PlayerEntry { id: id.clone(), name: raw.identity.clone(), service: service_of(raw), status: status_of(raw) })
+                .map(|(id, raw)| PlayerEntry {
+                    id: id.clone(),
+                    name: raw.identity.clone(),
+                    service: service_of(raw),
+                    status: status_of(raw),
+                })
                 .collect(),
         };
         let mut states = Vec::new();
@@ -301,7 +374,11 @@ impl Hub {
         let tid = track_id(raw);
         let cover = raw.meta.art_url.as_ref().map(|url| {
             let key = format!("{:016x}", fnv1a(&format!("{url}|{tid}")));
-            self.inner.lock().unwrap().cover_urls.insert(key.clone(), url.clone());
+            self.inner
+                .lock()
+                .unwrap()
+                .cover_urls
+                .insert(key.clone(), url.clone());
             key
         });
 
@@ -362,7 +439,13 @@ impl Hub {
     pub async fn command(&self, player: Option<&str>, cmd: Cmd) -> Result<(), ApiError> {
         let snap = self.snapshot().await;
         let (_, raw) = Self::pick(&snap, player)?;
-        let unsupported = |what: &str| ApiError::new(StatusCode::BAD_REQUEST, "unsupported", format!("{what} is not supported by this player"));
+        let unsupported = |what: &str| {
+            ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "unsupported",
+                format!("{what} is not supported by this player"),
+            )
+        };
         let c = match cmd {
             Cmd::PlayPause => Command::PlayPause,
             Cmd::Play => Command::Play,
@@ -376,21 +459,41 @@ impl Hub {
             Cmd::Volume(_) => return Err(unsupported("volume")),
             Cmd::Shuffle(on) if raw.shuffle.is_some() => Command::Shuffle(on),
             Cmd::Shuffle(on) => {
-                let Some(t) = self.tidal_for(raw) else { return Err(unsupported("shuffle")) };
-                return t.set_shuffle(on).await.map_err(|e| ApiError::new(StatusCode::BAD_GATEWAY, "upstream_failed", e));
+                let Some(t) = self.tidal_for(raw) else {
+                    return Err(unsupported("shuffle"));
+                };
+                return t
+                    .set_shuffle(on)
+                    .await
+                    .map_err(|e| ApiError::new(StatusCode::BAD_GATEWAY, "upstream_failed", e));
             }
             Cmd::Repeat(mode) if raw.loop_status.is_some() => Command::Loop(match mode.as_str() {
                 "off" => "None",
                 "all" => "Playlist",
                 "single" => "Track",
-                _ => return Err(ApiError::new(StatusCode::BAD_REQUEST, "bad_request", "mode must be off, all or single")),
+                _ => {
+                    return Err(ApiError::new(
+                        StatusCode::BAD_REQUEST,
+                        "bad_request",
+                        "mode must be off, all or single",
+                    ));
+                }
             }),
             Cmd::Repeat(mode) => {
                 if !matches!(mode.as_str(), "off" | "all" | "single") {
-                    return Err(ApiError::new(StatusCode::BAD_REQUEST, "bad_request", "mode must be off, all or single"));
+                    return Err(ApiError::new(
+                        StatusCode::BAD_REQUEST,
+                        "bad_request",
+                        "mode must be off, all or single",
+                    ));
                 }
-                let Some(t) = self.tidal_for(raw) else { return Err(unsupported("repeat")) };
-                return t.set_repeat(&mode).await.map_err(|e| ApiError::new(StatusCode::BAD_GATEWAY, "upstream_failed", e));
+                let Some(t) = self.tidal_for(raw) else {
+                    return Err(unsupported("repeat"));
+                };
+                return t
+                    .set_repeat(&mode)
+                    .await
+                    .map_err(|e| ApiError::new(StatusCode::BAD_GATEWAY, "upstream_failed", e));
             }
             Cmd::Open(uri) if !raw.uri_schemes.is_empty() => Command::OpenUri(uri),
             Cmd::Open(_) => return Err(unsupported("open_uri")),
@@ -404,12 +507,17 @@ impl Hub {
     pub async fn cover(&self, key: &str, px: u32) -> Result<Arc<Vec<u8>>, ApiError> {
         let (url, cached) = {
             let inner = self.inner.lock().unwrap();
-            (inner.cover_urls.get(key).cloned(), inner.cover_cache.get(&(key.to_string(), px)).cloned())
+            (
+                inner.cover_urls.get(key).cloned(),
+                inner.cover_cache.get(&(key.to_string(), px)).cloned(),
+            )
         };
         if let Some(c) = cached {
             return Ok(c);
         }
-        let url = url.ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "bad_request", "unknown cover key"))?;
+        let url = url.ok_or_else(|| {
+            ApiError::new(StatusCode::NOT_FOUND, "bad_request", "unknown cover key")
+        })?;
         let upstream = |e: String| ApiError::new(StatusCode::BAD_GATEWAY, "upstream_failed", e);
         let bytes = cover::load(&url).await.map_err(upstream)?;
         let jpeg = Arc::new(cover::to_jpeg(bytes, px).await.map_err(upstream)?);
@@ -418,7 +526,9 @@ impl Hub {
         if inner.cover_cache.len() >= 64 {
             inner.cover_cache.clear(); // small and simple: covers are cheap to rebuild
         }
-        inner.cover_cache.insert((key.to_string(), px), jpeg.clone());
+        inner
+            .cover_cache
+            .insert((key.to_string(), px), jpeg.clone());
         Ok(jpeg)
     }
 }
