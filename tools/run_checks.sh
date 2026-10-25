@@ -5,12 +5,10 @@
 #                                    LRCLIB, the device's Automatic focus and
 #                                    its cache after a reconnect and its lyrics retry (the device checks need a built build/bin/lvglsim, Xvfb and ImageMagick;
 #                                    they are skipped without them)
-#   tools/run_checks.sh --network    also the C++/Rust lyrics comparison (asks LRCLIB, takes a minute)
 #
 # What is not automatic: how the screen looks. tools/ui_run.sh takes screenshots of fake-source scenarios for that.
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-NETWORK=0; [ "${1:-}" = "--network" ] && NETWORK=1
 results=()
 run() {
   local name=$1; shift
@@ -38,7 +36,6 @@ if [ -f "${IDF_PATH:-$HOME/projects/esp-idf}/export.sh" ]; then
 else
   results+=("skipped firmware build (ESP-IDF not found, see docs/PORTING.md)")
 fi
-[ "$NETWORK" = 1 ] && run "lyrics: device vs bridge (lyrics_compare)" "$ROOT/tools/lyrics_compare/compare.sh"
 
 echo; echo "=== summary"
 printf '%s\n' "${results[@]}"

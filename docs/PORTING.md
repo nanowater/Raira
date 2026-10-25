@@ -8,13 +8,13 @@ was written); the ESP-IDF column below is the intended mapping, to be verified.
 
 | Part | Files | Notes |
 |---|---|---|
-| **App core** (portable) | `src/music_app.*`, `music_ui.*`, `media_poller.*`, `tidal_client.*`, `lyrics.*`, `cover_decoder.*`, `http_util.cpp`, `media_info.h`, `fonts/*`, `lvgl_compat.h` | Depends only on LVGL, nlohmann_json, the C++ standard library (threads, chrono) and the two interfaces below. CMake target `music_core`. |
-| **Platform interfaces** | `src/platform/http.h`, `src/platform/jpeg.h` | The only things the core needs from the OS. |
-| **Simulator platform** | `src/platform_sim/http_curl.cpp` (libcurl), `jpeg_turbo.cpp` (libjpeg-turbo), `src/main.cpp`, `src/lib/` | CMake targets `music_platform_sim`, `lvglsim`. `main.cpp` also holds sim-only input glue (mouse wheel / arrow keys → volume). |
-| **ESP32 platform** (to write) | `HttpClient` + `jpeg_decode_bgrx` + `app_main` | See below. |
+| **App core** (portable) | `src/music_app.*`, `music_ui.*`, `settings_ui.*`, `browse_ui.*`, `media_poller.*`, `browse_worker.*`, `hub_source.*`, `cover_decoder.*`, `lyrics.h`, `media_info.h`, `fonts/*`, `lvgl_compat.h` | Depends only on LVGL, nlohmann_json, the C++ standard library (threads, chrono) and the interfaces below. CMake target `music_core`. The device is hub-only (2026-10-25): no HTTP client, no TLS. |
+| **Platform interfaces** | `src/platform/jpeg.h`, `ws_server.h`, `mdns.h`, `settings.h`, `wifi.h` | What the app needs from the OS (`jpeg.h` and the fonts at link time, the rest handed over in `MusicAppDeps`). |
+| **Simulator platform** | `src/platform_sim/jpeg_turbo.cpp` (libjpeg-turbo), `ws_server_lws.cpp` (libwebsockets), `mdns_responder.cpp`, `settings_file.cpp`, `wifi_mock.cpp`, `src/main.cpp`, `src/lib/` | CMake targets `music_platform_sim`, `lvglsim`. `main.cpp` also holds sim-only input glue (mouse wheel / arrow keys → volume). |
+| **ESP32 platform** | `firmware/components/music_platform_esp/` + `firmware/main/` | See "ESP-IDF status" below. |
 
-Entry point for both: `music_app_start(std::unique_ptr<MediaSource>)` (LVGL initialised, on the LVGL thread);
-`main()` / `app_main` builds the service (`std::make_unique<TidalClient>(cfg)`) and passes it in.
+Entry point for both: `music_app_start(MusicAppDeps)` (LVGL initialised, on the LVGL thread);
+`main()` / `app_main` builds the `HubSource` (with the WebSocket server), the mDNS announcement, WiFi and the settings store and passes them in.
 Volume input hook: `media_poller_volume_step(int delta)` (call from the encoder driver).
 
 ## ESP-IDF status (2026-10-23)
@@ -38,59 +38,51 @@ board yet).
 | File | Implements | How |
 |---|---|---|
 | `font_partition.cpp` | `noto_sans_kr_get()`, `noto_sans_kr_bold_get()` (`src/fonts/noto_sans_kr.c`, which `.incbin`s 7 MB, is not in the firmware) | `esp_partition_mmap()` of the `fonts` partition; the image format is `src/fonts/font_image.h` (parser tested on the PC: `tools/font_image/`), written by `tools/make_fonts_image.py`. Without a valid image the getters return null and `ui_fonts.cpp` falls back to the built-in Montserrat. |
-| `jpeg_esp.cpp` | `jpeg_decode_bgrx()` | the **TJpgDec in the chip's ROM** (no flash, no extra component); baseline JPEG only, 1/2, 1/4, 1/8 downscale. The bridge re-encodes covers as baseline, so the hub path works; a progressive JPEG (TIDAL's CDN, direct tidal-hifi mode only) is refused. |
-| `http_esp.cpp` | `http_client_create()` | `esp_http_client` with keep-alive, redirects, the certificate bundle, cancel through its events |
-| `settings_nvs.cpp` | `settings_store_create()` (`SettingsStore`) | NVS namespace `music`, one string per `AppSettings` field under the same key names as the simulator's JSON (all within NVS's 15-character key limit; a string is at most 4000 bytes, `hub_sources` is the largest). `save` writes the eight keys and commits once; `load` returns false when the namespace does not exist yet (first boot). `app_main` runs `nvs_flash_init()` (erase and retry when the partition is full or from another version). |
+| `jpeg_esp.cpp` | `jpeg_decode_bgrx()` | the **TJpgDec in the chip's ROM** (no flash, no extra component); baseline JPEG only, 1/2, 1/4, 1/8 downscale. The bridge re-encodes covers as baseline, so every cover the device gets can be decoded; a progressive JPEG would be refused. |
+| `settings_nvs.cpp` | `settings_store_create()` (`SettingsStore`) | NVS namespace `music`, one string per `AppSettings` field under the same key names as the simulator's JSON (all within NVS's 15-character key limit; a string is at most 4000 bytes, `hub_sources` is the largest). `save` writes the six keys and commits once; `load` returns false when the namespace does not exist yet (first boot). `app_main` runs `nvs_flash_init()` (erase and retry when the partition is full or from another version). |
 | `wifi_esp.cpp` | `wifi_manager_create()` (`WifiManager`) | `esp_wifi` in STA mode with the default netif and event loop; scan and connect are started and return at once, the results come back as events (`WIFI_EVENT_SCAN_DONE`: records converted, hidden networks skipped, strongest first; `IP_EVENT_STA_GOT_IP` = Connected; `WIFI_EVENT_STA_DISCONNECTED`: while connecting retried up to 3 times then Failed, after a working connection reconnected). State and flags are atomics, the scan list and the SSID are under a mutex (the event task writes, the LVGL thread reads). Not yet: connecting to the saved network at boot (that comes with the real `app_main`). |
 
-**None of these five has run on a chip.** The font format is tested on the PC; the JPEG, HTTP, NVS and WiFi code only compiled and linked. The questions for the board: do scan and connect work against a real access point, which `reason` does a wrong password give and are 3 retries the right number (the `esp_wifi_disconnect()` in `connect()` makes its own disconnect event, which uses up one retry), does `save` followed by `load` give the same eight values, and do they survive a power cycle (the WiFi password and the bridge token are plain text in NVS; NVS encryption is a later decision), does the 7.5 MB mmap succeed, is TJpgDec's pool of 16 KB enough for every cover and how long does a 640 px cover take, does `esp_http_client_cancel_request()` from inside an event end the request cleanly, and does a stalled transfer end with the timeout.
+**None of these four has run on a chip.** The font format is tested on the PC; the JPEG, NVS and WiFi code only compiled and linked. The questions for the board: do scan and connect work against a real access point, which `reason` does a wrong password give and are 3 retries the right number (the `esp_wifi_disconnect()` in `connect()` makes its own disconnect event, which uses up one retry), does `save` followed by `load` give the same six values, and do they survive a power cycle (the WiFi password and the pairing secrets are plain text in NVS; NVS encryption is a later decision), does the 7.5 MB mmap succeed, and is TJpgDec's pool of 16 KB enough for every cover and how long does a 640 px cover take. (An `esp_http_client` implementation existed until 2026-10-25 and went with the HTTP-based modes; it is in the git history.)
 
-Size of the app with the core linked (still without WiFi, `esp_http_server`, mDNS): **1.40 MB of the 2.5 MB slot** (44 % free); **with the WiFi stack (2026-10-25): 1.80 MB (28 % free)**, the driver and lwIP cost about 390 KB, of that LVGL 644 KB, the core 165 KB, mbedTLS about 100 KB; flash code 804 KB + read-only data 592 KB; internal SRAM 63 KB of 334 KB. The WiFi stack, the HTTP/WebSocket server and mDNS will add to it, so the OTA slots may have to grow (3.4 MB of the flash are spare).
+Size of the app with the core linked (still without WiFi, `esp_http_server`, mDNS): **1.40 MB of the 2.5 MB slot** (44 % free); **with the WiFi stack (2026-10-25): 1.80 MB (28 % free)**, the driver and lwIP cost about 390 KB; **hub-only, without `esp_http_client`, TLS and the certificate bundle (2026-10-25): 1.54 MB (38 % free)**. The first numbers: of that LVGL 644 KB, the core 165 KB, mbedTLS about 100 KB; flash code 804 KB + read-only data 592 KB; internal SRAM 63 KB of 334 KB. The WiFi stack, the HTTP/WebSocket server and mDNS will add to it, so the OTA slots may have to grow (3.4 MB of the flash are spare).
 
 The WebSocket server (`platform/ws_server.h`), mDNS (`platform/mdns.h`), WiFi and the settings store are not called by the core: `app_main` creates them and hands them over (`MusicAppDeps`, `HubSource`). ESP-IDF 6.0 changed that the `esp_http_server` WebSocket handler is no longer called during the handshake (the migration guide, "ESP HTTP Server"): the `ws_server` implementation has to learn about a new connection another way. The default C library is now Picolibc (check `nlohmann_json` number parsing and `std::thread` there).
 
 ## What the ESP32 side has to provide
 
-(The hub direction in `docs/HUB_PROTOCOL.md` adds one more platform piece: an implementation of `platform/ws_server.h`
-on ESP-IDF's `esp_http_server` with WebSocket support (`CONFIG_HTTPD_WS_SUPPORT`), plus the `mdns` component to advertise
-`_musicbridge._tcp`. The portable hub core (`hub_source.*`) needs nothing else; with the hub, the device no longer needs
-`HttpClient` for the music service, and TLS disappears once lyrics are fetched by the source.)
+(The hub in `docs/HUB_PROTOCOL.md` needs an implementation of `platform/ws_server.h` on ESP-IDF's `esp_http_server` with
+WebSocket support (`CONFIG_HTTPD_WS_SUPPORT`), plus the `mdns` component to advertise `_musicbridge._tcp`. The portable hub
+core (`hub_source.*`) needs nothing else: covers and lyrics come from the sources, so the device has no HTTP client and no
+TLS.)
 
 0. **`WifiManager` and `SettingsStore`** (`platform/wifi.h`, `platform/settings.h`) for the settings page: the
    simulator has a mock WiFi (fake networks, no real radio) and a JSON file. On the device: `esp_wifi` in STA mode
    (scan and connect are non-blocking, the UI polls `scan_running()` / `state()` from a 200 ms LVGL timer) and NVS
-   for `AppSettings` (server address, WiFi credentials). Set the touch indev's long-press time to ~800 ms
+   for `AppSettings` (player choice, hub identity, paired sources, WiFi credentials). Set the touch indev's long-press time to ~800 ms
    (`lv_indev_set_long_press_time`), the settings open on a long press of the cover.
 
-1. **`HttpClient` / `http_client_create()`** (`platform/http.h`): blocking GET/PUT/POST without body, timeouts,
-   user agent, and a `cancelled()` callback polled during the transfer. Intended: `esp_http_client`
-   (keep-alive via one handle per thread; HTTPS with the ESP certificate bundle for LRCLIB and the TIDAL
-   image CDN). Cancellation: `esp_http_client_cancel_request()` / closing from the poll loop, or chunked reads
-   that check `cancelled()` between reads.
-2. **`jpeg_decode_bgrx()`** (`platform/jpeg.h`): JPEG → BGRX8888. Intended: ESP-IDF `esp_jpeg` (TJpgDec) or
-   JPEGDEC. **Open: TIDAL serves progressive JPEGs** (the sim decoder handles them). If the chosen decoder
-   cannot, fetch a baseline size/variant from the CDN or convert on the host. Allow the decoder to
-   downscale (1/2, 1/4, 1/8) to save time and RAM.
-3. **`app_main`**: init NVS, WiFi, display (RGB panel) and touch (GT911) → LVGL port → `music_app_start(cfg)`
-   with `TidalConfig` loaded from NVS. Feed the rotary encoder into `media_poller_volume_step()`.
-4. **Threads**: the core uses `std::thread`, `std::mutex`, `std::condition_variable`, `std::chrono`.
+1. **`jpeg_decode_bgrx()`** (`platform/jpeg.h`): JPEG → BGRX8888. Done with the ROM's TJpgDec (baseline only; the
+   bridge re-encodes every cover as baseline JPEG). It downscales (1/2, 1/4, 1/8) to save time and RAM.
+2. **`app_main`**: init NVS, WiFi, display (RGB panel) and touch (GT911) → LVGL port → `HubSource` + mDNS →
+   `music_app_start(deps)` with the settings loaded from NVS (connect to the saved WiFi network). Feed the rotary encoder into `media_poller_volume_step()`.
+3. **Threads**: the core uses `std::thread`, `std::mutex`, `std::condition_variable`, `std::chrono`.
    ESP-IDF supports these through its pthread layer; set stack sizes/priority with `esp_pthread_set_cfg()`
    before creating `poll_loop` and `lyrics_loop` (JSON parsing + resampling need roughly 16-32 KB; verify).
-5. **LVGL config** (`lv_conf.h`) must match what the code uses: TinyTTF (`LV_USE_TINY_TTF`, file support
+4. **LVGL config** (`lv_conf.h`) must match what the code uses: TinyTTF (`LV_USE_TINY_TTF`, file support
    off), Montserrat 12/14/16/22/28/30/36/44, `LV_USE_SLIDER`, `LV_USE_IMAGE`, `LV_COLOR_DEPTH 16`,
    `LV_FONT_MONTSERRAT_*` as above, draw buffers sized for 800×480. The code uses newer LVGL 9 setters
    (`lv_obj_set_hidden`, `lv_obj_set_scrollable`, `lv_obj_set_clickable`): pin the ESP LVGL component to the
    same version as the `lvgl/` directory in this repo: it is **10.0.0-dev** (`build/bin/lvglsim -V` prints it), not the
 9.2 the older notes mention — the published ESP-IDF LVGL component (9.x) lacks those APIs. Use the same LVGL
 sources (e.g. an ESP-IDF component that points at this tree).
-6. **Fonts** are embedded with `.incbin` (`src/fonts/noto_sans_kr.c`, two ~3.6 MB OTF files in `assets/fonts/`).
+5. **Fonts** are embedded with `.incbin` (`src/fonts/noto_sans_kr.c`, two ~3.6 MB OTF files in `assets/fonts/`).
    In ESP-IDF use `EMBED_FILES` or keep that asm; they live in flash (16 MB), mapped read-only. With OTA, two
    app slots would each need the ~7.1 MB of fonts: **decided: a separate read-only `fonts` data partition**, see "Flash layout"
    below (`src/fonts/noto_sans_kr.c` then maps the partition instead of using `.incbin`).
-7. **C++ exceptions**: nlohmann_json can throw. The code uses `parse(..., nullptr, false)` and checks types
+6. **C++ exceptions**: nlohmann_json can throw. The code uses `parse(..., nullptr, false)` and checks types
    before `get<>`, but ESP-IDF builds with exceptions off by default: either enable
    `CONFIG_COMPILER_CXX_EXCEPTIONS` or build with `JSON_NOEXCEPTION` and re-check the `get<>` calls.
-8. **Large buffers** should land in PSRAM: set `CONFIG_SPIRAM_USE_MALLOC` (big `malloc`/`new` go to PSRAM) or
+7. **Large buffers** should land in PSRAM: set `CONFIG_SPIRAM_USE_MALLOC` (big `malloc`/`new` go to PSRAM) or
    use `heap_caps_malloc(..., MALLOC_CAP_SPIRAM)` for the cover and background buffers.
 
 ## Memory budget (estimates from the code, not measured)
@@ -114,7 +106,7 @@ track); measure that time on the device (JPEG decode of a 400 px cover on the ES
 
 ## Not portable / sim only
 `src/main.cpp` (CLI/env host config, SDL backends), `src/lib/`, `install_volume_input()` (mouse wheel),
-`docs/JC8048W550/` (vendor demos, not part of the build).
+`docs/JC8048W550/` (vendor material trimmed to the data sheets, the pin table and the demos' board setup; not part of the build).
 
 ## Flash layout (plan, 16 MB, to be confirmed when the first firmware is built)
 

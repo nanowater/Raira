@@ -23,9 +23,7 @@ class NvsStore : public SettingsStore {
             return false;
         }
 
-        get(h, "server", out.server);
         get(h, "player", out.player);
-        get(h, "bridge_token", out.bridge_token);
         get(h, "hub_device_id", out.hub_device_id);
         get(h, "hub_device_name", out.hub_device_name);
         get(h, "hub_sources", out.hub_sources);
@@ -45,9 +43,7 @@ class NvsStore : public SettingsStore {
             return false;
         }
 
-        if(err == ESP_OK) err = set(h, "server", settings.server);
         if(err == ESP_OK) err = set(h, "player", settings.player);
-        if(err == ESP_OK) err = set(h, "bridge_token", settings.bridge_token);
         if(err == ESP_OK) err = set(h, "hub_device_id", settings.hub_device_id);
         if(err == ESP_OK) err = set(h, "hub_device_name", settings.hub_device_name);
         if(err == ESP_OK) err = set(h, "hub_sources", settings.hub_sources);

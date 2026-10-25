@@ -10,7 +10,6 @@ namespace {
 std::unique_ptr<WifiManager> g_wifi;
 std::unique_ptr<SettingsStore> g_store;
 AppSettings g_settings;
-std::function<bool(const std::string &)> g_validate;
 } // namespace
 
 void music_app_start(MusicAppDeps deps)
@@ -18,9 +17,7 @@ void music_app_start(MusicAppDeps deps)
     g_wifi     = std::move(deps.wifi);
     g_store    = std::move(deps.store);
     g_settings = std::move(deps.settings);
-    g_validate = std::move(deps.validate_server);
 
-    const bool uses_token   = deps.source->uses_token();
     const bool picks_player = deps.source->can_select_player();
     HubSource * deps_hub    = deps.hub;
     if(deps_hub) {
@@ -42,31 +39,13 @@ void music_app_start(MusicAppDeps deps)
     browse_worker_start(std::move(deps.browse));
 
     SettingsServices svc;
-    svc.wifi       = g_wifi.get();
-    svc.hub        = deps_hub;
-    svc.get_server = [] { return g_settings.server; };
-    svc.set_server = [](const std::string & spec) {
-        if(spec.empty() || (g_validate && !g_validate(spec))) return false;
-        g_settings.server = spec;
-        if(g_store) g_store->save(g_settings);
-        media_poller_set_endpoint(spec);
-        browse_worker_set_endpoint(spec);
-        return true;
-    };
+    svc.wifi          = g_wifi.get();
+    svc.hub           = deps_hub;
     svc.remember_wifi = [](const std::string & ssid, const std::string & password) {
         g_settings.wifi_ssid     = ssid;
         g_settings.wifi_password = password;
         if(g_store) g_store->save(g_settings);
     };
-    if(uses_token) {
-        svc.get_token = [] { return g_settings.bridge_token; };
-        svc.set_token = [](const std::string & token) {
-            g_settings.bridge_token = token;
-            if(g_store) g_store->save(g_settings);
-            media_poller_set_token(token);
-            browse_worker_set_token(token);
-        };
-    }
     if(picks_player) {
         svc.get_player = [] { return g_settings.player; };
         svc.set_player = [](const std::string & id) {

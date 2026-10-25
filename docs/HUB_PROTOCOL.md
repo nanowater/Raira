@@ -1,8 +1,8 @@
 # Hub protocol (draft v1): the device is the hub
 
-Status: **draft, first version implemented** (2026-10-17): the simulator is the hub (`lvglsim -S <port>`, `src/hub_source.*` on `src/platform/ws_server.h`, libwebsockets in `platform_sim`) and the bridge is a source (`bridge/src/hubclient.rs`). Working: `hello`/`auth`/`pair`, `players` and `state` push, `focus`, `cmd`/`ack`, `cover_req` with the binary reply. mDNS discovery works too (simulator: `platform_sim/mdns_responder.cpp`; bridge: `discovery.rs` with `mdns-sd`). `lyrics_req`/`lyrics` work too: the bridge announces the `lyrics` feature and does the LRCLIB lookup (`bridge/src/lyrics.rs`, a port of `src/lyrics.cpp` with a disk cache); a source without the feature makes the device fetch from LRCLIB itself. **Not yet:** the ESP32 server (`esp_http_server`), TLS. Written 2026-10-17. It replaces the direction of
-`BRIDGE_PROTOCOL.md` (v0: the device polls a server on the PC, implemented in `bridge/` and `BridgeSource`) while keeping
-its vocabulary: players, `state`, capabilities, commands. v0 stays working until v1 can take over. Everything about
+Status: **draft, first version implemented** (2026-10-17): the simulator is the hub (`lvglsim -S <port>`, `src/hub_source.*` on `src/platform/ws_server.h`, libwebsockets in `platform_sim`) and the bridge is a source (`bridge/src/hubclient.rs`). Working: `hello`/`auth`/`pair`, `players` and `state` push, `focus`, `cmd`/`ack`, `cover_req` with the binary reply. mDNS discovery works too (simulator: `platform_sim/mdns_responder.cpp`; bridge: `discovery.rs` with `mdns-sd`). `lyrics_req`/`lyrics` work too: the bridge announces the `lyrics` feature and does the LRCLIB lookup (`bridge/src/lyrics.rs`, with a disk cache); a source without the feature means no lyrics (the device-side LRCLIB lookup was removed on 2026-10-25: the device is hub-only). **Not yet:** the ESP32 server (`esp_http_server`), TLS. Written 2026-10-17. It replaces the direction of
+`BRIDGE_PROTOCOL.md` (v0: the device polls a server on the PC; the bridge still serves it, the device client `BridgeSource` was removed on 2026-10-25) while keeping
+its vocabulary: players, `state`, capabilities, commands. Everything about
 ESP32 load is an estimate, not a measurement (no hardware yet).
 
 ## Why turn it around
@@ -161,8 +161,8 @@ S3 (no hardware decoder), real internal-RAM headroom with the WebSocket server r
   disappears from the normal path. The v0 HTTP API can stay behind a flag for development.
 - `src/`: a `HubServer` (platform interface: `platform_sim` uses a small WebSocket server library, ESP-IDF uses
   `esp_http_server`) feeding a **source registry** that implements what `MediaSource` does today for one source, but for
-  many; `BridgeSource` and the token setting become the legacy/dev path. Lyrics fetching in `lyrics.*` stays for the
-  direct tidal-hifi mode.
+  many. (Done; `BridgeSource`, the token setting, the tidal-hifi client and the device-side lyrics lookup were removed
+  on 2026-10-25.)
 - The device-side player choice (`AppSettings::player`, the Player page) is kept; its id becomes `(source_id, player_id)`.
 
 ## Open questions

@@ -14,9 +14,9 @@ namespace {
 
 struct Req
 {
-    enum Kind { REFRESH, OPEN_PLAYLIST, PLAY_TRACK, PLAY_QUEUE, THUMB, ENDPOINT, TOKEN } kind = REFRESH;
-    int index                                                                                 = 0;
-    std::string text; /* cover key, or the new endpoint */
+    enum Kind { REFRESH, OPEN_PLAYLIST, PLAY_TRACK, PLAY_QUEUE, THUMB } kind = REFRESH;
+    int index                                                                = 0;
+    std::string text; /* cover key */
 };
 
 std::mutex g_mu;
@@ -153,8 +153,6 @@ void worker(std::unique_ptr<BrowseSource> src)
                 media_post_to_ui([key, rgb, w, h] { browse_ui_set_thumb(key.c_str(), rgb->data(), w, h); });
                 break;
             }
-            case Req::ENDPOINT: src->set_endpoint(r.text); break;
-            case Req::TOKEN: src->set_token(r.text); break;
         }
     }
 }
@@ -167,20 +165,4 @@ void browse_worker_start(std::unique_ptr<BrowseSource> source)
     music_ui_set_browse_cb(on_browse);
     browse_ui_set_thumb_cb(on_thumb_request);
     std::thread(worker, std::move(source)).detach();
-}
-
-void browse_worker_set_endpoint(const std::string & spec)
-{
-    Req r;
-    r.kind = Req::ENDPOINT;
-    r.text = spec;
-    push(std::move(r));
-}
-
-void browse_worker_set_token(const std::string & token)
-{
-    Req r;
-    r.kind = Req::TOKEN;
-    r.text = token;
-    push(std::move(r));
 }

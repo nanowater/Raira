@@ -487,7 +487,7 @@ bool HubSource::request_lyrics(const MediaInfo & info, Lyrics & out, const std::
             conn = 0;
         }
     }
-    if(!conn) return lyrics_fetch(info, out, cancelled); /* nobody to ask (or a bridge without the feature) */
+    if(!conn) return false; /* nobody to ask (or a source without the lyrics feature): no lyrics */
 
     json r  = {{"t", "lyrics_req"},   {"id", req},
                {"player", player},    {"track_id", info.track_id},

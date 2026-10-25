@@ -27,7 +27,7 @@ static_assert(MUSIC_UI_CAP_BROWSE == MEDIA_CAP_BROWSE, "UI capability bits must 
 /* Capabilities of the current service: set in media_poller_start, then updated by the poller thread
  * when a poll reports different ones (MediaInfo::caps). Guarded by g_mu once the threads run. */
 uint32_t g_caps = 0;
-LyricsProvider g_lyrics_provider; /* set in media_poller_start before the lyrics thread runs; empty = LRCLIB directly */
+LyricsProvider g_lyrics_provider; /* set in media_poller_start before the lyrics thread runs; empty = no lyrics */
 media_browse_mode_t g_browse_mode = MEDIA_BROWSE_NONE;
 
 /* The browse bit also depends on whether a browse provider exists at all. */
@@ -60,17 +60,14 @@ void drain_ui_queue(lv_timer_t *)
 }
 
 /* Last connection state handed to the UI (dedupe: post only on changes). */
-std::atomic<int> g_conn_posted{MEDIA_CONN_CONNECTED};
-std::atomic<void (*)(media_conn_state_t)> g_conn_cb{nullptr};
+std::atomic<bool> g_conn_posted{true};
 
-void post_conn_state(int state)
+void post_conn_state(bool connected)
 {
-    if(g_conn_posted.exchange(state) == state) return;
-    post_to_ui([state, cb = g_conn_cb.load()] {
-        if(state != MEDIA_CONN_UNKNOWN) music_ui_set_connected(state == MEDIA_CONN_CONNECTED);
-        if(state == MEDIA_CONN_LOST)
-            music_ui_clear_content(); /* what is shown may be long out of date; the poller keeps the data */
-        if(cb) cb(static_cast<media_conn_state_t>(state));
+    if(g_conn_posted.exchange(connected) == connected) return;
+    post_to_ui([connected] {
+        music_ui_set_connected(connected);
+        if(!connected) music_ui_clear_content(); /* what is shown may be long out of date; the poller keeps the data */
     });
 }
 
@@ -105,9 +102,6 @@ double g_vol_polled               = -1;    /* last volume reported by /current *
 double g_vol_target               = -1;    /* wanted volume, -1 = just follow the polled one */
 bool g_vol_dirty                  = false; /* g_vol_target not sent yet */
 std::chrono::steady_clock::time_point g_vol_last_send, g_vol_last_step;
-std::string g_endpoint; /* new service endpoint to apply on the poller thread, "" = none */
-std::string g_token;    /* new access token to apply on the poller thread */
-bool g_token_dirty = false;
 std::string g_player; /* new player choice to apply on the poller thread */
 bool g_player_dirty = false;
 media_players_cb_t g_players_cb; /* pending list request: answered on the poller thread, delivered on the LVGL thread */
@@ -121,25 +115,6 @@ void volume_sync_polled(double polled)
        (std::abs(polled - g_vol_target) < 0.005 ||
         std::chrono::steady_clock::now() - g_vol_last_step > std::chrono::milliseconds(VOLUME_FOLLOW_MS)))
         g_vol_target = -1;
-}
-
-void set_endpoint_pending(const std::string & spec)
-{
-    {
-        std::lock_guard<std::mutex> lk(g_mu);
-        g_endpoint = spec;
-    }
-    g_cv.notify_one();
-}
-
-void set_token_pending(const std::string & token)
-{
-    {
-        std::lock_guard<std::mutex> lk(g_mu);
-        g_token       = token;
-        g_token_dirty = true;
-    }
-    g_cv.notify_one();
 }
 
 void set_player_pending(const std::string & id)
@@ -247,8 +222,7 @@ void lyrics_loop()
         for(size_t attempt = 0;; attempt++) {
             auto r   = std::make_shared<LyricsResult>();
             r->gen   = gen;
-            r->found = g_lyrics_provider ? g_lyrics_provider(req.info, r->lyrics, cancelled)
-                                         : lyrics_fetch(req.info, r->lyrics, cancelled);
+            r->found = g_lyrics_provider && g_lyrics_provider(req.info, r->lyrics, cancelled);
             if(cancelled()) break; /* another track: its request is pending, this answer is of no use */
             if(r->found) {
                 std::lock_guard<std::mutex> lk(g_lyr_cache_mu);
@@ -352,7 +326,7 @@ void poll_loop(std::unique_ptr<MediaSource> source)
     std::string cover_for;  /* cover key (image URL) the displayed cover belongs to */
     std::string lyrics_for; /* metadata key lyrics were requested for */
     auto last_poll    = std::chrono::steady_clock::now() - std::chrono::milliseconds(POLL_INTERVAL_MS);
-    int failed_polls  = 0;     /* consecutive failed polls, reset when the endpoint changes */
+    int failed_polls  = 0;     /* consecutive failed polls */
     bool lost_handled = false; /* the poller's own state was reset for the current loss of the connection */
     std::vector<unsigned char>
         art_cache_img; /* the last cover as downloaded (still encoded), and the key it belongs to */
@@ -360,10 +334,7 @@ void poll_loop(std::unique_ptr<MediaSource> source)
     while(true) {
         /* Sleep until the next poll, or wake early for a transport command, a seek or a volume step. */
         std::deque<music_ui_cmd_t> cmds;
-        int seek_sec = -1;
-        std::string endpoint; /* non-empty: switch the source to this endpoint */
-        bool new_token = false;
-        std::string token;
+        int seek_sec    = -1;
         bool new_player = false;
         std::string player;
         media_players_cb_t list_cb;
@@ -372,16 +343,11 @@ void poll_loop(std::unique_ptr<MediaSource> source)
             using clk = std::chrono::steady_clock;
             std::unique_lock<std::mutex> lk(g_mu);
             g_cv.wait_until(lk, last_poll + std::chrono::milliseconds(POLL_INTERVAL_MS), [] {
-                return !g_cmds.empty() || g_seek_sec >= 0 || g_vol_dirty || !g_endpoint.empty() || g_token_dirty ||
-                       g_player_dirty || g_players_cb;
+                return !g_cmds.empty() || g_seek_sec >= 0 || g_vol_dirty || g_player_dirty || g_players_cb;
             });
             cmds.swap(g_cmds);
-            seek_sec   = g_seek_sec;
-            g_seek_sec = -1;
-            endpoint.swap(g_endpoint);
-            new_token      = g_token_dirty;
-            token          = g_token;
-            g_token_dirty  = false;
+            seek_sec       = g_seek_sec;
+            g_seek_sec     = -1;
             new_player     = g_player_dirty;
             player         = g_player;
             g_player_dirty = false;
@@ -408,7 +374,6 @@ void poll_loop(std::unique_ptr<MediaSource> source)
             }
         }
 
-        if(new_token) source->set_token(token);
         if(new_player) source->set_player(player);
         if(list_cb) {
             auto players  = std::make_shared<std::vector<PlayerInfo>>();
@@ -416,18 +381,11 @@ void poll_loop(std::unique_ptr<MediaSource> source)
             const bool ok = source->list_players(*players, *pick);
             post_to_ui([list_cb, ok, players, pick] { list_cb(ok, *players, *pick); });
         }
-        if(!endpoint.empty()) source->set_endpoint(endpoint);
-        if(!endpoint.empty() || new_token) {
-            /* Judge the new address/token on its own polls; until one succeeds or fails for good, the
-             * connection state is UNKNOWN (e.g. the settings page shows "checking..." then). */
-            failed_polls = 0;
-            post_conn_state(MEDIA_CONN_UNKNOWN);
-        }
         if(seek_sec >= 0) source->seek_absolute(seek_sec);
         if(volume >= 0) source->set_volume(volume);
 
         /* Poll when due, or right after a command/seek (volume steps alone must not trigger a poll each). */
-        const bool force = !cmds.empty() || seek_sec >= 0 || !endpoint.empty() || new_token || new_player;
+        const bool force = !cmds.empty() || seek_sec >= 0 || new_player;
         if(!force && std::chrono::steady_clock::now() < last_poll + std::chrono::milliseconds(POLL_INTERVAL_MS))
             continue;
         last_poll = std::chrono::steady_clock::now();
@@ -439,9 +397,9 @@ void poll_loop(std::unique_ptr<MediaSource> source)
         if(polled) {
             failed_polls = 0;
             lost_handled = false;
-            post_conn_state(MEDIA_CONN_CONNECTED);
+            post_conn_state(true);
         } else if(++failed_polls >= CONNECTION_LOST_AFTER_FAILS) {
-            post_conn_state(MEDIA_CONN_LOST);
+            post_conn_state(false);
             if(!lost_handled) {
                 /* The screen is blanked (post_conn_state). Forget what it showed, so the first poll after the
                  * connection is back fills it again - from the cached cover and lyrics when the track is the same - and
@@ -554,16 +512,6 @@ void media_poller_volume_step(int delta)
     g_cv.notify_one();
 }
 
-void media_poller_set_endpoint(const std::string & spec)
-{
-    set_endpoint_pending(spec);
-}
-
-void media_poller_set_token(const std::string & token)
-{
-    set_token_pending(token);
-}
-
 void media_poller_set_player(const std::string & id)
 {
     set_player_pending(id);
@@ -576,9 +524,4 @@ void media_poller_list_players(media_players_cb_t done)
         g_players_cb = std::move(done);
     }
     g_cv.notify_one();
-}
-
-void media_poller_set_connection_cb(void (*cb)(media_conn_state_t state))
-{
-    g_conn_cb.store(cb);
 }

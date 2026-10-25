@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 #include "cover_decoder.h"
@@ -63,20 +64,6 @@ class MediaSource {
     virtual bool set_volume(double level)   = 0; /* 0.0 .. 1.0 */
     virtual bool seek_absolute(int seconds) = 0;
 
-    /* Point the source at another server/endpoint ("host[:port]" for a host-side service). Returns false
-     * for a malformed value or when the source has no endpoint to configure. Called on the poller thread. */
-    virtual bool set_endpoint(const std::string & spec)
-    {
-        (void)spec;
-        return false;
-    }
-    virtual std::string endpoint() const
-    {
-        return "";
-    } /* current endpoint, "" when not applicable */
-
-    /* An access token the service wants with every request (the host bridge outside the loopback). The settings
-     * page only offers the token row when uses_token() is true. set_token() is called on the poller thread. */
     /* Which player to show and control. The choice belongs to the device (so several devices do not fight over a
      * shared "current player"): it is sent with every request. "" = automatic, the service decides (what plays).
      * list_players() fills the players on offer and the service's own current pick; set_player() is called on the
@@ -96,21 +83,11 @@ class MediaSource {
         (void)id;
     }
 
-    /* A source that can look lyrics up itself (the hub: the PC does it, so the device needs no HTTPS) returns the
-     * function to use; empty = the device fetches them from LRCLIB directly (lyrics.cpp). Asked once, in
-     * media_poller_start(). */
+    /* How this source gets lyrics (the hub asks the PC, so the device needs no HTTPS). Asked once, in
+     * media_poller_start(); empty = the source has no lyrics. */
     virtual LyricsProvider lyrics_provider()
     {
         return nullptr;
-    }
-
-    virtual bool uses_token() const
-    {
-        return false;
-    }
-    virtual void set_token(const std::string & token)
-    {
-        (void)token;
     }
 };
 
@@ -147,14 +124,4 @@ class BrowseSource {
     virtual bool play_item(const BrowseItem & item)            = 0; /* start item.context at item.index */
     /* Small cover (about `px` square) decoded to pixels. */
     virtual bool get_thumb(const std::string & cover_key, int px, CoverPixels & out) = 0;
-
-    virtual bool set_endpoint(const std::string & spec)
-    {
-        (void)spec;
-        return false;
-    }
-    virtual void set_token(const std::string & token)
-    {
-        (void)token;
-    }
 };

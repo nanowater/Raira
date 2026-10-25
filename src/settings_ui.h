@@ -7,24 +7,18 @@
 #include "media_poller.h"
 #include "platform/wifi.h"
 
-/* Settings overlay: WiFi (scan, pick a network, password with an on-screen keyboard) and the address of
- * the music service. Pure LVGL; it talks to the outside only through this struct. */
+/* Settings overlay: WiFi (scan, pick a network, password with an on-screen keyboard), the player choice and the paired
+ * sources of the hub. Pure LVGL; it talks to the outside only through this struct. */
 struct SettingsServices
 {
-    HubSource * hub    = nullptr;            /* not owned: sources can pair with this device; adds the Sources page */
-    WifiManager * wifi = nullptr;            /* not owned; may be null (the WiFi row is then hidden) */
-    std::function<std::string()> get_server; /* current endpoint, "host[:port]" */
-    std::function<bool(const std::string &)> set_server; /* validate + apply + persist; false = invalid */
+    HubSource * hub    = nullptr; /* not owned: sources can pair with this device; adds the Sources page */
+    WifiManager * wifi = nullptr; /* not owned; may be null (the WiFi row is then hidden) */
     std::function<void(const std::string & ssid, const std::string & password)> remember_wifi; /* persist */
-    /* Access token of the music service (the host bridge): both unset = the service needs none, the row is hidden. */
-    std::function<std::string()> get_token;
-    std::function<void(const std::string &)> set_token;
     /* Player choice of the music service (several players on the host): both unset = nothing to choose, the row is
      * hidden. "" means automatic. */
     std::function<std::string()> get_player;
     std::function<void(const std::string &)> set_player;  /* apply + persist */
     std::function<void(media_players_cb_t)> list_players; /* ask the service; the answer comes on the LVGL thread */
-    /* (applied right below) */                           /* apply + persist; "" clears it */
 };
 
 /* Build the (hidden) overlay on the active screen. Call once, after the main UI. LVGL thread only. */

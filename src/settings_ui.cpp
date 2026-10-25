@@ -7,17 +7,7 @@
 
 namespace {
 
-enum Page {
-    PAGE_MAIN,
-    PAGE_WIFI,
-    PAGE_PASSWORD,
-    PAGE_SERVER,
-    PAGE_TOKEN,
-    PAGE_PLAYER,
-    PAGE_SOURCES,
-    PAGE_MENU,
-    PAGE_COUNT
-};
+enum Page { PAGE_MAIN, PAGE_WIFI, PAGE_PASSWORD, PAGE_PLAYER, PAGE_SOURCES, PAGE_MENU, PAGE_COUNT };
 
 const uint32_t COLOR_BG          = 0x12151B;
 const uint32_t COLOR_ROW         = 0x1F2937;
@@ -35,9 +25,7 @@ int page_now                 = PAGE_MAIN;
 lv_timer_t * poll_timer      = nullptr;
 
 /* main page */
-lv_obj_t * wifi_value   = nullptr;
-lv_obj_t * server_value = nullptr;
-lv_obj_t * token_value  = nullptr;
+lv_obj_t * wifi_value = nullptr;
 
 /* menu page (long press on the cover): where back goes from the pages it leads to */
 lv_obj_t * menu_player_value = nullptr;
@@ -66,15 +54,11 @@ std::string selected_ssid;    /* network being configured */
 std::string pending_password; /* password of the connection attempt in progress */
 bool wait_for_connect = false;
 
-/* password / server pages share one keyboard */
-lv_obj_t * keyboard     = nullptr;
-lv_obj_t * pw_ssid_lbl  = nullptr;
-lv_obj_t * pw_input     = nullptr;
-lv_obj_t * pw_eye_lbl   = nullptr;
-lv_obj_t * server_input = nullptr;
-lv_obj_t * server_msg   = nullptr;
-lv_obj_t * token_input  = nullptr;
-lv_obj_t * token_msg    = nullptr;
+/* the password page's keyboard */
+lv_obj_t * keyboard    = nullptr;
+lv_obj_t * pw_ssid_lbl = nullptr;
+lv_obj_t * pw_input    = nullptr;
+lv_obj_t * pw_eye_lbl  = nullptr;
 
 const lv_font_t * f(int px, bool bold = false)
 {
@@ -218,8 +202,6 @@ const char * page_title(int p)
     switch(p) {
         case PAGE_WIFI: return str::WIFI;
         case PAGE_PASSWORD: return str::PASSWORD;
-        case PAGE_SERVER: return str::SERVER_TITLE;
-        case PAGE_TOKEN: return str::TOKEN_TITLE;
         case PAGE_PLAYER: return str::PLAYER_TITLE;
         case PAGE_SOURCES: return str::SOURCES_TITLE;
         case PAGE_MENU: return str::MENU_TITLE;
@@ -249,8 +231,6 @@ void refresh_main()
         }
     }
     lv_label_set_text(wifi_value, wifi_text.c_str());
-    std::string server = svc.get_server ? svc.get_server() : "";
-    lv_label_set_text(server_value, server.empty() ? str::NOT_SET : server.c_str());
     if(sources_value && svc.hub) {
         int connected = 0, paired = 0;
         for(const HubSourceInfo & s : svc.hub->sources()) {
@@ -262,10 +242,6 @@ void refresh_main()
         lv_label_set_text(sources_value, text.c_str());
     }
     if(player_value) lv_label_set_text(player_value, player_text().c_str());
-    if(token_value) {
-        const bool has_token = svc.get_token && !svc.get_token().empty();
-        lv_label_set_text(token_value, has_token ? "********" : str::NOT_SET); /* never show the token itself */
-    }
 }
 
 void show_page(int p)
@@ -273,11 +249,8 @@ void show_page(int p)
     page_now = p;
     for(int i = 0; i < PAGE_COUNT; i++) lv_obj_set_hidden(pages[i], i != p);
     lv_label_set_text(title_lbl, page_title(p));
-    const bool typing = (p == PAGE_PASSWORD || p == PAGE_SERVER || p == PAGE_TOKEN);
-    lv_obj_set_hidden(keyboard, !typing);
+    lv_obj_set_hidden(keyboard, p != PAGE_PASSWORD);
     if(p == PAGE_PASSWORD) lv_keyboard_set_textarea(keyboard, pw_input);
-    if(p == PAGE_SERVER) lv_keyboard_set_textarea(keyboard, server_input);
-    if(p == PAGE_TOKEN) lv_keyboard_set_textarea(keyboard, token_input);
     if(p == PAGE_MAIN) refresh_main();
     if(p == PAGE_MENU && menu_player_value) lv_label_set_text(menu_player_value, player_text().c_str());
 }
@@ -513,8 +486,6 @@ void on_back(lv_event_t *)
     switch(page_now) {
         case PAGE_PASSWORD: show_page(PAGE_WIFI); break;
         case PAGE_WIFI:
-        case PAGE_SERVER:
-        case PAGE_TOKEN:
         case PAGE_SOURCES: show_page(PAGE_MAIN); break;
         case PAGE_PLAYER: show_page(player_from_menu ? PAGE_MENU : PAGE_MAIN); break;
         case PAGE_MAIN:
@@ -539,20 +510,6 @@ void on_open_wifi(lv_event_t *)
     if(svc.wifi->state() == WifiState::Connected)
         set_status(wifi_status, std::string(str::CONNECTED_TO) + svc.wifi->connected_ssid(), COLOR_GOOD);
     start_scan();
-}
-
-void on_open_server(lv_event_t *)
-{
-    lv_textarea_set_text(server_input, svc.get_server ? svc.get_server().c_str() : "");
-    set_status(server_msg, "", COLOR_DIM);
-    show_page(PAGE_SERVER);
-}
-
-void on_open_token(lv_event_t *)
-{
-    lv_textarea_set_text(token_input, svc.get_token ? svc.get_token().c_str() : "");
-    set_status(token_msg, "", COLOR_DIM);
-    show_page(PAGE_TOKEN);
 }
 
 void on_rescan(lv_event_t *)
@@ -582,55 +539,10 @@ void on_toggle_eye(lv_event_t *)
     lv_label_set_text(pw_eye_lbl, hidden ? LV_SYMBOL_EYE_OPEN : LV_SYMBOL_EYE_CLOSE);
 }
 
-void save_server()
-{
-    std::string text = lv_textarea_get_text(server_input);
-    if(svc.set_server && svc.set_server(text)) {
-        /* Stay on this page: the poller now switches to the new address and on_connection_state()
-         * shows "checking..." followed by the connected/not-connected result right here. */
-    } else {
-        set_status(server_msg, str::SERVER_INVALID, COLOR_BAD);
-    }
-}
-
-void on_save_server(lv_event_t *)
-{
-    save_server();
-}
-
-void save_token()
-{
-    if(svc.set_token)
-        svc.set_token(lv_textarea_get_text(token_input)); /* the result appears via on_connection_state() */
-}
-
-void on_save_token(lv_event_t *)
-{
-    save_token();
-}
-
-/* Connection state changes reported by the poller (LVGL thread). UNKNOWN is the moment right after
- * the endpoint was switched; the LOST/CONNECTED changes that follow are its polls' verdict. */
-void on_connection_state(media_conn_state_t state)
-{
-    if(!root) return;
-    lv_obj_t * msg = page_now == PAGE_TOKEN ? token_msg : server_msg; /* the page being edited shows the verdict */
-    switch(state) {
-        case MEDIA_CONN_UNKNOWN: set_status(msg, str::SERVER_CHECKING, COLOR_DIM); break;
-        case MEDIA_CONN_CONNECTED: set_status(msg, str::SERVER_CONNECTED, COLOR_GOOD); break;
-        case MEDIA_CONN_LOST: set_status(msg, str::SERVER_UNREACHABLE, COLOR_BAD); break;
-    }
-}
-
 /* Enter key on the keyboard */
 void on_keyboard_ready(lv_event_t *)
 {
-    if(page_now == PAGE_PASSWORD)
-        connect_with_password();
-    else if(page_now == PAGE_SERVER)
-        save_server();
-    else if(page_now == PAGE_TOKEN)
-        save_token();
+    if(page_now == PAGE_PASSWORD) connect_with_password();
 }
 
 lv_obj_t * make_page(lv_obj_t * parent)
@@ -702,20 +614,12 @@ void settings_ui_init(SettingsServices services)
     }
 
     /* main page */
-    /* tiles; which ones exist depends on what the music service needs (tidal-hifi: server; bridge: server + token +
-     * player; hub: player + sources) */
+    /* tiles: WiFi (when the platform has it), the player choice, the paired sources */
     std::vector<TileSpec> tiles;
     if(svc.wifi)
         tiles.push_back({LV_SYMBOL_WIFI, str::WIFI, &wifi_value, on_open_wifi});
     else
         wifi_value = lv_label_create(pages[PAGE_MAIN]);
-    if(!svc.hub) {
-        tiles.push_back({LV_SYMBOL_DRIVE, str::SERVER_ROW, &server_value, on_open_server});
-    } else {
-        server_value = lv_label_create(pages[PAGE_MAIN]); /* refresh_main() writes to it; the hub has no address */
-        lv_obj_set_hidden(server_value, true);
-    }
-    if(svc.get_token) tiles.push_back({LV_SYMBOL_EYE_CLOSE, str::TOKEN_ROW, &token_value, on_open_token});
     if(svc.get_player) tiles.push_back({LV_SYMBOL_AUDIO, str::PLAYER_ROW, &player_value, on_open_player});
     if(svc.hub) tiles.push_back({LV_SYMBOL_USB, str::SOURCES_ROW, &sources_value, on_open_sources});
     layout_tiles(pages[PAGE_MAIN], tiles);
@@ -790,27 +694,7 @@ void settings_ui_init(SettingsServices services)
     lv_obj_t * connect = make_button(pages[PAGE_PASSWORD], str::CONNECT, 140, 56, 0x2563EB, on_connect);
     lv_obj_set_pos(connect, 650, 56);
 
-    /* server page */
-    lv_obj_t * hint = make_label(pages[PAGE_SERVER], str::SERVER_HINT, 18, COLOR_DIM);
-    lv_obj_set_pos(hint, 30, 12);
-    server_input = make_textarea(pages[PAGE_SERVER], 30, 48, 600);
-    lv_textarea_set_placeholder_text(server_input, str::SERVER_PLACEHOLDER);
-    lv_obj_t * save = make_button(pages[PAGE_SERVER], str::SAVE, 140, 56, 0x2563EB, on_save_server);
-    lv_obj_set_pos(save, 650, 48);
-    server_msg = make_label(pages[PAGE_SERVER], "", 18, COLOR_BAD);
-    lv_obj_set_pos(server_msg, 30, 112);
-
-    /* token page */
-    lv_obj_t * token_hint = make_label(pages[PAGE_TOKEN], str::TOKEN_HINT, 18, COLOR_DIM);
-    lv_obj_set_pos(token_hint, 30, 12);
-    token_input = make_textarea(pages[PAGE_TOKEN], 30, 48, 600);
-    lv_textarea_set_placeholder_text(token_input, str::TOKEN_PLACEHOLDER);
-    lv_obj_t * token_save = make_button(pages[PAGE_TOKEN], str::SAVE, 140, 56, 0x2563EB, on_save_token);
-    lv_obj_set_pos(token_save, 650, 48);
-    token_msg = make_label(pages[PAGE_TOKEN], "", 18, COLOR_BAD);
-    lv_obj_set_pos(token_msg, 30, 112);
-
-    /* shared keyboard along the bottom */
+    /* keyboard along the bottom */
     keyboard = lv_keyboard_create(root);
     lv_obj_set_size(keyboard, 800, 250);
     lv_obj_align(keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
@@ -818,7 +702,6 @@ void settings_ui_init(SettingsServices services)
 
     poll_timer = lv_timer_create(poll_cb, 200, nullptr);
     lv_timer_pause(poll_timer);
-    media_poller_set_connection_cb(on_connection_state); /* save results appear on the server page */
     show_page(PAGE_MAIN);
     lv_obj_set_hidden(root, true);
 }

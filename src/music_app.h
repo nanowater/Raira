@@ -17,8 +17,7 @@ struct MusicAppDeps
         browse; /* playlists/queue; may be null: no browse button. The browse thread takes it over */
     std::unique_ptr<WifiManager> wifi;    /* may be null: the settings page hides its WiFi row */
     std::unique_ptr<SettingsStore> store; /* may be null: settings are not persisted */
-    AppSettings settings;                 /* current values (server = the endpoint the source starts with) */
-    std::function<bool(const std::string &)> validate_server; /* is "host[:port]" acceptable? */
+    AppSettings settings;                 /* current values */
 };
 
 /* Portable app entry: builds the UI (incl. the settings page) and starts the background threads. Call

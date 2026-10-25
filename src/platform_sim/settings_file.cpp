@@ -25,8 +25,6 @@ class FileStore : public SettingsStore {
             auto it = j.find(k);
             if(it != j.end() && it->is_string()) dst = it->get<std::string>();
         };
-        get("server", out.server);
-        get("bridge_token", out.bridge_token);
         get("player", out.player);
         get("hub_device_id", out.hub_device_id);
         get("hub_device_name", out.hub_device_name);
@@ -41,20 +39,15 @@ class FileStore : public SettingsStore {
         const std::string dir = settings_dir();
         mkdir((dir.substr(0, dir.rfind('/'))).c_str(), 0700); /* ~/.config */
         mkdir(dir.c_str(), 0700);
-        nlohmann::json j = {{"server", s.server},
-                            {"bridge_token", s.bridge_token},
-                            {"player", s.player},
-                            {"hub_device_id", s.hub_device_id},
-                            {"hub_device_name", s.hub_device_name},
-                            {"hub_sources", s.hub_sources},
-                            {"wifi_ssid", s.wifi_ssid},
-                            {"wifi_password", s.wifi_password}};
+        nlohmann::json j = {
+            {"player", s.player},           {"hub_device_id", s.hub_device_id}, {"hub_device_name", s.hub_device_name},
+            {"hub_sources", s.hub_sources}, {"wifi_ssid", s.wifi_ssid},         {"wifi_password", s.wifi_password}};
         std::string path = dir + "/settings.json";
         std::ofstream f(path);
         if(!f) return false;
         f << j.dump(2) << "\n";
         f.close();
-        chmod(path.c_str(), 0600); /* holds the WiFi password and the bridge token */
+        chmod(path.c_str(), 0600); /* holds the WiFi password and the pairing secrets */
         return f.good();
     }
 };

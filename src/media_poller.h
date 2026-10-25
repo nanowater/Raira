@@ -6,10 +6,6 @@
 #include <vector>
 #include "media_source.h"
 
-/* Whether the poller reaches the music service, as seen in its own poll loop. UNKNOWN is the window
- * right after the endpoint was switched, before a poll could confirm the new address. */
-typedef enum { MEDIA_CONN_CONNECTED, MEDIA_CONN_LOST, MEDIA_CONN_UNKNOWN } media_conn_state_t;
-
 /* Starts the background threads and hands them the music service to poll and control. The poller thread
  * becomes the only user of `source`. Call after music_ui_create() on the LVGL thread; results reach the UI
  * through a queue drained by an LVGL timer. */
@@ -30,14 +26,6 @@ void media_post_to_ui(std::function<void()> fn);
  * This is the hook for the rotary encoder. */
 void media_poller_volume_step(int delta);
 
-/* Switch the music service to another endpoint ("host[:port]"). Thread-safe, applied on the poller thread;
- * the next poll uses it. An invalid value is ignored by the source. */
-void media_poller_set_endpoint(const std::string & spec);
-
-/* Give the music service another access token (see MediaSource::set_token). Thread-safe, applied on the poller
- * thread; the next poll uses it and the connection state goes UNKNOWN until that poll decides. */
-void media_poller_set_token(const std::string & token);
-
 /* Which player of the service to show and control ("" = automatic). Thread-safe, applied on the poller thread;
  * the next poll uses it. Only meaningful for services that can_select_player(). */
 void media_poller_set_player(const std::string & id);
@@ -48,7 +36,3 @@ void media_poller_set_player(const std::string & id);
 typedef std::function<void(bool ok, const std::vector<PlayerInfo> & players, const std::string & service_pick)>
     media_players_cb_t;
 void media_poller_list_players(media_players_cb_t done);
-
-/* Called on the LVGL thread when the connection state changes (also once right after the endpoint was
- * switched, with UNKNOWN). Set once, e.g. by the settings page; default: none. */
-void media_poller_set_connection_cb(void (*cb)(media_conn_state_t state));

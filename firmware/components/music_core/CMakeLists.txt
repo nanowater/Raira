@@ -7,14 +7,10 @@ idf_component_register(
         ${SRC}/music_app.cpp
         ${SRC}/music_ui.cpp
         ${SRC}/browse_ui.cpp
-        ${SRC}/tidal_client.cpp
-        ${SRC}/bridge_client.cpp
         ${SRC}/hub_source.cpp
         ${SRC}/browse_worker.cpp
         ${SRC}/media_poller.cpp
         ${SRC}/cover_decoder.cpp
-        ${SRC}/lyrics.cpp
-        ${SRC}/http_util.cpp
         ${SRC}/ui_fonts.cpp
         ${SRC}/settings_ui.cpp
         ${SRC}/fonts/font_mono_16.c
