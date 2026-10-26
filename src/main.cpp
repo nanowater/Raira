@@ -21,8 +21,7 @@
 #include "music_app.h"
 #include "media_poller.h"
 #include "fake_browse.h"
-#include <nlohmann/json.hpp>
-#include <random>
+#include "hub_boot.h"
 #include "hub_source.h"
 #include "platform/mdns.h"
 #include "platform/settings.h"
@@ -239,32 +238,11 @@ int main(int argc, char ** argv)
         show_demo();
     } else {
         MusicAppDeps deps;
-        deps.store = settings_store_create();
-        AppSettings saved;
-        deps.store->load(saved);
-        std::random_device rd;
-        auto hex = [&](int bytes) {
-            static const char H[] = "0123456789abcdef";
-            std::string s;
-            for(int i = 0; i < bytes; i++) {
-                unsigned v = rd() & 0xFF;
-                s += H[v >> 4];
-                s += H[v & 15];
-            }
-            return s;
-        };
-        if(saved.hub_device_id.empty()) saved.hub_device_id = hex(8);
-        if(saved.hub_device_name.empty()) saved.hub_device_name = "Music Controller (simulator)";
-        deps.store->save(saved); /* keeps the generated identity */
-        std::vector<PairedSource> paired;
-        nlohmann::json list =
-            nlohmann::json::parse(saved.hub_sources.empty() ? "[]" : saved.hub_sources, nullptr, false);
-        if(list.is_array())
-            for(const auto & e : list)
-                if(e.is_object() && e.value("id", "") != "")
-                    paired.push_back({e.value("id", ""), e.value("name", ""), e.value("secret", "")});
+        deps.store                = settings_store_create();
+        HubBoot boot              = hub_boot_load(*deps.store, "Music Controller (simulator)");
+        const AppSettings & saved = boot.settings;
         auto hub = std::make_unique<HubSource>(ws_server_create(),
-                                               HubIdentity{saved.hub_device_id, saved.hub_device_name}, paired);
+                                               HubIdentity{saved.hub_device_id, saved.hub_device_name}, boot.paired);
         if(!hub->start((uint16_t)hub_port))
             die("Cannot listen on port %d (is another hub or the bridge using it?)\n", hub_port);
         /* sources find the hub by itself: _musicbridge._tcp with the device id and name in the TXT record */

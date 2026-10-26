@@ -98,6 +98,7 @@ add_library(music_core STATIC
     src/music_ui.cpp
     src/browse_ui.cpp
     src/hub_source.cpp
+    src/hub_boot.cpp
     src/browse_worker.cpp
     src/media_poller.cpp
     src/cover_decoder.cpp

@@ -8,6 +8,7 @@ idf_component_register(
         ${SRC}/music_ui.cpp
         ${SRC}/browse_ui.cpp
         ${SRC}/hub_source.cpp
+        ${SRC}/hub_boot.cpp
         ${SRC}/browse_worker.cpp
         ${SRC}/media_poller.cpp
         ${SRC}/cover_decoder.cpp
