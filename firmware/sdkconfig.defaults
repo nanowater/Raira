@@ -31,3 +31,5 @@ CONFIG_LV_USE_TINY_TTF=y
 CONFIG_LV_USE_LODEPNG=y
 # the hub is a WebSocket server (off by default in esp_http_server)
 CONFIG_HTTPD_WS_SUPPORT=y
+# esp_http_server (IDF 6) no longer calls the handler for the handshake itself; on_open runs in this callback
+CONFIG_HTTPD_WS_PRE_HANDSHAKE_CB_SUPPORT=y

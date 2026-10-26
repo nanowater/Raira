@@ -37,11 +37,12 @@ class EspWsServer : public WsServer {
             return false;
         }
         httpd_uri_t uri{};
-        uri.uri          = "/source";
-        uri.method       = HTTP_GET;
-        uri.handler      = on_request;
-        uri.user_ctx     = this;
-        uri.is_websocket = true;
+        uri.uri                 = "/source";
+        uri.method              = HTTP_GET;
+        uri.handler             = on_request;
+        uri.user_ctx            = this;
+        uri.is_websocket        = true;
+        uri.ws_pre_handshake_cb = on_handshake;
 
         err = httpd_register_uri_handler(server_, &uri);
         if(err != ESP_OK) {
@@ -95,13 +96,6 @@ class EspWsServer : public WsServer {
     {
         auto * self = static_cast<EspWsServer *>(req->user_ctx);
         WsConnId id = httpd_req_to_sockfd(req);
-        if(req->method == HTTP_GET) {
-            std::string path = req->uri;
-            if(self->handlers_.on_open && !self->handlers_.on_open(id, path)) {
-                return ESP_FAIL;
-            }
-            return ESP_OK;
-        }
         httpd_ws_frame_t frame{};
         esp_err_t err = httpd_ws_recv_frame(req, &frame, 0);
         if(err != ESP_OK) {
@@ -122,6 +116,15 @@ class EspWsServer : public WsServer {
         } else if(frame.type == HTTPD_WS_TYPE_BINARY && self->handlers_.on_binary) {
             self->handlers_.on_binary(id, data);
         }
+        return ESP_OK;
+    }
+
+    static esp_err_t on_handshake(httpd_req_t * req)
+    {
+        auto * self      = static_cast<EspWsServer *>(req->user_ctx);
+        WsConnId id      = httpd_req_to_sockfd(req);
+        std::string path = req->uri;
+        if(self->handlers_.on_open && !self->handlers_.on_open(id, path)) return ESP_FAIL;
         return ESP_OK;
     }
 
