@@ -2,6 +2,7 @@
 #include <lvgl.h>
 #include "nvs_flash.h"
 #include "music_app.h"
+#include "platform/mdns.h"
 #include "nvs.h"
 #include "esp_err.h"
 
@@ -27,5 +28,7 @@ extern "C" void app_main(void)
         deps.store = settings_store_create();
         deps.wifi  = wifi_manager_create();
         music_app_start(std::move(deps));
+        auto mdns = mdns_advertiser_create();
+        mdns->start(MdnsService{});
     }
 }
