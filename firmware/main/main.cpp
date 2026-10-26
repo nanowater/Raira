@@ -3,6 +3,7 @@
 #include "nvs_flash.h"
 #include "music_app.h"
 #include "platform/mdns.h"
+#include "platform/ws_server.h"
 #include "nvs.h"
 #include "esp_err.h"
 
@@ -30,5 +31,7 @@ extern "C" void app_main(void)
         music_app_start(std::move(deps));
         auto mdns = mdns_advertiser_create();
         mdns->start(MdnsService{});
+        auto ws = ws_server_create();
+        ws->start(18322, WsHandlers{}, WsLimits{});
     }
 }

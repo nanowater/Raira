@@ -29,3 +29,5 @@ CONFIG_LV_FONT_MONTSERRAT_48=y
 CONFIG_LV_USE_TINY_TTF=y
 # PNG covers (the fallback when a cover is not a JPEG)
 CONFIG_LV_USE_LODEPNG=y
+# the hub is a WebSocket server (off by default in esp_http_server)
+CONFIG_HTTPD_WS_SUPPORT=y
