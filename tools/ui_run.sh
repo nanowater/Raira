@@ -6,7 +6,7 @@
 #   tools/ui_run.sh --scenario boundary --shots 6,11,15 --out /tmp/shots
 #
 # Options: --scenario NAME (see tools/fake_source.py: playing, idle, boundary, pick)   --scenario-file FILE
-#          --shots S1,S2,..  seconds after the source is connected (default 3)         --out DIR  (default $TMPDIR/music-controller-shots)
+#          --shots S1,S2,..  seconds after the source is connected (default 3)         --out DIR  (default $TMPDIR/raira-shots)
 #          --port N (default 18399)   --features cover,lyrics   --keep-log (print the simulator log at the end)
 # Needs: a built build/bin/lvglsim, Xvfb, ImageMagick's `import`, python3. The simulator runs with a throw-away HOME in which the
 # fake source is already paired (tools/seed_device.py), so nothing of your own settings is touched.
@@ -14,7 +14,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SIM="$ROOT/build/bin/lvglsim"
 SCENARIO=playing; SCENARIO_FILE=""; SHOTS=3; PORT=18399; FEATURES=""; KEEP_LOG=0
-OUT="${TMPDIR:-/tmp}/music-controller-shots"
+OUT="${TMPDIR:-/tmp}/raira-shots"
 while [ $# -gt 0 ]; do
   case "$1" in
     --scenario) SCENARIO=$2; shift 2;;

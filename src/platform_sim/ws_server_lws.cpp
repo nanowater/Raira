@@ -44,7 +44,7 @@ class LwsWsServer : public WsServer {
         lws_set_log_level(LLL_ERR | LLL_WARN, nullptr);
 
         static lws_protocols protocols[] = {
-            {"musicbridge", &LwsWsServer::lws_cb, 0, 16 * 1024, 0, nullptr, 0},
+            {"raira", &LwsWsServer::lws_cb, 0, 16 * 1024, 0, nullptr, 0},
             LWS_PROTOCOL_LIST_TERM,
         };
         /* liveness: ping idle connections every 10 s, hang up on one silent for 25 s (docs/HUB_PROTOCOL.md) */

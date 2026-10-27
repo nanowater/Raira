@@ -1,4 +1,4 @@
-# music-controller
+# Raira
 
 A media controller in the style of the Spotify Car Thing that is not tied to one music service: a small 800×480 touch screen
 with a rotary encoder that shows what is playing on your PC (cover, title, progress, synced lyrics) and sends play/pause, skip,
@@ -9,7 +9,7 @@ The device only controls; the music plays on the PC. A small program on the PC, 
 
 ## How it fits together
 
-- **The device is the hub.** It announces itself on the network (mDNS, `_musicbridge._tcp`) and runs a WebSocket server.
+- **The device is the hub.** It announces itself on the network (mDNS, `_raira._tcp`) and runs a WebSocket server.
   Sources such as the bridge find it, pair once with a six-digit code shown on the device, and then push player state and
   answer requests for covers and lyrics. Several PCs can be connected at once.
 - **The bridge** (`bridge/`, Rust) runs on the PC, has a settings page at `http://127.0.0.1:18801/` and a tray icon. It also

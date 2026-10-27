@@ -5,7 +5,7 @@ the pairing dance:
   python3 -I tools/seed_device.py /tmp/dev-home            # source "fake" with secret "s3cr3t"
   HOME=/tmp/dev-home build/bin/lvglsim -S 18399
 
-The simulator keeps its settings in $HOME/.config/music-controller/settings.json (mode 0600).
+The simulator keeps its settings in $HOME/.config/raira/settings.json (mode 0600).
 """
 import argparse
 import json
@@ -21,7 +21,7 @@ def main():
     ap.add_argument("--device-id", default="testdevice")
     ap.add_argument("--device-name", default="Test device")
     a = ap.parse_args()
-    d = os.path.join(a.home, ".config", "music-controller")
+    d = os.path.join(a.home, ".config", "raira")
     os.makedirs(d, exist_ok=True)
     path = os.path.join(d, "settings.json")
     sources = [{"id": a.source_id, "name": "Fake PC", "secret": a.secret}]

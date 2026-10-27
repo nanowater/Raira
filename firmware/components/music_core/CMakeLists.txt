@@ -1,4 +1,4 @@
-# The portable core of the music controller, compiled from the SAME files as the simulator (src/ in the repository root; nothing is
+# The portable core of Raira, compiled from the SAME files as the simulator (src/ in the repository root; nothing is
 # copied). The simulator's platform parts (src/platform_sim/, src/main.cpp, src/lib/) are not part of it: the firmware brings its own.
 set(SRC ${CMAKE_CURRENT_LIST_DIR}/../../../src)
 

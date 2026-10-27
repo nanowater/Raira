@@ -123,7 +123,7 @@ fn arg(name: &str) -> Option<String> {
         .and_then(|i| args.get(i + 1).cloned())
 }
 
-/// `music-bridge --lyrics-test <title> <artists> <album> <seconds>`: one network lookup, the result as JSON on stdout.
+/// `raira-bridge --lyrics-test <title> <artists> <album> <seconds>`: one network lookup, the result as JSON on stdout.
 async fn lyrics_test(a: &[String]) {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
@@ -204,12 +204,12 @@ async fn main() {
         Ok(l) => l,
         Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
             println!(
-                "music-bridge is already running (port {port} is taken): settings at http://127.0.0.1:{port}/"
+                "raira-bridge is already running (port {port} is taken): settings at http://127.0.0.1:{port}/"
             );
             return;
         }
         Err(e) => {
-            eprintln!("music-bridge: cannot listen on {addr}: {e}");
+            eprintln!("raira-bridge: cannot listen on {addr}: {e}");
             std::process::exit(1);
         }
     };
@@ -298,7 +298,7 @@ async fn main() {
 
     let app = v0.merge(settings);
     let page = format!("http://127.0.0.1:{port}/");
-    tracing::info!("music-bridge listening on http://{addr}/v0 — settings: {page}");
+    tracing::info!("raira-bridge listening on http://{addr}/v0 — settings: {page}");
 
     if !flag("--no-tray") {
         tokio::spawn(tray::spawn(page, hub, access));

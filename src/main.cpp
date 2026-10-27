@@ -248,13 +248,13 @@ int main(int argc, char ** argv)
          * music_app_start(), which builds the UI and starts the poller. The ESP32 does the same in app_main. */
         MusicAppDeps deps;
         deps.store                = settings_store_create();
-        HubBoot boot              = hub_boot_load(*deps.store, "Music Controller (simulator)");
+        HubBoot boot              = hub_boot_load(*deps.store, "Raira (simulator)");
         const AppSettings & saved = boot.settings;
         auto hub = std::make_unique<HubSource>(ws_server_create(),
                                                HubIdentity{saved.hub_device_id, saved.hub_device_name}, boot.paired);
         if(!hub->start((uint16_t)hub_port))
             die("Cannot listen on port %d (is another hub or the bridge using it?)\n", hub_port);
-        /* sources find the hub by itself: _musicbridge._tcp with the device id and name in the TXT record */
+        /* sources find the hub by itself: _raira._tcp with the device id and name in the TXT record */
         g_mdns = mdns_advertiser_create();
         MdnsService adv;
         adv.instance = saved.hub_device_name;

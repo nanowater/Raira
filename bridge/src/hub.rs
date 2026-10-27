@@ -294,7 +294,7 @@ impl Hub {
     pub async fn info(&self) -> Info {
         Info {
             protocol: 0,
-            name: "music-bridge",
+            name: "raira-bridge",
             version: env!("CARGO_PKG_VERSION"),
         }
     }

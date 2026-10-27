@@ -8,7 +8,7 @@ import sys
 import time
 
 PORT = int(sys.argv[1])
-INSTANCE = "Music Controller (probe)._musicbridge._tcp.local"
+INSTANCE = "Raira (probe)._raira._tcp.local"
 FAILED = []
 
 
@@ -89,22 +89,22 @@ def ask(qname, qtype):
     return got
 
 
-recs = ask("_musicbridge._tcp.local", 12)
-ptr = [r for r in recs if r[1] == 12 and r[0] == "_musicbridge._tcp.local" and r[3] == INSTANCE]
+recs = ask("_raira._tcp.local", 12)
+ptr = [r for r in recs if r[1] == 12 and r[0] == "_raira._tcp.local" and r[3] == INSTANCE]
 check("PTR names our instance", len(ptr) == 1, recs)
 srv = [r[3] for r in recs if r[1] == 33 and r[0] == INSTANCE]
-check("SRV carries the port and the host name", srv and srv[0]["port"] == PORT and srv[0]["target"] == "music-controller-probe.local", srv)
+check("SRV carries the port and the host name", srv and srv[0]["port"] == PORT and srv[0]["target"] == "raira-probe.local", srv)
 txt = [r[3] for r in recs if r[1] == 16 and r[0] == INSTANCE]
-check("TXT has proto, id and name", txt and {"proto=1", "id=probe123", "name=Music Controller (probe)"} <= set(txt[0]), txt)
-check("an A record with an IPv4 address comes along", any(r[1] == 1 and r[0] == "music-controller-probe.local" for r in recs), recs)
-check("every record has a TTL of 120 s", all(r[2] == 120 for r in recs if r[0] in ("_musicbridge._tcp.local", INSTANCE, "music-controller-probe.local")))
+check("TXT has proto, id and name", txt and {"proto=1", "id=probe123", "name=Raira (probe)"} <= set(txt[0]), txt)
+check("an A record with an IPv4 address comes along", any(r[1] == 1 and r[0] == "raira-probe.local" for r in recs), recs)
+check("every record has a TTL of 120 s", all(r[2] == 120 for r in recs if r[0] in ("_raira._tcp.local", INSTANCE, "raira-probe.local")))
 
-recs = ask("music-controller-probe.local", 1)
-check("an A question for the host name is answered", any(r[1] == 1 and r[0] == "music-controller-probe.local" for r in recs), recs)
+recs = ask("raira-probe.local", 1)
+check("an A question for the host name is answered", any(r[1] == 1 and r[0] == "raira-probe.local" for r in recs), recs)
 recs = ask(INSTANCE, 33)
 check("an SRV question for the instance is answered", any(r[1] == 33 and r[0] == INSTANCE for r in recs), recs)
 recs = ask("_services._dns-sd._udp.local", 12)
-check("service enumeration lists _musicbridge._tcp", any(r[3] == "_musicbridge._tcp.local" for r in recs if r[1] == 12), recs)
+check("service enumeration lists _raira._tcp", any(r[3] == "_raira._tcp.local" for r in recs if r[1] == 12), recs)
 recs = ask("_nothing-like-this._tcp.local", 12)
 check("a question about another service is not answered by our instance", not any(INSTANCE in str(r[3]) or r[0] == INSTANCE for r in recs), recs)
 

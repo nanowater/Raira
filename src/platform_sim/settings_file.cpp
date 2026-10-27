@@ -8,8 +8,8 @@ namespace {
 
 std::string settings_dir()
 {
-    if(const char * x = getenv("XDG_CONFIG_HOME")) return std::string(x) + "/music-controller";
-    if(const char * h = getenv("HOME")) return std::string(h) + "/.config/music-controller";
+    if(const char * x = getenv("XDG_CONFIG_HOME")) return std::string(x) + "/raira";
+    if(const char * h = getenv("HOME")) return std::string(h) + "/.config/raira";
     return ".";
 }
 

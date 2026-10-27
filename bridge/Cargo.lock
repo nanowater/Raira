@@ -1030,26 +1030,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "music-bridge"
-version = "0.1.0"
-dependencies = [
- "axum",
- "futures-util",
- "image",
- "ksni",
- "mdns-sd",
- "rand",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
- "tokio-tungstenite",
- "tracing",
- "tracing-subscriber",
- "zbus 6.0.0",
-]
-
-[[package]]
 name = "nu-ansi-term"
 version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1242,6 +1222,26 @@ name = "r-efi"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
+
+[[package]]
+name = "raira-bridge"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "futures-util",
+ "image",
+ "ksni",
+ "mdns-sd",
+ "rand",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "tracing-subscriber",
+ "zbus 6.0.0",
+]
 
 [[package]]
 name = "rand"

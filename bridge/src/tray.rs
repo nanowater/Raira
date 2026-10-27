@@ -22,13 +22,13 @@ fn open_in_browser(url: &str) {
 
 impl Tray for BridgeTray {
     fn id(&self) -> String {
-        "music-bridge".into()
+        "raira-bridge".into()
     }
     fn icon_name(&self) -> String {
         "multimedia-player".into()
     }
     fn title(&self) -> String {
-        "Music Bridge".into()
+        "Raira Bridge".into()
     }
     fn menu(&self) -> Vec<MenuItem<Self>> {
         vec![

@@ -12,9 +12,9 @@ use tokio::sync::Semaphore;
 
 const BASE: &str = "https://lrclib.net/api/";
 
-/// LRCLIB's address; `MUSIC_BRIDGE_LRCLIB` replaces it (tests against a fake server).
+/// LRCLIB's address; `RAIRA_LRCLIB` replaces it (tests against a fake server).
 fn base() -> String {
-    std::env::var("MUSIC_BRIDGE_LRCLIB").unwrap_or_else(|_| BASE.to_string())
+    std::env::var("RAIRA_LRCLIB").unwrap_or_else(|_| BASE.to_string())
 }
 /// A message to the device may be 64 KB at most (docs/HUB_PROTOCOL.md): longer lyrics are cut.
 pub const MAX_LINES_BYTES: usize = 60 * 1024;
@@ -328,7 +328,7 @@ fn client() -> &'static reqwest::Client {
     static C: OnceLock<reqwest::Client> = OnceLock::new();
     C.get_or_init(|| {
         reqwest::Client::builder()
-            .user_agent("music-controller/0.1 (https://github.com/nanowater)")
+            .user_agent("raira/0.1 (https://github.com/nanowater)")
             .connect_timeout(Duration::from_secs(4))
             .timeout(Duration::from_secs(10))
             .build()
@@ -471,7 +471,7 @@ fn cache_dir() -> PathBuf {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
         .unwrap_or_else(|| PathBuf::from("."));
-    base.join("music-bridge").join("lyrics")
+    base.join("raira-bridge").join("lyrics")
 }
 
 fn key_of(t: &Track) -> String {

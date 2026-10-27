@@ -11,9 +11,9 @@
  * component of ESP-IDF (mdns_hostname_set, mdns_instance_name_set, mdns_service_add). */
 struct MdnsService
 {
-    std::string instance;                   /* "Music Controller", shown to the user */
-    std::string host = "music-controller";  /* announced as <host>.local */
-    std::string type = "_musicbridge._tcp"; /* service type */
+    std::string instance;             /* "Raira", shown to the user */
+    std::string host = "raira";       /* announced as <host>.local */
+    std::string type = "_raira._tcp"; /* service type */
     uint16_t port    = 18322;
     std::vector<std::pair<std::string, std::string>> txt; /* e.g. proto=1, id=<device id> */
 };

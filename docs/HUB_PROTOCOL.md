@@ -40,7 +40,7 @@ Terms: **device** = the hub (ESP32 / simulator). **source** = a program that con
 
 ## Discovery
 
-The device advertises itself over mDNS/DNS-SD: service `_musicbridge._tcp`, its WebSocket port, host name `music-controller.local`
+The device advertises itself over mDNS/DNS-SD: service `_raira._tcp`, its WebSocket port, host name `raira.local`
 (editable on the device), TXT records `proto=1`, `name=<device name>`, `id=<device id>`. Implemented behaviour: it announces twice on start, answers PTR/SRV/TXT/A questions
 (on the interface the question came in on, with that interface's address as the A record) and sends a goodbye (TTL 0) when it exits cleanly; a source that
 is killed lingers in others' caches until the 120 s TTL runs out. No probing or conflict handling. A source browses for it. A device it already knows (by `id`) is followed to its new address automatically; new ones are listed (the bridge's settings page, "Found nearby") for the user to connect to, then pair. A source may also
@@ -122,7 +122,7 @@ is valid *when the message arrives*.
   progressive JPEG, PNG or WebP. One reply per request; the device caches by `key`.
 - **Lyrics**: the lookup (LRCLIB, ranking, LRC parsing, TLS) moves to the source, which has the CPU, the TLS stack and a
   place to cache. The bridge runs one lookup at a time (LRCLIB answers 429 to bursts), drops a lookup when a newer `lyrics_req` arrives, keeps found lyrics in
-  `~/.cache/music-bridge/lyrics/` and remembers "nothing found" for a week (a failed lookup is not remembered). The ESP32 then needs no HTTPS at all. A source without the `lyrics` feature gets no `lyrics_req` and the
+  `~/.cache/raira-bridge/lyrics/` and remembers "nothing found" for a week (a failed lookup is not remembered). The ESP32 then needs no HTTPS at all. A source without the `lyrics` feature gets no `lyrics_req` and the
   device shows no lyrics for its players.
 - Keeps its pairing secrets and its `source_id` in its own config; may be paired with several devices and connects to each.
 

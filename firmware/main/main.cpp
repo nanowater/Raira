@@ -34,7 +34,7 @@ extern "C" void app_main(void)
 
     if(s_start_app) {
         auto store   = settings_store_create();
-        HubBoot boot = hub_boot_load(*store, "Music Controller");
+        HubBoot boot = hub_boot_load(*store, "Raira");
         auto wifi    = wifi_manager_create();
         if(!boot.settings.wifi_ssid.empty()) {
             wifi->connect(boot.settings.wifi_ssid, boot.settings.wifi_password);

@@ -15,7 +15,7 @@ cd "$ROOT/firmware" || exit 1
 [ -f sdkconfig ] || idf.py set-target esp32s3 > /tmp/firmware_set_target.log 2>&1 || { tail -20 /tmp/firmware_set_target.log; exit 1; }
 log=$(mktemp)
 if idf.py build > "$log" 2>&1; then
-  grep "music_controller.bin binary size" "$log" | tail -1
+  grep "raira.bin binary size" "$log" | tail -1
   grep -c "warning:" "$log" | sed 's/^/warnings: /'
   rm -f "$log"
 else

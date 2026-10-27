@@ -1,4 +1,4 @@
-//! Settings kept in `$XDG_CONFIG_HOME/music-bridge/config.json`, edited from the settings page. Command-line
+//! Settings kept in `$XDG_CONFIG_HOME/raira-bridge/config.json`, edited from the settings page. Command-line
 //! options win over the file; values that are not set fall back to the defaults in `main.rs`.
 
 use std::path::PathBuf;
@@ -44,7 +44,7 @@ pub fn dir() -> PathBuf {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
         .unwrap_or_else(|| PathBuf::from("."));
-    base.join("music-bridge")
+    base.join("raira-bridge")
 }
 
 pub fn path() -> PathBuf {

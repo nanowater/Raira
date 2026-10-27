@@ -1,4 +1,4 @@
-//! Finds devices on the local network (mDNS / DNS-SD, service `_musicbridge._tcp`, see docs/HUB_PROTOCOL.md). A device
+//! Finds devices on the local network (mDNS / DNS-SD, service `_raira._tcp`, see docs/HUB_PROTOCOL.md). A device
 //! that is already configured and shows up at a new address is followed there; the others are offered on the settings
 //! page ("Found nearby") for the user to connect to.
 
@@ -12,7 +12,7 @@ use serde::Serialize;
 use crate::config::DeviceCfg;
 use crate::hubclient::HubClients;
 
-const SERVICE: &str = "_musicbridge._tcp.local.";
+const SERVICE: &str = "_raira._tcp.local.";
 
 #[derive(Clone, Serialize)]
 pub struct Found {
