@@ -71,10 +71,10 @@ GET /state[?player=<id>]
   "player": "spotify",
   "status": "playing",                 // playing | paused | stopped
   "track": {
-    "id": "spotify:track:2A3ShNautqXezP1lFDePwa",   // stable key; service URI when known
-    "title": "Give Love",
-    "artists": ["AKMU"],
-    "album": "PLAY",
+    "id": "spotify:track:0000000000000000000000",   // stable key; service URI when known
+    "title": "Paper Lanterns",
+    "artists": ["The Example Band"],
+    "album": "Example Album",
     "duration_ms": 176532,
     "cover": "c1f3a9"                  // opaque key, changes when the artwork changes; null if none
   },

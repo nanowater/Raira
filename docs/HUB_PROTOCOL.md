@@ -83,7 +83,7 @@ is valid *when the message arrives*.
 
 ```json
 { "t": "state", "player": "spotify", "status": "playing",
-  "track": { "id": "spotify:track:2A3Sh...", "title": "Give Love", "artists": ["AKMU"], "album": "PLAY",
+  "track": { "id": "spotify:track:0000...", "title": "Paper Lanterns", "artists": ["The Example Band"], "album": "Example Album",
              "duration_ms": 176532, "cover": "c1f3a9" },
   "position_ms": 11885, "rate": 1.0, "volume": 1.0, "shuffle": false, "repeat": "off",
   "quality": null,
