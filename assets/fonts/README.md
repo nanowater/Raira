@@ -16,3 +16,9 @@ the script builds both.
 Simplified-Chinese-only characters (GB2312, ~+0.9MB) are not included. The font is the KR face, so
 Japanese kanji are drawn with Korean glyph variants.
 `src/fonts/font_mono_16.c` (DejaVu Sans Mono, digits and ":") is generated with lv_font_conv; see its header.
+
+## Licenses
+
+The two `NotoSansKR-*-subset.otf` files are subsets of Noto Sans CJK, licensed under the SIL Open Font License 1.1; the license text
+and the copyright notice are in `OFL.txt` next to them. `src/fonts/font_mono_16.c` is generated from DejaVu Sans Mono (Bitstream Vera
+license, free to use, modify and embed).

@@ -109,7 +109,7 @@ track); measure that time on the device (JPEG decode of a 400 px cover on the ES
 
 ## Not portable / sim only
 `src/main.cpp` (CLI/env host config, SDL backends), `src/lib/`, `install_volume_input()` (mouse wheel),
-`docs/JC8048W550/` (vendor material trimmed to the data sheets, the pin table and the demos' board setup; not part of the build).
+the vendor's JC8048W550 material (data sheets, pin table, demo sketches), which is not in this repository.
 
 ## Flash layout (plan, 16 MB, to be confirmed when the first firmware is built)
 
