@@ -328,7 +328,7 @@ fn client() -> &'static reqwest::Client {
     static C: OnceLock<reqwest::Client> = OnceLock::new();
     C.get_or_init(|| {
         reqwest::Client::builder()
-            .user_agent("raira/0.1 (https://github.com/nanowater)")
+            .user_agent("raira/0.1 (https://github.com/nanowater/Raira)")
             .connect_timeout(Duration::from_secs(4))
             .timeout(Duration::from_secs(10))
             .build()
