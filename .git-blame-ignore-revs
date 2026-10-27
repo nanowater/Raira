@@ -1,8 +1,8 @@
 # Formatting-only commits: `git blame` skips them with
 #   git config blame.ignoreRevsFile .git-blame-ignore-revs
 # style: apply the repository's .clang-format to the C++ sources
-3865add632da12960dfb2026c131a719e1ae2cdf
+ce5cb938a6ec341aaf6df9e76c87269ffe2d1279
 # style: cargo fmt for the bridge
-e64c691c21f0b35e7099dbf3f51e58e553e4bc3a
+a0deb1ed11d19ad729b208a98276fc43c03a8ad0
 # style: clippy fixes in the bridge
-25aa4123c5471567bb24ff28a016348fdde2b2e3
+bf77a90c754e022d4225d1342777d553f7c43c41
