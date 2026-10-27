@@ -1,4 +1,4 @@
-//! Player registry, selection and the mapping from raw MPRIS data to the protocol's types.
+//! Player registry, selection and the mapping from the backend's raw player data (player.rs) to the protocol's types.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, RwLock};
@@ -10,7 +10,7 @@ use axum::response::{IntoResponse, Response};
 
 use crate::cover;
 use crate::model::*;
-use crate::mpris::{Command, Mpris, Raw};
+use crate::player::{Backend, Command, PlayerBackend, Raw};
 use crate::tidal::Tidal;
 
 pub struct ApiError {
@@ -79,7 +79,7 @@ struct Inner {
 }
 
 pub struct Hub {
-    mpris: Mpris,
+    backend: Backend,
     inner: Mutex<Inner>,
     tidal: RwLock<Option<Arc<Tidal>>>,
     /// players the user switched off for devices: they take no part in the selection, the list, the states or the commands
@@ -107,13 +107,13 @@ fn slug(s: &str) -> String {
     out.trim_matches('-').to_string()
 }
 
-/// Which service a player is, guessed from its identity, desktop entry and bus name.
+/// Which service a player is, guessed from its identity, desktop entry and backend id.
 fn service_of(raw: &Raw) -> &'static str {
     let hay = format!(
         "{} {} {}",
         raw.identity,
         raw.desktop_entry.clone().unwrap_or_default(),
-        raw.bus
+        raw.app_id
     )
     .to_lowercase();
     if hay.contains("kdeconnect") {
@@ -198,9 +198,9 @@ fn capabilities(raw: &Raw) -> Vec<&'static str> {
 }
 
 impl Hub {
-    pub async fn new(tidal: Option<Tidal>) -> zbus::Result<Arc<Self>> {
+    pub async fn new(tidal: Option<Tidal>) -> Result<Arc<Self>, String> {
         Ok(Arc::new(Self {
-            mpris: Mpris::connect().await?,
+            backend: Backend::connect().await?,
             inner: Mutex::new(Inner::default()),
             tidal: RwLock::new(tidal.map(Arc::new)),
             disabled: RwLock::new(HashSet::new()),
@@ -242,10 +242,7 @@ impl Hub {
     async fn snapshot(&self) -> Snapshot {
         let mut players: Vec<(String, Raw)> = Vec::new();
         let mut taken: HashMap<String, u32> = HashMap::new();
-        for bus in self.mpris.buses().await {
-            let Some(raw) = self.mpris.read(&bus).await else {
-                continue;
-            };
+        for raw in self.backend.players().await {
             let base = slug(
                 raw.desktop_entry
                     .as_deref()
@@ -523,10 +520,10 @@ impl Hub {
             Cmd::Open(uri) if !raw.uri_schemes.is_empty() => Command::OpenUri(uri),
             Cmd::Open(_) => return Err(unsupported("open_uri")),
         };
-        self.mpris
+        self.backend
             .send(raw, c)
             .await
-            .map_err(|e| ApiError::new(StatusCode::BAD_GATEWAY, "upstream_failed", e.to_string()))
+            .map_err(|e| ApiError::new(StatusCode::BAD_GATEWAY, "upstream_failed", e))
     }
 
     /// The cover for a key as a JPEG of the wanted size, downloaded and re-encoded on first use and then kept (at most 64

@@ -1,4 +1,4 @@
-//! Linux backend: MPRIS over the D-Bus session bus.
+//! Linux backend: MPRIS over the D-Bus session bus (the `PlayerBackend` of player.rs).
 
 use std::collections::HashMap;
 
@@ -7,56 +7,12 @@ use zbus::proxy::CacheProperties;
 use zbus::{Connection, Proxy};
 use zbus::{ObjectPath, OwnedObjectPath, OwnedVariant as OwnedValue};
 
+use crate::player::{Command, Meta, PlayerBackend, Raw};
+
 const PREFIX: &str = "org.mpris.MediaPlayer2.";
 const PATH: &str = "/org/mpris/MediaPlayer2";
 const ROOT: &str = "org.mpris.MediaPlayer2";
 const PLAYER: &str = "org.mpris.MediaPlayer2.Player";
-
-#[derive(Default, Clone)]
-pub struct Meta {
-    pub title: String,
-    pub artists: Vec<String>,
-    pub album: String,
-    pub length_us: Option<i64>,
-    pub art_url: Option<String>,
-    pub xesam_url: Option<String>,
-    pub trackid: Option<String>,
-}
-
-/// Everything read from one player in one go. Optional fields are `None` when the player does not
-/// expose the property (tidal-hifi has no Shuffle/LoopStatus).
-#[derive(Default, Clone)]
-pub struct Raw {
-    pub bus: String,
-    pub identity: String,
-    pub desktop_entry: Option<String>,
-    pub status: String,
-    pub meta: Meta,
-    pub position_us: Option<i64>,
-    pub rate: f64,
-    pub volume: Option<f64>,
-    pub shuffle: Option<bool>,
-    pub loop_status: Option<String>,
-    pub can_seek: bool,
-    pub can_next: bool,
-    pub can_prev: bool,
-    pub can_control: bool,
-    pub uri_schemes: Vec<String>,
-}
-
-/// What the bridge can ask a player to do; `Hub::command` maps the protocol's commands onto these.
-pub enum Command {
-    PlayPause,
-    Play,
-    Pause,
-    Next,
-    Previous,
-    SeekAbsoluteUs(i64),
-    Volume(f64),
-    Shuffle(bool),
-    Loop(&'static str),
-    OpenUri(String),
-}
 
 /// The connection to the session bus. Players are found by their bus names, which start with `org.mpris.MediaPlayer2.`.
 pub struct Mpris {
@@ -126,14 +82,8 @@ fn parse_meta(m: &HashMap<String, OwnedValue>) -> Meta {
 }
 
 impl Mpris {
-    pub async fn connect() -> zbus::Result<Self> {
-        Ok(Self {
-            conn: Connection::session().await?,
-        })
-    }
-
     /// The bus names of all running players, sorted so that their order (and the ids made from it) stays the same.
-    pub async fn buses(&self) -> Vec<String> {
+    async fn buses(&self) -> Vec<String> {
         let Ok(dbus) = DBusProxy::new(&self.conn).await else {
             return vec![];
         };
@@ -152,12 +102,12 @@ impl Mpris {
     /// None when the player vanished or does not answer. Every property is read on its own: only PlaybackStatus is
     /// required, and one that fails (many players have no Shuffle or Volume) stays `None`, which is what hides the control
     /// on the device.
-    pub async fn read(&self, bus: &str) -> Option<Raw> {
+    async fn read(&self, bus: &str) -> Option<Raw> {
         let root = proxy(&self.conn, bus, ROOT).await.ok()?;
         let p = proxy(&self.conn, bus, PLAYER).await.ok()?;
 
         let mut raw = Raw {
-            bus: bus.to_string(),
+            app_id: bus.to_string(),
             rate: 1.0,
             ..Default::default()
         };
@@ -194,8 +144,8 @@ impl Mpris {
     }
 
     /// Volume, shuffle and loop mode are properties that get written; everything else is a method call.
-    pub async fn send(&self, raw: &Raw, cmd: Command) -> zbus::Result<()> {
-        let p = proxy(&self.conn, &raw.bus, PLAYER).await?;
+    async fn send_command(&self, raw: &Raw, cmd: Command) -> zbus::Result<()> {
+        let p = proxy(&self.conn, &raw.app_id, PLAYER).await?;
         match cmd {
             Command::PlayPause => p.call_method("PlayPause", &()).await.map(drop),
             Command::Play => p.call_method("Play", &()).await.map(drop),
@@ -213,5 +163,29 @@ impl Mpris {
             Command::Loop(mode) => p.set_property("LoopStatus", mode).await.map_err(Into::into),
             Command::OpenUri(uri) => p.call_method("OpenUri", &(uri,)).await.map(drop),
         }
+    }
+}
+
+impl PlayerBackend for Mpris {
+    async fn connect() -> Result<Self, String> {
+        Ok(Self {
+            conn: Connection::session().await.map_err(|e| e.to_string())?,
+        })
+    }
+
+    async fn players(&self) -> Vec<Raw> {
+        let mut out = Vec::new();
+        for bus in self.buses().await {
+            if let Some(raw) = self.read(&bus).await {
+                out.push(raw);
+            }
+        }
+        out
+    }
+
+    async fn send(&self, player: &Raw, cmd: Command) -> Result<(), String> {
+        self.send_command(player, cmd)
+            .await
+            .map_err(|e| e.to_string())
     }
 }

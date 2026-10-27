@@ -6,7 +6,9 @@ mod hub;
 mod hubclient;
 mod lyrics;
 mod model;
+#[cfg(target_os = "linux")]
 mod mpris;
+mod player;
 mod tidal;
 mod tray;
 mod ui;
@@ -238,7 +240,7 @@ async fn main() {
     };
     let hub = Hub::new(tidal)
         .await
-        .expect("cannot connect to the D-Bus session bus");
+        .expect("cannot start the player backend (on Linux: connect to the D-Bus session bus)");
     hub.set_disabled(cfg.lock().unwrap().disabled_players.clone());
 
     // the devices' API: /v0, with the token check
