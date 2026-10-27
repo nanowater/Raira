@@ -34,6 +34,11 @@ struct PairedSource
     std::string secret; /* hex, 128 bit */
 };
 
+/* `bytes` random bytes as a lower-case hex string: the device id and the secrets handed out in pairing. Only as good as
+ * std::random_device on the platform; on the ESP32 it still has to be checked that it gives different values at each
+ * boot (docs/PORTING.md, first boot checklist). */
+std::string random_hex(size_t bytes);
+
 struct HubSourceInfo
 {
     std::string id;

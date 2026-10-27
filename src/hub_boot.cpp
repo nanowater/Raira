@@ -1,22 +1,6 @@
 /* The hub's start-up from the saved settings, shared by the simulator and the ESP32 (hub_boot.h). */
 #include "hub_boot.h"
-#include <random>
 #include <nlohmann/json.hpp>
-
-namespace {
-std::string random_hex(int bytes)
-{
-    static const char H[] = "0123456789abcdef";
-    std::random_device rd;
-    std::string s;
-    for(int i = 0; i < bytes; i++) {
-        unsigned v = rd() & 0xFF;
-        s += H[v >> 4];
-        s += H[v & 15];
-    }
-    return s;
-}
-} // namespace
 
 HubBoot hub_boot_load(SettingsStore & store, const std::string & default_name)
 {

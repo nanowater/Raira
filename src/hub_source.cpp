@@ -36,22 +36,6 @@ bool same(const std::string & a, const std::string & b)
     }();
 }
 
-/* Hex string of `bytes` random bytes: the device id and the secrets handed out in pairing. This is only as good as
- * std::random_device on the platform; on the ESP32 it still has to be checked that it gives different values each boot
- * (docs/PORTING.md, first boot checklist). */
-std::string random_hex(size_t bytes)
-{
-    static const char H[] = "0123456789abcdef";
-    std::random_device rd;
-    std::string out;
-    for(size_t i = 0; i < bytes; i++) {
-        unsigned v = rd() & 0xFF;
-        out += H[v >> 4];
-        out += H[v & 15];
-    }
-    return out;
-}
-
 std::string str_of(const json & j, const char * key)
 {
     auto it = j.find(key);
@@ -85,6 +69,19 @@ uint32_t caps_of(const json & j)
 }
 
 } // namespace
+
+std::string random_hex(size_t bytes)
+{
+    static const char H[] = "0123456789abcdef";
+    std::random_device rd;
+    std::string out;
+    for(size_t i = 0; i < bytes; i++) {
+        unsigned v = rd() & 0xFF;
+        out += H[v >> 4];
+        out += H[v & 15];
+    }
+    return out;
+}
 
 HubSource::HubSource(std::unique_ptr<WsServer> ws, HubIdentity identity, std::vector<PairedSource> paired)
     : ws_(std::move(ws)), identity_(std::move(identity)), paired_(std::move(paired))
