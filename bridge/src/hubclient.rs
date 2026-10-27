@@ -59,6 +59,7 @@ fn hostname() -> String {
         .unwrap_or_else(|| "this PC".into())
 }
 
+/// Accepts `host`, `host:port` and `ws://host:port/`; a missing port becomes the hub's default one.
 fn normalize(addr: &str) -> Result<String, String> {
     let a = addr
         .trim()
@@ -109,6 +110,7 @@ impl HubClients {
         me
     }
 
+    /// Records what the settings page shows for a device: its state and a short reason.
     fn set_status(&self, addr: &str, state: &str, detail: &str) {
         let (name, paired) = {
             let c = self.cfg.lock().unwrap();
@@ -130,6 +132,7 @@ impl HubClients {
         );
     }
 
+    /// Starts the connection task of a device, unless one is running already.
     fn spawn(self: &Arc<Self>, addr: &str) {
         let mut tasks = self.tasks.lock().unwrap();
         if tasks.contains_key(addr) {
@@ -142,6 +145,7 @@ impl HubClients {
         tasks.insert(addr.to_string(), Task { handle, pair_tx });
     }
 
+    /// Adds a device by address (saved in the config) and connects to it.
     pub fn add(self: &Arc<Self>, addr: &str) -> Result<(), String> {
         let addr = normalize(addr)?;
         {
@@ -160,6 +164,7 @@ impl HubClients {
         Ok(())
     }
 
+    /// Forgets a device: stops its task and deletes it from the config, together with the secret.
     pub fn remove(&self, addr: &str) {
         if let Some(t) = self.tasks.lock().unwrap().remove(addr) {
             t.handle.abort();
@@ -209,6 +214,7 @@ impl HubClients {
         self.cfg.lock().unwrap().devices.clone()
     }
 
+    /// One status per configured device; a device whose task has not reported yet counts as `connecting`.
     pub fn statuses(&self) -> Vec<DeviceStatus> {
         let st = self.status.lock().unwrap();
         let c = self.cfg.lock().unwrap();
@@ -226,6 +232,7 @@ impl HubClients {
             .collect()
     }
 
+    /// The secret from pairing with this device, if there is one.
     fn secret_of(&self, addr: &str) -> Option<String> {
         self.cfg
             .lock()
@@ -236,6 +243,7 @@ impl HubClients {
             .and_then(|d| d.secret.clone())
     }
 
+    /// Changes one device's entry in the config and saves it.
     fn update_device(&self, addr: &str, f: impl FnOnce(&mut DeviceCfg)) {
         let mut c = self.cfg.lock().unwrap();
         if let Some(d) = c.devices.iter_mut().find(|d| d.addr == addr) {
@@ -245,6 +253,9 @@ impl HubClients {
     }
 }
 
+/// One device for good: connect, run the session, and whatever ended it, wait and try again. The wait doubles from 1 s up to
+/// 30 s and starts over after a connection that lasted more than 10 s, so a switched-off device is not hammered but one
+/// that was just reachable is found again quickly.
 async fn run_device(
     me: Arc<HubClients>,
     addr: String,
@@ -280,6 +291,10 @@ struct Pushed {
     rate: f64,
 }
 
+/// One WebSocket session with a device: connect, say hello (and auth when we hold a secret), then handle what the device
+/// sends and, once it is ready, push the state every TICK. Ends with the reason that the settings page shows. Everything
+/// that is sent goes through one channel (`out_tx`): the loop owns the socket, while the tasks that answer commands,
+/// covers and lyrics only queue their reply.
 async fn session(
     me: &Arc<HubClients>,
     addr: &str,
@@ -358,6 +373,8 @@ async fn session(
                                 me.update_device(addr, |d| d.secret = None); // forgotten by the device: pair again
                                 me.set_status(addr, "pairing_required", "the device does not know this PC any more");
                             }
+                            // The requests are answered in tasks of their own, so that a slow one (a cover download, a lyrics
+                            // lookup) does not stop the push loop.
                             "cmd" if ready => {
                                 let (me2, tx) = (me.clone(), out_tx.clone());
                                 tokio::spawn(async move { tx.send(text(handle_cmd(&me2, &v).await)).ok(); });
@@ -387,7 +404,9 @@ async fn session(
     }
 }
 
-/// Send the player list and the states that changed (or whose position drifted) since the last push.
+/// Send the player list and the states that changed since the last push. A state goes out when anything but the position
+/// changed, when the position is more than a second away from where the device would be by itself (a seek, a pause),
+/// or at the latest every HEARTBEAT, even if nothing changed.
 async fn push(
     me: &HubClients,
     out: &mpsc::UnboundedSender<Message>,
@@ -446,6 +465,7 @@ async fn push(
     }
 }
 
+/// Runs a device's `cmd` and answers with an `ack`: ok, or the error code (`unsupported`, `no_player`, ...).
 async fn handle_cmd(me: &HubClients, v: &Value) -> Value {
     let id = v["id"].clone();
     let player = v["player"].as_str().unwrap_or("");

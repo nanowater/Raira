@@ -10,6 +10,17 @@
 
 namespace {
 
+/* The pages and where the back arrow (on_back) leads from each:
+ *
+ *   MENU     entered by the long press on the cover: tiles Player and Settings. Back closes the overlay.
+ *   MAIN     the settings tiles: WiFi, Player, Sources (each only when the platform has it). Opened directly by a tap
+ * on the "Connection lost" banner (back closes the overlay) or from the menu's Settings tile (back returns to MENU).
+ *   WIFI     scan result list; a tap on a network goes to PASSWORD, or connects at once when it is open. Back to MAIN.
+ *   PASSWORD keyboard; Connect returns to WIFI, back too.
+ *   PLAYER   the choice of the player. Back to MENU or MAIN, whichever it was entered from (player_from_menu).
+ *   SOURCES  pairing code and the paired PCs. Back to MAIN.
+ *
+ * Only one page is visible at a time (show_page). */
 enum Page { PAGE_MAIN, PAGE_WIFI, PAGE_PASSWORD, PAGE_PLAYER, PAGE_SOURCES, PAGE_MENU, PAGE_COUNT };
 
 const uint32_t COLOR_BG          = 0x12151B;
@@ -444,6 +455,9 @@ void start_scan()
 
 void refresh_sources();
 
+/* A 200 ms timer that runs only while the overlay is open and keeps the live parts current: the pairing countdown and
+ * the list of sources, the end of a scan, the progress of a connect (on success the network is handed to
+ * remember_wifi so that it is saved), and the values on the main page. */
 void poll_cb(lv_timer_t *)
 {
     if(page_now == PAGE_SOURCES) refresh_sources(); /* the code counts down and sources come and go */

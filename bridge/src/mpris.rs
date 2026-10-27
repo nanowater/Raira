@@ -44,6 +44,7 @@ pub struct Raw {
     pub uri_schemes: Vec<String>,
 }
 
+/// What the bridge can ask a player to do; `Hub::command` maps the protocol's commands onto these.
 pub enum Command {
     PlayPause,
     Play,
@@ -57,10 +58,12 @@ pub enum Command {
     OpenUri(String),
 }
 
+/// The connection to the session bus. Players are found by their bus names, which start with `org.mpris.MediaPlayer2.`.
 pub struct Mpris {
     conn: Connection,
 }
 
+/// A proxy to one interface of a player. Properties are read live, not cached: a cached value would lag behind the player.
 async fn proxy<'a>(
     conn: &'a Connection,
     bus: &'a str,
@@ -75,6 +78,7 @@ async fn proxy<'a>(
         .await
 }
 
+/// Players are not consistent about integer types (some send i64, some u64), so accept both.
 fn as_i64(v: &OwnedValue) -> Option<i64> {
     i64::try_from(v)
         .ok()
@@ -85,6 +89,8 @@ fn as_string(v: &OwnedValue) -> Option<String> {
     String::try_from(v.clone()).ok()
 }
 
+/// The Metadata dictionary as a `Meta`. The album artist stands in when the track has no artist, and the track id is read as
+/// an object path or as a plain string, because players differ.
 fn parse_meta(m: &HashMap<String, OwnedValue>) -> Meta {
     let mut out = Meta::default();
     if let Some(v) = m.get("xesam:title") {
@@ -126,6 +132,7 @@ impl Mpris {
         })
     }
 
+    /// The bus names of all running players, sorted so that their order (and the ids made from it) stays the same.
     pub async fn buses(&self) -> Vec<String> {
         let Ok(dbus) = DBusProxy::new(&self.conn).await else {
             return vec![];
@@ -142,7 +149,9 @@ impl Mpris {
         names
     }
 
-    /// None when the player vanished or does not answer.
+    /// None when the player vanished or does not answer. Every property is read on its own: only PlaybackStatus is
+    /// required, and one that fails (many players have no Shuffle or Volume) stays `None`, which is what hides the control
+    /// on the device.
     pub async fn read(&self, bus: &str) -> Option<Raw> {
         let root = proxy(&self.conn, bus, ROOT).await.ok()?;
         let p = proxy(&self.conn, bus, PLAYER).await.ok()?;
@@ -184,6 +193,7 @@ impl Mpris {
         Some(raw)
     }
 
+    /// Volume, shuffle and loop mode are properties that get written; everything else is a method call.
     pub async fn send(&self, raw: &Raw, cmd: Command) -> zbus::Result<()> {
         let p = proxy(&self.conn, &raw.bus, PLAYER).await?;
         match cmd {

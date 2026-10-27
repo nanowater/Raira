@@ -47,6 +47,8 @@ impl IntoResponse for ApiError {
     }
 }
 
+/// A command from a device (or a `/v0` client), independent of how the player is driven: `command()` maps it onto MPRIS
+/// or, for shuffle and repeat, onto the tidal-hifi supplement.
 pub enum Cmd {
     PlayPause,
     Play,
@@ -60,12 +62,19 @@ pub enum Cmd {
     Open(String),
 }
 
+/// What the hub remembers between two readings of the system.
 #[derive(Default)]
 struct Inner {
+    /// the player a device or the settings page chose; it wins over `auto` for as long as that player exists
     explicit: Option<String>,
+    /// the automatic pick, kept while that player still plays so that it does not jump between two playing players
     auto: Option<String>,
+    /// since when each player has been playing, to find the newest
     playing_since: HashMap<String, Instant>,
+    /// cover key -> the player's artwork URL: the protocol only carries the short key, the URL is looked up when the
+    /// cover is asked for
     cover_urls: HashMap<String, String>,
+    /// covers already downloaded and re-encoded, by (key, size)
     cover_cache: HashMap<(String, u32), Arc<Vec<u8>>>,
 }
 
@@ -84,6 +93,8 @@ struct Snapshot {
     selected: Option<String>,
 }
 
+/// A player id from a name: lower case, every run of characters that are not letters or digits becomes one `-`. Ids come
+/// from the desktop entry or the identity, never from the bus name, which can change (tidal-hifi's contains its PID).
 fn slug(s: &str) -> String {
     let mut out: String = s
         .to_lowercase()
@@ -96,6 +107,7 @@ fn slug(s: &str) -> String {
     out.trim_matches('-').to_string()
 }
 
+/// Which service a player is, guessed from its identity, desktop entry and bus name.
 fn service_of(raw: &Raw) -> &'static str {
     let hay = format!(
         "{} {} {}",
@@ -128,6 +140,7 @@ fn status_of(raw: &Raw) -> &'static str {
     }
 }
 
+/// A small non-cryptographic hash (FNV-1a) that turns a cover URL into a short key. Nothing secret depends on it.
 fn fnv1a(s: &str) -> u64 {
     s.bytes().fold(0xcbf29ce484222325, |h, b| {
         (h ^ b as u64).wrapping_mul(0x100000001b3)
@@ -141,6 +154,8 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// A stable id for the track. Spotify's web URL becomes `spotify:track:<id>`; otherwise MPRIS's own track id; and when the
+/// player has none (`NoTrack`, `/`) the title, artists and album joined, which is at least the same while it plays.
 fn track_id(raw: &Raw) -> String {
     let m = &raw.meta;
     if let Some(u) = &m.xesam_url
@@ -157,6 +172,8 @@ fn track_id(raw: &Raw) -> String {
     }
 }
 
+/// What the player can do, from the properties it exposes. A control the player does not have is simply missing from the
+/// list, which is what hides it on the device.
 fn capabilities(raw: &Raw) -> Vec<&'static str> {
     let mut c = Vec::new();
     if raw.can_seek {
@@ -219,7 +236,9 @@ impl Hub {
         Some((t.spec().to_string(), t.current().await.is_some()))
     }
 
-    /// Read every player and settle the selection (explicit choice > still playing > newest playing > last).
+    /// Read every player and settle the selection. A second player with the same base id gets a `-2` suffix. The choice
+    /// made explicitly stays while that player exists. Otherwise the automatic pick stays on its player as long as it
+    /// plays, moves to the newest playing player when it does not, and with nothing playing falls back to the first one.
     async fn snapshot(&self) -> Snapshot {
         let mut players: Vec<(String, Raw)> = Vec::new();
         let mut taken: HashMap<String, u32> = HashMap::new();
@@ -284,6 +303,7 @@ impl Hub {
         }
     }
 
+    /// The player a request means: the named one, or the selected one when none is named. `no_player` if it is not there.
     fn pick<'a>(snap: &'a Snapshot, player: Option<&str>) -> Result<&'a (String, Raw), ApiError> {
         let want = player.map(str::to_string).or_else(|| snap.selected.clone());
         want.as_ref()
@@ -370,6 +390,9 @@ impl Hub {
         (players, states)
     }
 
+    /// One player's state in the protocol's form. The cover key hashes the artwork URL together with the track id, so it
+    /// changes whenever the artwork or the track does. `position_at_ms` says when the position
+    /// was read, so that the receiver can move it forward.
     async fn state_of(&self, id: &str, raw: &Raw) -> State {
         let tid = track_id(raw);
         let cover = raw.meta.art_url.as_ref().map(|url| {
@@ -436,6 +459,8 @@ impl Hub {
         }
     }
 
+    /// Runs a command on the named (or selected) player. A control the player does not offer is refused with `unsupported`
+    /// instead of being sent; shuffle and repeat that MPRIS lacks go to tidal-hifi when this player is tidal-hifi.
     pub async fn command(&self, player: Option<&str>, cmd: Cmd) -> Result<(), ApiError> {
         let snap = self.snapshot().await;
         let (_, raw) = Self::pick(&snap, player)?;
@@ -504,6 +529,8 @@ impl Hub {
             .map_err(|e| ApiError::new(StatusCode::BAD_GATEWAY, "upstream_failed", e.to_string()))
     }
 
+    /// The cover for a key as a JPEG of the wanted size, downloaded and re-encoded on first use and then kept (at most 64
+    /// are cached, then the cache starts over).
     pub async fn cover(&self, key: &str, px: u32) -> Result<Arc<Vec<u8>>, ApiError> {
         let (url, cached) = {
             let inner = self.inner.lock().unwrap();

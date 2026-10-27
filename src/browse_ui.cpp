@@ -58,6 +58,9 @@ std::unordered_map<std::string, Thumb *> thumbs;
 std::unordered_set<std::string> thumbs_requested;
 std::vector<RowThumb> row_thumbs; /* the rows currently built */
 
+/* What is shown is decided by `tab` and `in_playlist`: the Queue tab shows queue_items; the Playlists tab shows
+ * playlist_items, or track_items (the tracks of one playlist) after a playlist was opened. The index in an event is the
+ * row's position in the list that is on screen. */
 std::vector<Item> queue_items, playlist_items, track_items;
 std::string tracks_title;
 Tab tab                    = TAB_QUEUE;
