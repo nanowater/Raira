@@ -1,3 +1,6 @@
+/* Cover pixels for the UI: decoding and scaling the cover (cover_decode) and the blurred full-screen background made
+ * from it (cover_background). Plain integer/float loops on purpose, no SIMD or platform code, so the same code runs on
+ * the PC and on the ESP32-S3. */
 #include "cover_decoder.h"
 #include <algorithm>
 #include <cmath>
@@ -7,13 +10,15 @@ bool cover_decode(const std::vector<unsigned char> & encoded, uint32_t size, Cov
 {
     if(encoded.empty() || size == 0) return false;
 
+    /* The decoder may already have shrunk the picture (by a power of two), but never below `size` on its short side. */
     RawImage raw;
     if(!jpeg_decode_bgrx(encoded.data(), encoded.size(), size, raw)) return false;
     const int dw                        = (int)raw.w;
     const int dh                        = (int)raw.h;
     const std::vector<uint8_t> & scaled = raw.data;
 
-    /* Box-filter resample to size x size (center-crop to square first). */
+    /* Box-filter resample to size x size (center-crop to square first): every output pixel is the average of the source
+     * pixels it covers, which keeps fine detail from turning into noise when the cover is shrunk. */
     int side = dw < dh ? dw : dh;
     int ox   = (dw - side) / 2;
     int oy   = (dh - side) / 2;
@@ -49,6 +54,9 @@ bool cover_decode(const std::vector<unsigned char> & encoded, uint32_t size, Cov
     return true;
 }
 
+/* Steps: average the cover into a 16x16 grid of colors and smooth it; lift dark covers and saturate a little; stretch
+ * the grid over w x h with bilinear interpolation; blend it onto the base color, strongest in the middle; write RGB565
+ * with dithering. The cover has to be square (what cover_decode gives). */
 bool cover_background(const CoverPixels & cover, uint32_t w, uint32_t h, uint32_t base_rgb, CoverPixels & out)
 {
     const uint32_t cs = cover.w;
@@ -102,6 +110,7 @@ bool cover_background(const CoverPixels & cover, uint32_t w, uint32_t h, uint32_
         grid[i * 3 + 2] = std::min(255.f, std::max(0.f, l + (r - l) * sat));
     }
 
+    /* Per output pixel: bilinear lookup in the grid (the four nearest cells), then the blend onto the base color. */
     out.w = w;
     out.h = h;
     out.data.assign((size_t)w * h * 2, 0);

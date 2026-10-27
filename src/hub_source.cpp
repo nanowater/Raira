@@ -1,3 +1,13 @@
+/* The hub (hub_source.h, docs/HUB_PROTOCOL.md).
+ *
+ * Threads: the WebSocket server's thread calls on_open/on_text/on_binary/on_close; the poller, UI and lyrics threads
+ * call the MediaSource functions. Whatever both sides touch (srcs_, paired_, the pairing window, the waits) is guarded
+ * by mu_. Nothing calls out while holding it: the paired-changed callback and the focus messages are sent after the
+ * lock is released, and a thread that waits for an answer waits on cv_, which releases mu_ meanwhile.
+ *
+ * A source's connection: open -> hello (who it is) -> pair (first time, with the code shown on the device) or auth
+ * (with the secret from pairing) -> ready -> players / state pushes and answers to cover and lyrics requests. Until a
+ * source is ready, everything but hello, auth and pair is ignored. */
 #include "hub_source.h"
 #include <algorithm>
 #include <cstdio>
@@ -9,12 +19,14 @@ using clk = std::chrono::steady_clock;
 
 namespace {
 
-const std::chrono::seconds PAIR_WINDOW(120);
-const int PAIR_MAX_FAILURES = 3;
-const int AUTH_MAX_FAILURES = 3;
+const std::chrono::seconds PAIR_WINDOW(120); /* how long the pairing code works after it was shown */
+const int PAIR_MAX_FAILURES = 3;             /* wrong codes before the window closes */
+const int AUTH_MAX_FAILURES = 3;             /* wrong secrets before the connection is dropped */
 const std::chrono::seconds COVER_TIMEOUT(8);
 const size_t MAX_TEXT = 16 * 1024 + 64 * 1024; /* lyrics frames are the big ones; plain messages are far smaller */
 
+/* Compares secrets and pairing codes in constant time: every byte is looked at, so how long it takes does not tell how
+ * many leading characters were right. The length is not secret. */
 bool same(const std::string & a, const std::string & b)
 {
     return a.size() == b.size() && [&] {
@@ -24,6 +36,9 @@ bool same(const std::string & a, const std::string & b)
     }();
 }
 
+/* Hex string of `bytes` random bytes: the device id and the secrets handed out in pairing. This is only as good as
+ * std::random_device on the platform; on the ESP32 it still has to be checked that it gives different values each boot
+ * (docs/PORTING.md, first boot checklist). */
 std::string random_hex(size_t bytes)
 {
     static const char H[] = "0123456789abcdef";
@@ -43,6 +58,8 @@ std::string str_of(const json & j, const char * key)
     return (it != j.end() && it->is_string()) ? it->get<std::string>() : std::string();
 }
 
+/* The protocol's capability names -> MEDIA_CAP_ bits. Names this version does not know are ignored; either browse
+ * capability sets the one browse bit. */
 uint32_t caps_of(const json & j)
 {
     uint32_t caps = 0;
@@ -86,8 +103,8 @@ bool HubSource::start(uint16_t port)
     h.on_binary = [this](WsConnId id, const std::string & d) { on_binary(id, d); };
     h.on_close  = [this](WsConnId id) { on_close(id); };
     WsLimits limits;
-    limits.max_connections = 4; /* docs/HUB_PROTOCOL.md: at most 4 sources */
-    limits.max_message     = 256 * 1024;
+    limits.max_connections = 4;          /* docs/HUB_PROTOCOL.md: at most 4 sources */
+    limits.max_message     = 256 * 1024; /* the biggest frame is a cover */
     return ws_->start(port, std::move(h), limits);
 }
 
@@ -109,6 +126,8 @@ bool HubSource::send_json(WsConnId id, const std::string & text)
 
 /* ---- connection handling (server thread) ---- */
 
+/* A connection opened. Only /source is the hub's endpoint (false refuses the connection). The entry exists from now
+ * on, but nothing about it is trusted until it is `ready`. */
 bool HubSource::on_open(WsConnId id, const std::string & path)
 {
     if(path != "/source") return false;
@@ -124,6 +143,8 @@ void HubSource::on_close(WsConnId id)
     cv_.notify_all(); /* cover waits re-check */
 }
 
+/* First message of a source: who it is. Answers with `welcome`; a source that is not in the paired list also gets
+ * `pairing_required` and has to send `pair`, a known one sends `auth`. */
 void HubSource::handle_hello(WsConnId id, Src & s, const json & j)
 {
     s.id   = str_of(j, "source_id");
@@ -150,6 +171,9 @@ void HubSource::handle_hello(WsConnId id, Src & s, const json & j)
     if(!known) send_json(id, "{\"t\":\"pairing_required\"}");
 }
 
+/* Replaces the source's list of players. A player that is still listed keeps what was pushed for it (state, cover,
+ * playing_since), one that is gone is dropped; `order` keeps the source's order for the lists in the UI. `selected` is
+ * the source's own pick (see focus_locked). */
 void HubSource::handle_players(Src & s, const json & j)
 {
     auto list = j.find("players");
@@ -178,6 +202,8 @@ void HubSource::handle_players(Src & s, const json & j)
     s.selected = str_of(j, "selected");
 }
 
+/* One player's pushed state. Fields of the wrong type are skipped rather than trusted. The position is kept together
+ * with the time it arrived (and the playback rate), so that get_current() can move it forward between two pushes. */
 void HubSource::handle_state(Src & s, const json & j)
 {
     auto it = s.players.find(str_of(j, "player"));
@@ -233,6 +259,9 @@ std::string HubSource::new_secret()
     return random_hex(16);
 }
 
+/* A JSON message from a source. hello/auth/pair run the connection's handshake (auth and pair need a hello first, so
+ * the source has an id); only a `ready` source gets to push players and state or to answer a request. The paired list
+ * is saved through paired_cb_ after mu_ is released, since the callback writes to flash. */
 void HubSource::on_text(WsConnId id, const std::string & text)
 {
     json j = json::parse(text, nullptr, false);
@@ -282,6 +311,7 @@ void HubSource::on_text(WsConnId id, const std::string & text)
                     pair_code_.clear(); /* too many guesses: close the window */
             }
         } else if(s.ready) {
+            /* from here on only authenticated sources */
             if(t == "players")
                 handle_players(s, j);
             else if(t == "state")
@@ -315,6 +345,8 @@ void HubSource::on_text(WsConnId id, const std::string & text)
     if(cb) cb(paired_copy);
 }
 
+/* A binary frame is a cover: the first 4 bytes are the request id from `cover_req` (big-endian), the rest is the JPEG.
+ * It wakes the get_cover() that waits for that id; frames nobody asked for are dropped. */
 void HubSource::on_binary(WsConnId id, const std::string & data)
 {
     if(data.size() < 4) return;
@@ -333,6 +365,9 @@ void HubSource::on_binary(WsConnId id, const std::string & data)
 
 /* ---- focus ---- */
 
+/* Which player the device shows: finds it among the ready sources and returns the connection, source, player and its
+ * key ("<source id>/<player id>"). The caller holds mu_. Pinned in the settings (focus_pref_): that player or nothing.
+ * Otherwise "Automatic", which follows the rule below. */
 bool HubSource::focus_locked(WsConnId & conn, Src *& src, Player *& pl, std::string & key)
 {
     auto find_key = [&](const std::string & k) {
@@ -396,6 +431,10 @@ bool HubSource::focus_locked(WsConnId & conn, Src *& src, Player *& pl, std::str
 
 /* ---- MediaSource ---- */
 
+/* Called by the poller every 500 ms. No network in here: it returns the last state pushed for the focused player,
+ * with the position moved forward to now (position + rate x time since arrival, never beyond the duration). false =
+ * no source connected, which the poller counts towards "connection lost". `image_url` is not a URL here but
+ * "<source id>|<cover key>", which get_cover() splits again. */
 bool HubSource::get_current(MediaInfo & out)
 {
     std::vector<std::pair<WsConnId, std::string>> focus_msgs;
@@ -441,6 +480,8 @@ bool HubSource::get_current(MediaInfo & out)
     return true;
 }
 
+/* Asks the source for the cover and waits for the answer (on_binary): a request/answer over the push connection, so
+ * this blocks the calling (poller) thread for at most COVER_TIMEOUT, also ending when the source disconnects. */
 bool HubSource::get_cover(const MediaInfo & info, int want_px, std::vector<unsigned char> & out)
 {
     const size_t bar = info.image_url.find('|');
@@ -469,6 +510,9 @@ bool HubSource::get_cover(const MediaInfo & info, int want_px, std::vector<unsig
     return true;
 }
 
+/* The same request/answer pattern as get_cover(), with a longer wait (the source may be sitting out a rate limit at
+ * LRCLIB) and a look at `cancelled` every 100 ms. When it returns false, out.failed tells "the lookup did not work" (a
+ * retry makes sense) from "there are no lyrics" (it does not). */
 bool HubSource::request_lyrics(const MediaInfo & info, Lyrics & out, const std::function<bool()> & cancelled)
 {
     WsConnId conn = 0;
@@ -514,6 +558,8 @@ bool HubSource::request_lyrics(const MediaInfo & info, Lyrics & out, const std::
     return true;
 }
 
+/* Sends a `cmd` to the focused player's source: `args_json` (an object, or empty) plus the frame fields t, id, player
+ * and op. Does not wait for an answer; the effect shows up in the next pushed state. */
 bool HubSource::command(const char * op, const std::string & args_json)
 {
     WsConnId conn = 0;
@@ -535,6 +581,8 @@ bool HubSource::command(const char * op, const std::string & args_json)
     return send_json(conn, text);
 }
 
+/* The protocol sets a value (`enabled`, `mode`) instead of toggling, so the next value is worked out from the last
+ * pushed state. */
 bool HubSource::toggle_shuffle()
 {
     bool now = false;

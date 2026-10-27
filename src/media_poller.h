@@ -6,14 +6,14 @@
 #include <vector>
 #include "media_source.h"
 
-/* Starts the background threads and hands them the music service to poll and control. The poller thread
- * becomes the only user of `source`. Call after music_ui_create() on the LVGL thread; results reach the UI
- * through a queue drained by an LVGL timer. */
 /* Whether the browse button can ever show: NONE = no BrowseSource (the bit is always cleared), WHEN_REPORTED =
  * only while the source's capabilities include MEDIA_CAP_BROWSE, ALWAYS = the browse provider does not depend on
  * the player (the simulator's fake data). */
 enum media_browse_mode_t { MEDIA_BROWSE_NONE, MEDIA_BROWSE_WHEN_REPORTED, MEDIA_BROWSE_ALWAYS };
 
+/* Starts the background threads and hands them the music service to poll and control. The poller thread
+ * becomes the only user of `source`. Call after music_ui_create() on the LVGL thread; results reach the UI
+ * through a queue drained by an LVGL timer. */
 void media_poller_start(std::unique_ptr<MediaSource> source, media_browse_mode_t browse = MEDIA_BROWSE_NONE);
 
 /* Run `fn` on the LVGL thread (from any thread): queued, drained by an LVGL timer. The only safe way for a

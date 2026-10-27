@@ -1,3 +1,4 @@
+/* SettingsStore as a JSON file under $XDG_CONFIG_HOME/raira or ~/.config/raira (the simulator's counterpart of NVS). */
 #include "platform/settings.h"
 #include <cstdlib>
 #include <fstream>

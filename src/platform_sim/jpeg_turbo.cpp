@@ -1,3 +1,4 @@
+/* jpeg_decode_bgrx() on libjpeg-turbo (TurboJPEG) for the simulator. */
 #include "platform/jpeg.h"
 #include <turbojpeg.h>
 

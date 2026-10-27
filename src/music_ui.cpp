@@ -1,3 +1,6 @@
+/* The now-playing screen (music_ui.h): cover, title, progress bar, controls, lyrics and the ambient background, in two
+ * layouts (LYRICS and NOW_PLAYING) that it animates between. Pure LVGL, no networking; it is fed by the poller through
+ * music_ui_update() and the other music_ui_set_* functions and reports button presses through callbacks. */
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>

@@ -1,3 +1,7 @@
+/* The background side of the app (media_poller.h): the poller thread reads the source's state every 500 ms and fetches
+ * covers; a second thread looks up lyrics; a timer on the LVGL thread runs what they post to the UI. Also here: the
+ * volume steps from the encoder and the connected / lost state. Nothing in here may call LVGL from a background
+ * thread. */
 #include <atomic>
 #include <cmath>
 #include <chrono>

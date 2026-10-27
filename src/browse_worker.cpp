@@ -1,3 +1,6 @@
+/* The browse thread: requests from the panel (open a list, play an item, a thumbnail) go to the BrowseSource here, off
+ * the LVGL thread, and the results come back through media_post_to_ui(). Listing is slow, so it has its own thread and
+ * never delays the now-playing poll. */
 #include "browse_worker.h"
 #include <chrono>
 #include <condition_variable>

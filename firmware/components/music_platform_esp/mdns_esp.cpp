@@ -1,3 +1,6 @@
+// MdnsAdvertiser on the ESP-IDF mdns component (a managed dependency, see idf_component.yml): announces the hub as
+// _raira._tcp so that the PC bridge finds it.
+
 #include "esp_log.h"
 #include "mdns.h"
 #include "platform/mdns.h"
@@ -9,6 +12,9 @@ static const char * TAG = "mdns";
 namespace {
 class EspMdns : public MdnsAdvertiser {
   public:
+    // Needs a network: call it after WiFi has an IP address. Our service type is one string ("_raira._tcp"), the
+    // component wants the type and the protocol separately. The TXT items only point into `service`, which the call
+    // keeps alive; mdns_service_add() copies them.
     bool start(const MdnsService & service) override
     {
         const size_t dot = service.type.find('.');
@@ -28,6 +34,7 @@ class EspMdns : public MdnsAdvertiser {
         if(err == ESP_OK)
             err = mdns_service_add(service.instance.c_str(), type.c_str(), proto.c_str(), service.port, txt.data(),
                                    txt.size());
+        // The first error stops the chain; a failed start leaves the component initialised (stop() frees it).
         if(err != ESP_OK) {
             ESP_LOGE(TAG, "mdns start failed: %s", esp_err_to_name(err));
             return false;

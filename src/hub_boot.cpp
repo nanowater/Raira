@@ -1,3 +1,4 @@
+/* The hub's start-up from the saved settings, shared by the simulator and the ESP32 (hub_boot.h). */
 #include "hub_boot.h"
 #include <random>
 #include <nlohmann/json.hpp>

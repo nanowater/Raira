@@ -1,3 +1,7 @@
+/* The playlist / queue panel (browse_ui.h): two tabs, a drill-down from a playlist to its tracks, rows addressed by
+ * index. Rebuilds run from a 1 ms timer so that a row that was tapped is never deleted inside its own event.
+ * Thumbnails: rows ask the provider only for what is on screen or one row away, and a cache keeps a bounded number of
+ * the others. */
 #include <cstdlib>
 #include <cstring>
 #include <string>

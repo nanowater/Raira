@@ -1,3 +1,6 @@
+/* The settings overlay (settings_ui.h): a main page, WiFi (scan, pick, password with a keyboard), player choice, the
+ * hub's sources and pairing, and the menu a long press on the cover opens. Only one page is visible at
+ * a time; the outside world is reached through SettingsServices only. */
 #include "settings_ui.h"
 #include <cstring>
 #include <vector>

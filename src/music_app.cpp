@@ -1,3 +1,5 @@
+/* music_app_start(): builds the UI, starts the poller and the browse worker and connects the settings page to the
+ * settings store, the WiFi manager and the hub. Nothing in here depends on the platform. */
 #include "music_app.h"
 #include "browse_worker.h"
 #include "media_poller.h"
@@ -12,6 +14,10 @@ std::unique_ptr<SettingsStore> g_store;
 AppSettings g_settings;
 } // namespace
 
+/* Wires the portable app together; the host program (main() or app_main) calls this once, on the LVGL thread. Order
+ * matters: the main UI exists before the poller starts feeding it, and the settings overlay comes last so that it
+ * sits on top. Settings are written from the LVGL thread only; the hub's pairing callback arrives on the server's
+ * thread and is posted over. `deps.source` is read (can_select_player) before it is handed to the poller. */
 void music_app_start(MusicAppDeps deps)
 {
     g_wifi     = std::move(deps.wifi);

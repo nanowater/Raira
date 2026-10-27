@@ -1,3 +1,5 @@
+/* Canned BrowseSource for the simulator (lvglsim -F): made-up playlists, a queue that follows what is tapped and
+ * generated cover thumbnails, so the browse panel can be developed without a source that offers playlists. */
 #include "fake_browse.h"
 #include <cstdint>
 #include <cstdio>

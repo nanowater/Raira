@@ -1,3 +1,6 @@
+// The Noto Sans KR fonts on the device: read from the read-only `fonts` flash partition instead of being part of the
+// program, so that the two OTA slots do not each need 7 MB for them (docs/PORTING.md, "Flash layout").
+
 #include <cstddef>
 #include "esp_partition.h"
 #include "esp_log.h"
@@ -9,6 +12,9 @@ static FontImage s_fonts;
 static bool s_ok = false;
 static std::once_flag s_once;
 
+// Finds the `fonts` partition (a custom data partition, subtype 0x40, see partitions.csv) and maps it into the address
+// space: the flash is read through the cache, nothing is copied to RAM. The mapping is never released, it lives as long
+// as the program does. Returns the start and puts the size into *size, or returns nullptr.
 static const unsigned char * map_partition(size_t * size)
 {
     const esp_partition_t * partition =
@@ -35,6 +41,8 @@ static const unsigned char * map_partition(size_t * size)
     return static_cast<const unsigned char *>(ptr);
 }
 
+// Maps the partition and parses the image once (std::call_once below). A partition that was never written is not an
+// image (erased flash reads as 0xFF), which is logged and leaves s_ok false.
 static void load()
 {
     size_t size               = 0;
@@ -48,6 +56,8 @@ static void load()
     }
 }
 
+// The two functions src/ui_fonts.cpp asks for the TTF data. The simulator gets them from fonts embedded in the program
+// (src/fonts/noto_sans_kr.c); here the data lives in the partition. nullptr and size 0 when the fonts are not usable.
 extern "C" const unsigned char * noto_sans_kr_get(size_t * size)
 {
     std::call_once(s_once, load);

@@ -1,3 +1,6 @@
+// SettingsStore on NVS (the flash's key-value store): one string per setting, see AppSettings in platform/settings.h.
+// nvs_flash_init() has to have run first (app_main).
+
 #include "esp_err.h"
 #include "platform/settings.h"
 #include <memory>
@@ -5,11 +8,14 @@
 #include "esp_log.h"
 
 static const char * TAG = "settings";
-static const char * NS  = "music";
+// NVS namespace of all settings. It is stored on the chip: renaming it would hide what an installed device has saved.
+static const char * NS = "music";
 
 namespace {
 class NvsStore : public SettingsStore {
   public:
+    // false when nothing was saved yet (the namespace does not exist on a fresh chip). A key that is missing leaves its
+    // field at the value `out` already has, so new fields keep their defaults on a device with older settings.
     bool load(AppSettings & out) override
     {
         nvs_handle_t h;
@@ -34,6 +40,9 @@ class NvsStore : public SettingsStore {
 
         return true;
     }
+    // Writes every field, then commits once; the first error stops the chain. The WiFi password is stored as it is: NVS
+    // is not encrypted here. Keys may have at most 15 characters, and one string value at most about 4000 bytes, which
+    // is also the room the JSON list of paired sources (hub_sources) has.
     bool save(const AppSettings & settings) override
     {
         nvs_handle_t h;
@@ -67,6 +76,8 @@ class NvsStore : public SettingsStore {
         return nvs_open(NS, NVS_READWRITE, handle);
     }
 
+    // Reads a string in two steps: the first call, without a buffer, returns the length including the terminating NUL.
+    // `value` is only touched when the read succeeded.
     esp_err_t get(nvs_handle_t h, const char * key, std::string & value)
     {
         size_t len    = 0;
