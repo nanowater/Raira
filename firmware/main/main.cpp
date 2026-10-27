@@ -60,6 +60,8 @@ extern "C" void app_main(void)
                 ESP_LOGE(TAG, "hub cannot listen on port 18322, not announcing it");
                 return;
             }
+            // Temporary, until the display shows the pairing code: open the pairing window (2 min) and print the code.
+            ESP_LOGW(TAG, "pairing code: %s", hub_ptr->start_pairing().c_str());
             g_mdns = mdns_advertiser_create();
             MdnsService adv;
             adv.instance = name;
