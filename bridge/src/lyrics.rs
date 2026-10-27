@@ -1,4 +1,4 @@
-//! Lyrics lookup on LRCLIB (https://lrclib.net), moved here from the device (`src/lyrics.cpp`, same rules): the PC has
+//! Lyrics lookup on LRCLIB (https://lrclib.net), first written for the device in C++ and moved here (same rules): the PC has
 //! the TLS stack, the CPU and a place for a cache; the device only receives the finished line list. Candidates are the
 //! exact lookup plus a free-text search, ranked by length, synced or not, script, album and variant tags.
 

@@ -30,6 +30,8 @@
 /* Internal functions */
 static void configure_simulator(int argc, char ** argv);
 static void install_volume_input(void);
+/* volatile sig_atomic_t: the only kind of variable a signal handler may safely write. The handler runs asynchronously
+ * (like an interrupt) and the main loop reads the flag, so the compiler must not cache it in a register. */
 static volatile sig_atomic_t g_quit =
     0; /* set by SIGINT/SIGTERM: leave the main loop so the hub says goodbye on mDNS */
 static void on_quit_signal(int)
@@ -183,10 +185,14 @@ static void volume_key_cb(lv_event_t * e)
 
 static void install_volume_input(void)
 {
-    /* A long press on the cover opens the settings: make it deliberate (LVGL's default is 400 ms) */
+    /* Pointer (mouse/touch) input: A long press on the cover opens the settings: make it deliberate (LVGL's default is
+     * 400 ms) */
     for(lv_indev_t * i = lv_indev_get_next(NULL); i; i = lv_indev_get_next(i))
         if(lv_indev_get_type(i) == LV_INDEV_TYPE_POINTER) lv_indev_set_long_press_time(i, 800);
 
+    /* An LVGL group decides which object receives keys and encoder turns. Put every encoder/keypad indev (the mouse
+     * wheel counts as an encoder) into one group, and make the whole screen its only member, so every turn arrives
+     * at volume_key_cb below. */
     lv_group_t * g = lv_group_create();
     lv_group_set_default(g);
     for(lv_indev_t * i = lv_indev_get_next(NULL); i; i = lv_indev_get_next(i)) {
@@ -237,6 +243,9 @@ int main(int argc, char ** argv)
     if(show_demo_screen) {
         show_demo();
     } else {
+        /* Assemble the app. Order: settings -> hub (needs the saved identity and the paired sources) -> listen ->
+         * announce on mDNS (sources need the hub listening before they can connect) -> hand everything to
+         * music_app_start(), which builds the UI and starts the poller. The ESP32 does the same in app_main. */
         MusicAppDeps deps;
         deps.store                = settings_store_create();
         HubBoot boot              = hub_boot_load(*deps.store, "Music Controller (simulator)");
@@ -253,6 +262,9 @@ int main(int argc, char ** argv)
         adv.txt      = {{"proto", "1"}, {"id", saved.hub_device_id}, {"name", saved.hub_device_name}};
         if(!g_mdns->start(adv))
             fprintf(stderr, "mDNS: no usable network interface, the hub is not announced (sources need its address)\n");
+        /* The same HubSource object is used twice: as the MediaSource the poller reads (deps.source, which owns it) and
+         * as a HubSource for the settings UI (deps.hub, a plain pointer for pairing and the source list). Take the
+         * pointer before the move: afterwards `hub` is empty. */
         deps.hub = hub.get();
         if(fake_browse) deps.browse = fake_browse_create();
         deps.settings = saved;
@@ -264,6 +276,8 @@ int main(int argc, char ** argv)
 
     signal(SIGINT, on_quit_signal);
     signal(SIGTERM, on_quit_signal);
+    /* The main thread does nothing but drive LVGL: lv_timer_handler() runs timers, redraws and reads input, and
+     * returns how many ms until it needs to run again. Everything slow lives on other threads. */
     while(!g_quit) {
         uint32_t ms = lv_timer_handler();
         if(ms == LV_NO_TIMER_READY) {

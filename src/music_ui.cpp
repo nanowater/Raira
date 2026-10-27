@@ -975,23 +975,24 @@ void music_ui_create(void)
 
     lv_obj_t * screen = lv_screen_active();
 
-    // 화면 배경
+    // Screen background
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x12151B), 0);
 
-    // 앨범아트 기반 앰비언트 배경 (가장 뒤에 깔림)
+    // Ambient background derived from the album art (the backmost object)
     for(int i = 0; i < 2; i++) {
         bg_img[i] = lv_image_create(screen);
         lv_obj_set_style_opa(bg_img[i], LV_OPA_TRANSP, 0);
         lv_obj_set_clickable(bg_img[i], false);
     }
 
-    // 레이아웃에 따라 위치/크기가 바뀌므로 위젯은 화면에 직접 두고 apply_layout_now()/request_layout()이 배치한다
+    // Position and size change with the layout, so the widgets sit directly on the screen and apply_layout_now() /
+    // request_layout() place them
     title_font[LAYOUT_LYRICS]        = noto_font(28, &lv_font_montserrat_28);
     title_font[LAYOUT_NOW_PLAYING]   = noto_font(36, &lv_font_montserrat_36);
     artists_font[LAYOUT_LYRICS]      = noto_font(20, &lv_font_montserrat_22);
     artists_font[LAYOUT_NOW_PLAYING] = noto_font(26, &lv_font_montserrat_28);
 
-    // 커버 이미지 placeholder
+    // Cover image placeholder
     /* The rounded corners live on a box around the image: clipping an image widget that LVGL scales
      * (400 px art shown at 250 px) loses the corner mask, a parent box clips whatever it contains. */
     cover_box = lv_obj_create(screen);
@@ -1006,7 +1007,7 @@ void music_ui_create(void)
     lv_image_set_inner_align(cover, LV_IMAGE_ALIGN_STRETCH);
     lv_obj_set_clickable(cover, false);
 
-    // 제목 clipping 컨테이너
+    // Title clipping container
     title_box = lv_obj_create(screen);
     lv_obj_set_style_bg_opa(title_box, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(title_box, 0, 0);
@@ -1016,26 +1017,26 @@ void music_ui_create(void)
     lv_obj_set_scrollable(title_box, false);
     lv_obj_set_scrollbar_mode(title_box, LV_SCROLLBAR_MODE_OFF);
 
-    // 곡 제목 (컨테이너 안에서 움직임)
+    // Track title (moves inside the container)
     title = lv_label_create(title_box);
     lv_label_set_text(title, "");
     lv_label_set_long_mode(title, LV_LABEL_LONG_MODE_CLIP);
     lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), LV_STATE_DEFAULT);
 
-    // 가수/그룹 (제목 아래, 조금 작게). 폭에 고정하고 길면 그대로 잘라냄
+    // Artists (below the title, a little smaller). Fixed to the width; long text is simply cut off
     artists = lv_label_create(screen);
     lv_label_set_text(artists, "");
     lv_label_set_long_mode(artists, LV_LABEL_LONG_MODE_CLIP);
     lv_obj_set_style_text_color(artists, lv_color_hex(0xA0A0A0), LV_STATE_DEFAULT);
 
-    // 재생 진행바 패널
+    // Progress bar panel
     progress_panel = lv_obj_create(screen);
     lv_obj_set_style_bg_opa(progress_panel, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(progress_panel, 0, 0);
     lv_obj_set_style_pad_all(progress_panel, 0, 0);
     lv_obj_set_scrollable(progress_panel, false);
 
-    // 재생바: 패널 전체 폭
+    // Progress bar: the full width of the panel
     progress_bar = lv_slider_create(progress_panel);
     lv_obj_set_height(progress_bar, 8);
     lv_obj_align(progress_bar, LV_ALIGN_TOP_MID, 0, 8);
@@ -1056,7 +1057,7 @@ void music_ui_create(void)
     lv_obj_add_event_cb(progress_bar, on_progress_released, LV_EVENT_RELEASED, nullptr);
     lv_slider_set_value(progress_bar, 0, LV_ANIM_OFF);
 
-    // 시간: 바 아래, 고정폭(monospace) 폰트
+    // Times: below the bar, in a fixed-width (monospace) font
     current_time_lbl = lv_label_create(progress_panel);
     lv_label_set_text(current_time_lbl, "00:00");
     lv_obj_set_style_text_font(current_time_lbl, &font_mono_16, LV_STATE_DEFAULT);
@@ -1069,14 +1070,14 @@ void music_ui_create(void)
     lv_obj_set_style_text_color(duration_time_lbl, lv_color_hex(0xFFFFFF), LV_STATE_DEFAULT);
     lv_obj_align(duration_time_lbl, LV_ALIGN_TOP_RIGHT, 0, 22);
 
-    // 음질 (두 시간 사이, 가운데)
+    // Audio quality (between the two times, centered)
     quality_lbl = lv_label_create(progress_panel);
     lv_label_set_text(quality_lbl, "");
     lv_obj_set_style_text_font(quality_lbl, &lv_font_montserrat_14, LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(quality_lbl, lv_color_hex(0xA0A0A0), LV_STATE_DEFAULT);
     lv_obj_align(quality_lbl, LV_ALIGN_TOP_MID, 0, 22);
 
-    // 재생 컨트롤 (재생바 아래, 컬럼 폭에 맞춤)
+    // Transport controls (below the bar, fitted to the column width)
     controls = lv_obj_create(screen);
     lv_obj_set_flex_flow(controls, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(controls, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -1085,7 +1086,7 @@ void music_ui_create(void)
     lv_obj_set_style_pad_all(controls, 0, 0);
     lv_obj_set_scrollable(controls, false);
 
-    // 셔플 / 이전 / 재생 / 다음 / 반복 (한 줄, 크기는 레이아웃마다 다름: 작은 것 / 큰 것)
+    // Shuffle / previous / play / next / repeat (one row; the size depends on the layout: small / large)
     /* create_transport_button() returns the icon label; the button is its parent (see repeat's "1"). */
     shuffle_label       = create_transport_button(controls, LV_SYMBOL_SHUFFLE, 40, &lv_font_montserrat_22, 52,
                                                   &lv_font_montserrat_28, MUSIC_UI_CMD_SHUFFLE);
@@ -1110,7 +1111,7 @@ void music_ui_create(void)
     show_shuffle(false);
     show_repeat(MUSIC_UI_REPEAT_OFF);
 
-    // 가사 영역 (오른쪽)
+    // Lyrics area (right)
     /* Bold; Regular for any missing glyph */
     lyrics_font  = noto_font(LYRICS_FONT_PX, noto_font(LYRICS_FONT_PX, &lv_font_montserrat_28), true);
     lyrics_panel = lv_obj_create(screen);
@@ -1129,7 +1130,7 @@ void music_ui_create(void)
     music_ui_set_lyrics_message("");
     lv_timer_create(lyrics_tick_cb, 100, nullptr);
 
-    // 플레이리스트/큐 패널 (가사 영역 자리에 대신 표시, 오른쪽 아래 버튼이 열고 닫음)
+    // Playlist/queue panel (shown in place of the lyrics area; the button at the bottom right opens and closes it)
     browse_panel = browse_ui_create(screen, 420, 372);
     lv_obj_set_pos(browse_panel, 350, 24);
     apply_layout_now(LAYOUT_LYRICS);
@@ -1138,7 +1139,7 @@ void music_ui_create(void)
     lv_obj_add_event_cb(cover_box, on_cover_clicked, LV_EVENT_SHORT_CLICKED, nullptr);
     lv_obj_add_event_cb(cover_box, [](lv_event_t *) { settings_ui_open_menu(); }, LV_EVENT_LONG_PRESSED, nullptr);
 
-    // 연결 끊김 배너 (끊겼을 때만 표시, 오른쪽 위)
+    // "Connection lost" banner (shown only while disconnected, top right)
     offline_banner = lv_obj_create(screen);
     lv_obj_set_size(offline_banner, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_align(offline_banner, LV_ALIGN_TOP_RIGHT, -30, 11);

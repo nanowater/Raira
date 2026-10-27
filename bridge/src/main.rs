@@ -123,8 +123,7 @@ fn arg(name: &str) -> Option<String> {
         .and_then(|i| args.get(i + 1).cloned())
 }
 
-/// `music-bridge --lyrics-test <title> <artists> <album> <seconds>`: one network lookup, the result as JSON on stdout (to compare
-/// with the device's own implementation, src/lyrics.cpp).
+/// `music-bridge --lyrics-test <title> <artists> <album> <seconds>`: one network lookup, the result as JSON on stdout.
 async fn lyrics_test(a: &[String]) {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
