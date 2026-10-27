@@ -16,3 +16,6 @@ cmake-build-*/
 
 # vendor material (data sheets, demos): not redistributed, keep a local copy here if needed
 docs/JC8048W550/
+
+# personal notes, not published
+docs/ROADMAP.md

@@ -29,7 +29,7 @@ The protocols are described in `docs/HUB_PROTOCOL.md` and `docs/BRIDGE_PROTOCOL.
 | ESP32-S3 firmware (target board: JC8048W550) | builds and links; the platform code (WiFi, NVS settings, mDNS, WebSocket server, fonts, JPEG) is written but has **not run on a chip yet**; display and touch drivers are not written |
 
 Playlist and queue browsing exists in the UI but no real source provides data yet (`lvglsim -F` shows it with sample data).
-`docs/ROADMAP.md` has the current to-do list and `docs/PORTING.md` the ESP32 status, memory budget and a first-boot checklist.
+`docs/PORTING.md` has the ESP32 status, memory budget and a first-boot checklist.
 
 ## Try it on one PC (Linux)
 
