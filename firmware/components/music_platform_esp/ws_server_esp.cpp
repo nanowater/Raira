@@ -11,7 +11,20 @@
 #include <memory>
 #include <mutex>
 
-static const char * TAG = "ws";
+static const char * TAG                 = "ws";
+static thread_local bool in_server_task = false;
+
+struct ServerTaskScope
+{
+    ServerTaskScope()
+    {
+        in_server_task = true;
+    }
+    ~ServerTaskScope()
+    {
+        in_server_task = false;
+    }
+};
 
 namespace {
 // The httpd callbacks (on_handshake, on_request, on_session_close) all run on the server's own task, one at a time.
@@ -116,6 +129,7 @@ class EspWsServer : public WsServer {
     // makes the server close it). Only text and binary frames are passed on.
     static esp_err_t on_request(httpd_req_t * req)
     {
+        ServerTaskScope scope;
         auto * self = static_cast<EspWsServer *>(req->user_ctx);
         WsConnId id = httpd_req_to_sockfd(req);
         httpd_ws_frame_t frame{};
@@ -145,6 +159,7 @@ class EspWsServer : public WsServer {
     // turns a source away (for example a wrong path).
     static esp_err_t on_handshake(httpd_req_t * req)
     {
+        ServerTaskScope scope;
         auto * self      = static_cast<EspWsServer *>(req->user_ctx);
         WsConnId id      = httpd_req_to_sockfd(req);
         std::string path = req->uri;
@@ -163,11 +178,17 @@ class EspWsServer : public WsServer {
         frame.type    = type;
         frame.payload = reinterpret_cast<uint8_t *>(const_cast<char *>(data.data()));
         frame.len     = data.size();
-        return httpd_ws_send_data(server_, static_cast<int>(id), &frame) == ESP_OK;
+        // httpd_ws_send_data() hands the send to the server task and waits for it. Called from the server task itself
+        // (the hub answering a frame inside on_text) it would wait for work that only the waiting task can do, so
+        // there the frame goes straight to the socket.
+        const int fd = static_cast<int>(id);
+        if(in_server_task) return httpd_ws_send_frame_async(server_, fd, &frame) == ESP_OK;
+        return httpd_ws_send_data(server_, fd, &frame) == ESP_OK;
     }
     // Tells the hub the connection is gone, then closes the socket: with a close_fn set, that is our job.
     static void on_session_close(httpd_handle_t hd, int fd)
     {
+        ServerTaskScope scope;
         auto * self = static_cast<EspWsServer *>(httpd_get_global_user_ctx(hd));
         if(self != nullptr && self->handlers_.on_close) self->handlers_.on_close(static_cast<WsConnId>(fd));
         ::close(fd);

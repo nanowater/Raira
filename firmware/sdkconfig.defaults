@@ -33,3 +33,7 @@ CONFIG_LV_USE_LODEPNG=y
 CONFIG_HTTPD_WS_SUPPORT=y
 # esp_http_server (IDF 6) no longer calls the handler for the handshake itself; on_open runs in this callback
 CONFIG_HTTPD_WS_PRE_HANDSHAKE_CB_SUPPORT=y
+# app_main builds the settings store, WiFi and the hub (JSON parsing); the 3.5 KB default overflowed on the first boot
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
+# std::thread uses this stack; the 3 KB default overflowed in the hub start-up thread and corrupted the heap (first-boot test)
+CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=8192
