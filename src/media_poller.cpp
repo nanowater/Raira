@@ -468,6 +468,12 @@ void poll_loop(std::unique_ptr<MediaSource> source)
                         art_cache_key = cover_key;
                         art_cache_img = std::move(img);
                         u->art        = bundle;
+                    } else {
+                        /* Downloaded but not decodable (an unsupported format, or no decoder on this chip): the same
+                         * bytes will not decode a moment later, so do not ask for this artwork again every poll. Show
+                         * no cover. */
+                        cover_for      = cover_key;
+                        u->clear_cover = true;
                     }
                 }
             }
