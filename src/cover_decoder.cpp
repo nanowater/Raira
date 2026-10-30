@@ -110,46 +110,73 @@ bool cover_background(const CoverPixels & cover, uint32_t w, uint32_t h, uint32_
         grid[i * 3 + 2] = std::min(255.f, std::max(0.f, l + (r - l) * sat));
     }
 
-    /* Per output pixel: bilinear lookup in the grid (the four nearest cells), then the blend onto the base color. */
+    /* Per output pixel: bilinear lookup in the grid (the four nearest cells), then the blend onto the base color.
+     * What does not change along a row or a column is worked out once: the horizontal cell and weight and the squared
+     * horizontal distance for the vignette per column, the vertical blend of the grid and the squared vertical distance
+     * per row. (This was ~0.5 s per cover on the ESP32-P4 when everything was recomputed for each of the 384000
+     * pixels.) */
     out.w = w;
     out.h = h;
-    out.data.assign((size_t)w * h * 2, 0);
+    out.data.resize((size_t)w * h * 2);
 
     const float strength = 0.34f; /* how much of the cover color ends up in the background */
     const float base_r = (float)((base_rgb >> 16) & 0xFF), base_g = (float)((base_rgb >> 8) & 0xFF),
                 base_b = (float)(base_rgb & 0xFF);
+    /* RGB565 has only 32/64 levels, which shows as contour bands on a smooth dark gradient:
+     * ordered (Bayer 4x4) dithering turns the banding into fine, invisible noise. */
+    static const float BAYER[16] = {0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5};
+    float dither[16];
+    for(int i = 0; i < 16; i++) dither[i] = (BAYER[i] + 0.5f) / 16.f;
+
+    struct Column
+    {
+        int x0, x1;
+        float fx, nx2;
+    };
+    std::vector<Column> cols(w);
+    for(uint32_t x = 0; x < w; x++) {
+        float gx    = ((float)x / (float)(w - 1)) * (G - 1);
+        int x0      = (int)gx;
+        float nx    = (float)x / (float)w - 0.5f;
+        cols[x].x0  = x0;
+        cols[x].x1  = std::min(x0 + 1, G - 1);
+        cols[x].fx  = gx - x0;
+        cols[x].nx2 = nx * nx;
+    }
+
+    std::vector<float> row_grid((size_t)G * 3);
     for(uint32_t y = 0; y < h; y++) {
         float gy = ((float)y / (float)(h - 1)) * (G - 1);
         int y0 = (int)gy, y1 = std::min(y0 + 1, G - 1);
         float fy = gy - y0;
-        for(uint32_t x = 0; x < w; x++) {
-            float gx = ((float)x / (float)(w - 1)) * (G - 1);
-            int x0 = (int)gx, x1 = std::min(x0 + 1, G - 1);
-            float fx = gx - x0;
-            float col[3];
+        for(int g = 0; g < G; g++)
             for(int c = 0; c < 3; c++)
-                col[c] = grid[((size_t)y0 * G + x0) * 3 + c] * (1 - fx) * (1 - fy) +
-                         grid[((size_t)y0 * G + x1) * 3 + c] * fx * (1 - fy) +
-                         grid[((size_t)y1 * G + x0) * 3 + c] * (1 - fx) * fy +
-                         grid[((size_t)y1 * G + x1) * 3 + c] * fx * fy;
+                row_grid[(size_t)g * 3 + c] =
+                    grid[((size_t)y0 * G + g) * 3 + c] * (1 - fy) + grid[((size_t)y1 * G + g) * 3 + c] * fy;
+        const float ny          = (float)y / (float)h - 0.5f;
+        const float ny2         = ny * ny;
+        const float * bayer_row = &dither[(y & 3) * 4];
+        uint8_t * o             = &out.data[(size_t)y * w * 2];
+        for(uint32_t x = 0; x < w; x++, o += 2) {
+            const Column & k  = cols[x];
+            const float * c0  = &row_grid[(size_t)k.x0 * 3];
+            const float * c1  = &row_grid[(size_t)k.x1 * 3];
+            const float col_b = c0[0] * (1 - k.fx) + c1[0] * k.fx;
+            const float col_g = c0[1] * (1 - k.fx) + c1[1] * k.fx;
+            const float col_r = c0[2] * (1 - k.fx) + c1[2] * k.fx;
             /* gentle vignette so the edges settle back toward the base color */
-            float nx = (float)x / (float)w - 0.5f, ny = (float)y / (float)h - 0.5f;
-            float vig = 1.f - 0.8f * (nx * nx + ny * ny);
-            float a   = strength * std::max(vig, 0.f);
-            float r   = base_r * (1 - a) + col[2] * a;
-            float g   = base_g * (1 - a) + col[1] * a;
-            float b   = base_b * (1 - a) + col[0] * a;
-            /* RGB565 has only 32/64 levels, which shows as contour bands on a smooth dark gradient:
-             * ordered (Bayer 4x4) dithering turns the banding into fine, invisible noise. */
-            static const float BAYER[16] = {0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5};
-            const float t                = (BAYER[(y & 3) * 4 + (x & 3)] + 0.5f) / 16.f;
-            int r5                       = std::min(31, (int)(r * 31.f / 255.f + t));
-            int g6                       = std::min(63, (int)(g * 63.f / 255.f + t));
-            int b5                       = std::min(31, (int)(b * 31.f / 255.f + t));
-            uint16_t px                  = (uint16_t)((r5 << 11) | (g6 << 5) | b5);
-            uint8_t * o                  = &out.data[((size_t)y * w + x) * 2];
-            o[0]                         = (uint8_t)(px & 0xFF);
-            o[1]                         = (uint8_t)(px >> 8);
+            float vig     = 1.f - 0.8f * (k.nx2 + ny2);
+            float a       = strength * std::max(vig, 0.f);
+            float r       = base_r * (1 - a) + col_r * a;
+            float g       = base_g * (1 - a) + col_g * a;
+            float b       = base_b * (1 - a) + col_b * a;
+            const float t = bayer_row[x & 3];
+            int r5        = std::min(31, (int)(r * 31.f / 255.f + t));
+            int g6        = std::min(63, (int)(g * 63.f / 255.f + t));
+            int b5        = std::min(31, (int)(b * 31.f / 255.f + t));
+            uint16_t px   = (uint16_t)((r5 << 11) | (g6 << 5) | b5);
+            o[0]          = (uint8_t)(px & 0xFF);
+            o[1]          = (uint8_t)(px >> 8);
         }
     }
     return true;
