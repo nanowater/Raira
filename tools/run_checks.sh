@@ -32,7 +32,7 @@ else
 fi
 run "lyrics: a lost request is not \"no lyrics\" (lyrics_retry)" "$ROOT/tools/lyrics_retry/run.sh"
 if [ -f "${IDF_PATH:-$HOME/projects/esp-idf}/export.sh" ]; then
-  run "firmware: the core compiles for the ESP32-S3 (firmware_build.sh)" "$ROOT/tools/firmware_build.sh"
+  run "firmware: the core compiles for the ESP32-S3 and the ESP32-P4 (firmware_build.sh)" "$ROOT/tools/firmware_build.sh"
 else
   results+=("skipped firmware build (ESP-IDF not found, see docs/PORTING.md)")
 fi

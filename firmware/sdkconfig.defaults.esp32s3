@@ -1,0 +1,7 @@
+# JC8048W550 (ESP32-S3-WROOM-1)
+# Flash: 16 MB
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# PSRAM: 8 MB (octal on the usual N16R8 module; confirm with the first boot log on the board)
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y

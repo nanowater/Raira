@@ -3,3 +3,6 @@ sdkconfig
 sdkconfig.old
 .cache/
 managed_components/
+build_p4/
+sdkconfig.p4
+sdkconfig.p4.old

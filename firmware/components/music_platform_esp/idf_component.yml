@@ -1,2 +1,11 @@
 dependencies:
   espressif/mdns: "^1.14.1"
+  # The P4 has no radio: WiFi comes from the ESP32-C6 on the board through ESP-Hosted, and esp_wifi_remote makes it look like esp_wifi.
+  espressif/esp_wifi_remote:
+    version: "*"
+    rules:
+      - if: "target == esp32p4"
+  espressif/esp_hosted:
+    version: "2.11.*"
+    rules:
+      - if: "target == esp32p4"

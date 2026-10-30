@@ -1,0 +1,21 @@
+# JC4880P443C_I_W (ESP32-P4 + ESP32-C6, 16 MB flash, 32 MB PSRAM)
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# Chip revision: the board is a v3.2 (read with esptool chip-id), which IDF's default (rev >= 3.0, minimum 3.1) covers. A v1.x chip would
+# need CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y and CONFIG_ESP32P4_REV_MIN_100=y instead; the two ranges exclude each other.
+
+# PSRAM: 32 MB, 200 MHz (the vendor's examples; the boot log must confirm "Found 32MB PSRAM device")
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_SPEED_200M=y
+
+# Performance and display stability, as in the vendor's example (lvgl_sw_rotation):
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+# The L2 cache the vendor uses (256 KB, 128-byte lines)
+CONFIG_CACHE_L2_CACHE_256KB=y
+CONFIG_CACHE_L2_CACHE_LINE_128B=y
+# Code and read-only data run from PSRAM, so writing to the flash (NVS, settings) does not stop the cache and the DSI refresh (DPI
+# underrun, white flashes); the vendor's README names this. Needs the experimental switch.
+CONFIG_IDF_EXPERIMENTAL_FEATURES=y
+CONFIG_SPIRAM_XIP_FROM_PSRAM=y
+# The flash on this board is a Boya chip (the boot log asks for it)
+CONFIG_SPI_FLASH_SUPPORT_BOYA_CHIP=y

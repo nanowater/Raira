@@ -1,9 +1,5 @@
-# Flash: the JC8048W550 has 16 MB
-CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
-
-# PSRAM: 8 MB (octal on the usual N16R8 module; confirm with the first boot log on the board)
-CONFIG_SPIRAM=y
-CONFIG_SPIRAM_MODE_OCT=y
+# Settings both boards share. What is specific to a chip is in sdkconfig.defaults.esp32s3 / sdkconfig.defaults.esp32p4
+# (idf.py reads sdkconfig.defaults, then the file of the target; only when sdkconfig is created).
 
 # C++ exceptions: nlohmann_json can throw
 CONFIG_COMPILER_CXX_EXCEPTIONS=y

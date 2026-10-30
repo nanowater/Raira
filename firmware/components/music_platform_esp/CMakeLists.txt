@@ -2,9 +2,16 @@
 # the firmware has to provide. Each file says which interface it implements.
 set(SRC ${CMAKE_CURRENT_LIST_DIR}/../../../src)
 
+# The JPEG decoder depends on the chip: the S3 has TJpgDec in its ROM, the P4 does not (it has a hardware codec instead).
+if(IDF_TARGET STREQUAL "esp32s3")
+    set(JPEG_SRC jpeg_esp.cpp)
+else()
+    set(JPEG_SRC jpeg_p4.cpp)
+endif()
+
 idf_component_register(
     SRCS
-        jpeg_esp.cpp
+        ${JPEG_SRC}
         ${SRC}/fonts/font_image.cpp
         font_partition.cpp
         settings_nvs.cpp
