@@ -1,0 +1,6 @@
+dependencies:
+  # GT911 touch (stage 2); the vendor's BSP uses the same ^1
+  espressif/esp_lcd_touch_gt911:
+    version: "^1"
+    rules:
+      - if: "target == esp32p4"

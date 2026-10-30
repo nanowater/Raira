@@ -140,3 +140,33 @@ Do these in order; each one needs the one before it. The first three need no dis
 5. **`std::random_device`** (the device id in `hub_boot_load`): two boots with erased NVS must give two different ids. Picolibc is the default C library, so this is not certain.
 6. **Fonts partition** (`tools/make_fonts_image.py`, written to the `fonts` partition): `font_partition` logs success and the UI later shows Noto, not Montserrat.
 7. **Then** display (RGB panel), touch (GT911), the `lv_timer_handler` loop, the encoder; and finally remove the `s_start_app` guard.
+
+## ESP32-P4 + ESP32-C6 (JC4880P443C_I_W), second target (2026-10-29)
+
+The first JC8048W550 had a dead display, so the **ESP32-P4 board JC4880P443C_I_W** (P4 + C6 for WiFi, ST7701 480×800 MIPI-DSI, 32 MB PSRAM,
+16 MB flash, GT911 touch, CSI camera connector, ES8311 codec, TF card, RS485) is tried next; the S3 stays supported (one project, two chips).
+The ordered unit was expected to be a v1.3 (engineering sample, from a review), but `esptool chip-id` reads **ESP32-P4 revision v3.2** (400 MHz, dual core + LP core),
+so the vendor's examples (`docs/JC4880P443C_I_W/1-Demo/idf_examples/`, v3.x only) apply and `sdkconfig.defaults.esp32p4` uses IDF's default revision range. (ESP-IDF builds rev <3.0
+and rev >=3.0 separately, `CONFIG_ESP32P4_SELECTS_REV_LESS_V3`; a v1.x chip would need that option.) The board enumerates as USB-Serial/JTAG (`303a:1001`, `/dev/ttyACM0`);
+the first plug-ins failed with `error -71` (cable/port), a later one worked.
+
+| Part | State |
+|---|---|
+| Build | `tools/firmware_build.sh esp32p4` (build dir `firmware/build_p4`, `sdkconfig.p4`, `dependencies.lock.esp32p4`). **Compiles and links with IDF 6.1, 0 warnings, 1.77 MB**; nothing has run. |
+| Settings | `sdkconfig.defaults` (shared) + `sdkconfig.defaults.esp32s3` / `.esp32p4` (flash, PSRAM, chip revision). |
+| WiFi | the P4 has no radio: `espressif/esp_wifi_remote` + `esp_hosted 2.11.*` (SDIO to the C6) make `esp_wifi` available, so `wifi_esp.cpp`, mDNS and the WebSocket server **compile unchanged**; whether they run over it is untested. The C6 needs a matching ESP-Hosted slave firmware (the vendor ships `JC-C6-slave_v2.3.2.bin` in `8-Burn operation/Burn files/`). |
+| JPEG | the P4 has **no TJpgDec in ROM**: `jpeg_p4.cpp` is a stub (returns false, no cover shown). Planned: the hardware codec (`esp_driver_jpeg`). |
+| Display | not written: MIPI-DSI + ST7701 (vendor config: 2 lanes, 750 Mbit/s, 28 MHz pixel clock, 480×800, porches h 42/12/42, v 8/2/166), shown rotated to 800×480 (software rotation in the vendor's `lvgl_sw_rotation`, or the PPA). |
+| Pins (from the schematic, unchecked on the board) | I2C (touch, codec) SDA 7 / SCL 8; touch INT 21, RST 22 (GT911, 0x5D or 0x14); LCD backlight PWM 23; LCD reset 5; C6 SDIO CLK 18, CMD 19, D0 14 (D1..D3 15..17); SD card 39..44; codec I2S 9..13, 48; BOOT button = GPIO35 (do not use for inputs). Free on the 26-pin header JP1: 28..33, 49..52 (and 34, 32; avoid 34/35, strapping). |
+| Not decided | encoder + one extra button: GPIO 28..31 are the proposal; the camera (OV02C10 on the CSI connector) comes later. |
+
+**P4 board verified with the vendor example (2026-10-30):** the factory demo works (display, touch, WiFi). The vendor's `lvgl_sw_rotation` example
+(LVGL 9.5, `esp_lvgl_port`, DSI panel, GT911, LVGL software rotation 90°) builds unchanged with IDF 6.1 and runs: boot log `chip revision v3.2`, 32 MB PSRAM at 200 MHz, `Display initialized`,
+GT911 id 911; landscape 800×480 correct, touch correct, the LVGL widgets demo shows 60-63 fps when still and ~20 fps while moving. Warnings to act on: the flash is a
+Boya chip (`CONFIG_SPI_FLASH_SUPPORT_BOYA_CHIP`), `ledc: GPIO 23 is not usable` (backlight pin, harmless so far). The vendor BSP passes touch INT/RST as NC (the GT911 answers at its default address).
+Pieces the vendor BSP uses for the panel: DSI PHY power from LDO channel 3 at 2500 mV, `esp_lcd_new_dsi_bus` (2 lanes, 750 Mbit/s), `esp_lcd_new_panel_io_dbi`,
+the vendor's own copy of `esp_lcd_st7701` (it holds the init sequence that makes this panel light up), DPI 28 MHz 480×800, backlight on LEDC (GPIO 23, 5 kHz, 10 bit).
+
+**P4, own firmware, stage 1 (2026-10-30/11-01):** `board_p4.cpp` brings up LDO 3 (2.5 V), the DSI bus (2 lanes, 750 Mbit/s), the DBI command path, the ST7701 panel (vendored driver, default init sequence, reset GPIO 5, DPI 28 MHz 480×800) and the backlight (LEDC, GPIO 23, 5 kHz, 10 bit).
+Verified on the board: `esp_lcd_dpi_panel_set_pattern(MIPI_DSI_PATTERN_BAR_VERTICAL)` shows the rainbow bars, so the panel init, DSI lanes, DPI timing and backlight are right. (`LCD ID: FF FF FF` in the log is harmless: the panel cannot be read back.)
+Build gotchas: ESP-IDF builds with `-Werror=missing-field-initializers`, so designated initializers must name every field (`.flags = {}`, `.phy_clk_src = {}`); a struct with a deprecated field (`ledc_channel_config_t::intr_type`) is zeroed with `= {}` and assigned field by field instead.
