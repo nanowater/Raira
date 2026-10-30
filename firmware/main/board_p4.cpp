@@ -19,6 +19,8 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_dev.h"
 #include "esp_cache.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <cstdint>
 #include "driver/ledc.h"
 #include "driver/i2c_master.h"
@@ -39,6 +41,13 @@ constexpr uint32_t PANEL_H     = 800;
 ppa_client_handle_t s_ppa      = nullptr;
 void * s_fb                    = nullptr; // the DPI frame buffer
 esp_lcd_touch_handle_t s_touch = nullptr;
+
+// PPA finished a strip: LVGL may reuse the buffer (runs in the interrupt: only sets a flag)
+bool ppa_done_cb(ppa_client_handle_t, ppa_event_data_t *, void * user_data)
+{
+    lv_display_flush_ready(static_cast<lv_display_t *>(user_data));
+    return false; // no task switch needed
+}
 
 // LVGL finished a strip (landscape 800x480); rotate it into the portrait frame buffer
 void flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * px_map)
@@ -67,17 +76,22 @@ void flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * px_map)
     srm.rotation_angle = PPA_SRM_ROTATION_ANGLE_90;
     srm.scale_x        = 1.0f;
     srm.scale_y        = 1.0f;
-    srm.mode           = PPA_TRANS_MODE_BLOCKING;
+    srm.mode           = PPA_TRANS_MODE_NON_BLOCKING;
+    srm.user_data      = disp;
 
     if(ppa_do_scale_rotate_mirror(s_ppa, &srm) != ESP_OK) {
         ESP_LOGE(TAG, "PPA rotation failed");
+        lv_display_flush_ready(disp); // nothing will call back: do not leave LVGL waiting
     }
-    lv_display_flush_ready(disp);
 }
 
 // LVGL asks for the finger position (landscape); the chip reports portrait
 void touch_read_cb(lv_indev_t *, lv_indev_data_t * data)
 {
+    if(!s_touch) { // the controller did not answer at start-up: no touch, the screen still works
+        data->state = LV_INDEV_STATE_RELEASED;
+        return;
+    }
     esp_lcd_touch_point_data_t pt[1];
     uint8_t n = 0;
     bool ok =
@@ -195,9 +209,7 @@ bool board_init()
     void * fb = nullptr;
     ESP_ERROR_CHECK(esp_lcd_dpi_panel_get_frame_buffer(panel, 1, &fb));
 
-    auto * px             = static_cast<uint16_t *>(fb);
-    const uint16_t bars[] = {0xF800, 0x07E0, 0x001F, 0xFFFF, 0x0000}; // red, green, blue, white, black (RGB565)
-    s_fb                  = fb;
+    s_fb = fb;
 
     // I2C bus: touch (and later the audio codec) share it
     i2c_master_bus_handle_t i2c_bus      = nullptr;
@@ -221,23 +233,35 @@ bool board_init()
     io_cfg.flags.disable_control_phase   = 1;
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c(i2c_bus, &io_cfg, &touch_io));
 
-    esp_lcd_touch_handle_t touch  = nullptr;
     esp_lcd_touch_config_t tp_cfg = {};
     tp_cfg.x_max                  = 480;
     tp_cfg.y_max                  = 800;
     tp_cfg.rst_gpio_num           = GPIO_NUM_NC;
     tp_cfg.int_gpio_num           = GPIO_NUM_NC;
-    ESP_ERROR_CHECK(esp_lcd_touch_new_i2c_gt911(touch_io, &tp_cfg, &s_touch));
+    // The GT911 may not answer right after a reset of the ESP32 (seen once): try a few times, and go on without touch
+    // if it still does not (the screen is usable, the device must not die for it).
+    for(int attempt = 1; attempt <= 3 && !s_touch; attempt++) {
+        if(esp_lcd_touch_new_i2c_gt911(touch_io, &tp_cfg, &s_touch) != ESP_OK) {
+            s_touch = nullptr;
+            ESP_LOGW(TAG, "GT911 did not answer (attempt %d of 3)", attempt);
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+    }
+    if(!s_touch) ESP_LOGE(TAG, "no touch: the GT911 does not answer");
 
-    ppa_client_config_t ppa_cfg = {};
-    ppa_cfg.oper_type           = PPA_OPERATION_SRM;
+    ppa_client_config_t ppa_cfg   = {};
+    ppa_cfg.oper_type             = PPA_OPERATION_SRM;
+    ppa_cfg.max_pending_trans_num = 2; // the next strip may arrive before the finished one is recycled
     ESP_ERROR_CHECK(ppa_register_client(&ppa_cfg, &s_ppa));
+    ppa_event_callbacks_t ppa_cbs = {};
+    ppa_cbs.on_trans_done         = ppa_done_cb;
+    ESP_ERROR_CHECK(ppa_client_register_event_callbacks(s_ppa, &ppa_cbs));
 
     lv_tick_set_cb([]() -> uint32_t { return static_cast<uint32_t>(esp_timer_get_time() / 1000); });
 
     lv_display_t * disp = lv_display_create(800, 480);
     lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
-    const uint32_t buf_size = 800 * 40 * sizeof(uint16_t);
+    const uint32_t buf_size = 800 * 20 * sizeof(uint16_t); // two strips of 20 lines: 64 KB of the internal RAM
     void * buf1             = heap_caps_aligned_alloc(128, buf_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
     void * buf2             = heap_caps_aligned_alloc(128, buf_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
     lv_display_set_buffers(disp, buf1, buf2, buf_size, LV_DISPLAY_RENDER_MODE_PARTIAL);
