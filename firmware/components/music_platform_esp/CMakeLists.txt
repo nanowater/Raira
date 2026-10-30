@@ -5,8 +5,10 @@ set(SRC ${CMAKE_CURRENT_LIST_DIR}/../../../src)
 # The JPEG decoder depends on the chip: the S3 has TJpgDec in its ROM, the P4 does not (it has a hardware codec instead).
 if(IDF_TARGET STREQUAL "esp32s3")
     set(JPEG_SRC jpeg_esp.cpp)
+    set(JPEG_REQUIRES "")
 else()
     set(JPEG_SRC jpeg_p4.cpp)
+    set(JPEG_REQUIRES esp_driver_jpeg)
 endif()
 
 idf_component_register(
@@ -20,7 +22,7 @@ idf_component_register(
         ws_server_esp.cpp
     INCLUDE_DIRS .
     REQUIRES music_core
-    PRIV_REQUIRES esp_partition esp_rom nvs_flash esp_wifi esp_netif esp_event mdns esp_http_server
+    PRIV_REQUIRES esp_partition esp_rom nvs_flash esp_wifi esp_netif esp_event mdns esp_http_server ${JPEG_REQUIRES}
     # The core only CALLS these functions and this component does not know the core, so the linker may reach the core after it has
     # passed this library and then never takes the functions out of it: link every file of the library.
     WHOLE_ARCHIVE
