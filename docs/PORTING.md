@@ -1,8 +1,8 @@
-# Porting notes: simulator → ESP32-S3 (JC8048W550)
+# Porting notes: simulator → ESP32 (ESP32-P4 on the JC4880P443C_I_W; the ESP32-S3 on the JC8048W550 is the second target)
 
-Status: the app core is separated from the platform layer and builds/runs on the Linux simulator.
-Nothing here has been built or run on ESP-IDF yet (no ESP-IDF toolchain/hardware available when this
-was written); the ESP-IDF column below is the intended mapping, to be verified.
+Status (2026-10-31): the app core is separated from the platform layer and runs on the Linux simulator **and on the ESP32-P4 board** (see "ESP32-P4
+board" at the end for what was verified, the constraints found and what is open). The sections in between were written for the first plan, the
+ESP32-S3: read them as the S3 notes; the memory numbers there are estimates from before anything ran.
 
 ## Layout
 
@@ -141,7 +141,10 @@ Do these in order; each one needs the one before it. The first three need no dis
 6. **Fonts partition** (`tools/make_fonts_image.py`, written to the `fonts` partition): `font_partition` logs success and the UI later shows Noto, not Montserrat.
 7. **Then** display (RGB panel), touch (GT911), the `lv_timer_handler` loop, the encoder; and finally remove the `s_start_app` guard.
 
-## ESP32-P4 + ESP32-C6 (JC4880P443C_I_W), second target (2026-10-29)
+## ESP32-P4 + ESP32-C6 (JC4880P443C_I_W): the plan before the first boot (2026-10-29, history)
+
+_The table below is what was known before the board ran anything: the display, the JPEG decoder and the touch were not written yet. The current
+state is in "ESP32-P4 board: state, constraints, open points" at the end of this file._
 
 The first JC8048W550 had a dead display, so the **ESP32-P4 board JC4880P443C_I_W** (P4 + C6 for WiFi, ST7701 480×800 MIPI-DSI, 32 MB PSRAM,
 16 MB flash, GT911 touch, CSI camera connector, ES8311 codec, TF card, RS485) is tried next; the S3 stays supported (one project, two chips).
@@ -170,3 +173,33 @@ the vendor's own copy of `esp_lcd_st7701` (it holds the init sequence that makes
 **P4, own firmware, stage 1 (2026-10-30/11-01):** `board_p4.cpp` brings up LDO 3 (2.5 V), the DSI bus (2 lanes, 750 Mbit/s), the DBI command path, the ST7701 panel (vendored driver, default init sequence, reset GPIO 5, DPI 28 MHz 480×800) and the backlight (LEDC, GPIO 23, 5 kHz, 10 bit).
 Verified on the board: `esp_lcd_dpi_panel_set_pattern(MIPI_DSI_PATTERN_BAR_VERTICAL)` shows the rainbow bars, so the panel init, DSI lanes, DPI timing and backlight are right. (`LCD ID: FF FF FF` in the log is harmless: the panel cannot be read back.)
 Build gotchas: ESP-IDF builds with `-Werror=missing-field-initializers`, so designated initializers must name every field (`.flags = {}`, `.phy_clk_src = {}`); a struct with a deprecated field (`ledc_channel_config_t::intr_type`) is zeroed with `= {}` and assigned field by field instead.
+
+## ESP32-P4 board: state, constraints, open points (2026-10-31)
+
+**Verified on the board** (chip v3.2, 32 MB PSRAM, 16 MB flash): the display (MIPI-DSI, rotated to landscape by the PPA with a non-blocking transfer), the
+GT911 touch, WiFi through the C6 (ESP-Hosted over SDIO; the log warns `Host [2.11.0] > Co-proc [2.3.0]`: the C6 runs an older ESP-Hosted firmware
+than the host driver, no failure traced to it so far), mDNS + the hub server + pairing with the PC bridge, the fonts partition, covers and
+thumbnails through the hardware JPEG codec (~52 ms), about 60 fps at rest, a 28 min run without a reboot or watchdog.
+
+**What matters (found the hard way):**
+- *The internal RAM is the scarce resource.* ESP-Hosted allocates its receive buffers from `MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA` and asserts
+  (`sdio_push_data_to_queue ... pkt_rxbuff`, a reboot) when that is gone. What keeps it available: LVGL strips of 20 lines (2 × 32 KB, not 2 × 64 KB),
+  `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=64` (almost every malloc goes to the PSRAM), and not re-fetching a cover that cannot be decoded
+  (`media_poller.cpp`: with no decoder the poller used to download the same cover twice a second).
+- `CONFIG_FREERTOS_HZ=1000` (at 100 Hz a 5 ms delay is zero ticks), LVGL refresh period 16 ms (the default 33 ms caps the frame rate at 30), the task
+  watchdog panics instead of only warning (a stuck LVGL loop was seen once, 415 s in, not reproduced), the app's std::threads are pinned to core 1
+  (`esp_pthread`), core 0 keeps the LVGL loop.
+- The vendor's ST7701 driver copy is needed (`components/esp_lcd_st7701`); the vendor's macros are C-only and fail under `-Werror=missing-field-initializers`:
+  fill structs with `= {}` and assign, or name every field.
+- After a crash a soft reset can leave the chip in a state where even the ROM faults (black screen, `Guru Meditation` right after `load:...`): unplug and
+  replug USB. Opening the serial port from a PC tool resets the board (DTR/RTS).
+- The bootloader has to fit in 24 KB (0x2000..0x8000): frame pointers or more logging push it over.
+
+**Track change** (about 1 s of LVGL at up to 93 % of core 0): the new background fades in over the old one as two full-screen images, a full-screen alpha
+blend per frame in software. Not reduced yet; two draw units would probably not help (one big blend per strip). The background computation itself
+(`cover_background`, ~360 ms) runs on core 1 and does not compete with it. The cover and background resolution is not to be lowered.
+
+**Open:** a multi-hour soak (the free internal RAM went 229 KB → 103 KB in 28 min, stepwise with activity, not yet flat), encoder and a button (header JP1:
+GPIO 28..33 / 49..52 are free; 34/35 are strapping pins; check that the header is soldered), brightness / screen-off, the C6 ESP-Hosted firmware version,
+the track-change transition, removing the TEMP(diag) code (heap and CPU logs in `main.cpp`, the `cover:` timing in `media_poller.cpp`, the LVGL
+performance monitor and run-time statistics in `sdkconfig.defaults.esp32p4`), the S3 board (display code, a working unit).
