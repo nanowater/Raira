@@ -454,11 +454,18 @@ void poll_loop(std::unique_ptr<MediaSource> source)
                     /* The source picks where the cover comes from and a size that is enough for the widget. */
                     got = source->get_cover(info, MUSIC_UI_COVER_SIZE, img);
                 }
+                const auto t_got = std::chrono::steady_clock::now(); /* TEMP(diag) */
                 if(got) {
                     auto bundle = std::make_shared<CoverBundle>();
                     /* JPEG is decoded here, off the LVGL thread (LVGL's JPEG decoder only reads files). */
-                    bool ok = cover_decode(img, MUSIC_UI_COVER_SIZE, bundle->cover);
+                    bool ok          = cover_decode(img, MUSIC_UI_COVER_SIZE, bundle->cover);
+                    const auto t_dec = std::chrono::steady_clock::now(); /* TEMP(diag) */
                     if(ok) cover_background(bundle->cover, SCREEN_W, SCREEN_H, MUSIC_UI_BG_BASE_COLOR, bundle->bg);
+                    const auto t_bg = std::chrono::steady_clock::now(); /* TEMP(diag) */
+                    std::fprintf(
+                        stderr, "cover: %zu bytes, decode %lld ms, background %lld ms\n", img.size(),
+                        (long long)std::chrono::duration_cast<std::chrono::milliseconds>(t_dec - t_got).count(),
+                        (long long)std::chrono::duration_cast<std::chrono::milliseconds>(t_bg - t_dec).count());
                     if(!ok && img.size() > 8 && img[0] == 0x89 && img[1] == 'P' && img[2] == 'N' && img[3] == 'G') {
                         bundle->png = img;
                         ok          = true;
