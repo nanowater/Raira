@@ -33,3 +33,7 @@ CONFIG_HTTPD_WS_PRE_HANDSHAKE_CB_SUPPORT=y
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
 # std::thread uses this stack; the 3 KB default overflowed in the hub start-up thread and corrupted the heap (first-boot test)
 CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=8192
+
+# 1 ms scheduler tick: the LVGL loop sleeps for the few milliseconds lv_timer_handler() asks for (at the default 100 Hz a delay under 10 ms
+# is 0 ticks, i.e. no delay at all)
+CONFIG_FREERTOS_HZ=1000

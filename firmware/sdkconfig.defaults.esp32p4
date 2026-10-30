@@ -19,3 +19,8 @@ CONFIG_IDF_EXPERIMENTAL_FEATURES=y
 CONFIG_SPIRAM_XIP_FROM_PSRAM=y
 # The flash on this board is a Boya chip (the boot log asks for it)
 CONFIG_SPI_FLASH_SUPPORT_BOYA_CHIP=y
+
+# Allocations of 4 KB and more go to the PSRAM (the vendor's value; the default 16 KB keeps the internal RAM full of mid-size blocks).
+# The ESP-Hosted receive buffers come from the internal DMA RAM (MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA), and its driver asserts when that
+# is exhausted ("sdio_push_data_to_queue ... pkt_rxbuff": a reboot while many covers were being fetched).
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=4096
