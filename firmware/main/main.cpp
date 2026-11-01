@@ -59,6 +59,23 @@ static void log_cpu(int64_t interval_us)
     }
     prev = std::move(now);
 }
+
+// TEMP(diag): per task the least stack that was ever left (bytes, ESP-IDF counts the high-water mark in bytes). A
+// task whose number stays large can get a smaller stack, or one in PSRAM, which frees internal RAM.
+static void log_stacks()
+{
+    std::vector<TaskStatus_t> now(uxTaskGetNumberOfTasks() + 4);
+    uint32_t total        = 0;
+    const UBaseType_t got = uxTaskGetSystemState(now.data(), now.size(), &total);
+    now.resize(got);
+    std::string line;
+    for(const auto & t : now) {
+        char buf[48];
+        std::snprintf(buf, sizeof buf, "%s=%u ", t.pcTaskName, (unsigned)t.usStackHighWaterMark);
+        line += buf;
+    }
+    ESP_LOGI(TAG, "stack left (min, bytes): %s", line.c_str());
+}
 #endif
 
 // TEMP(diag): the internal RAM left at a point of the start-up (the ESP-Hosted receive buffers need it)
@@ -101,6 +118,7 @@ static void start_app()
     // takes ~0.5 s of CPU per track.)
     esp_pthread_cfg_t pcfg = esp_pthread_get_default_config();
     pcfg.pin_to_core       = 1;
+    pcfg.stack_size        = 6144; // the app threads used ~3 KB of the default 8 KB at most
     ESP_ERROR_CHECK(esp_pthread_set_cfg(&pcfg));
     log_heap("before music_app_start");
     music_app_start(std::move(deps));
@@ -163,6 +181,8 @@ extern "C" void app_main(void)
         const int64_t now_us    = esp_timer_get_time();
         if(now_us - last_cpu >= 1000000) {
             log_cpu(last_cpu ? now_us - last_cpu : 0);
+            static int tick = 0;
+            if(++tick % 10 == 0) log_stacks();
             last_cpu = now_us;
         }
 #endif

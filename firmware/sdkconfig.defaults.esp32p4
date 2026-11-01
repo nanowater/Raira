@@ -42,3 +42,7 @@ CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
 CONFIG_ESP_TASK_WDT_PANIC=y
 # (Frame pointers for a full backtrace would make the bootloader 26 KB: it has to fit in 24 KB. The register dump of the panic has the
 # program counter and the return address, which is enough to find where a task is stuck.)
+
+# The LVGL loop's task (app_main) used at most ~4.5 KB of its stack in a long run: 8 KB leaves headroom and frees
+# 8 KB of internal RAM.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
