@@ -28,15 +28,6 @@ CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=8
 
 # Frame rate. LVGL redraws at most every LV_DEF_REFR_PERIOD ms: the default 33 ms caps it at ~30 fps (the vendor's example uses 15).
 CONFIG_LV_DEF_REFR_PERIOD=16
-# TEMP(measure): FPS and CPU load in a corner of the screen
-CONFIG_LV_USE_SYSMON=y
-CONFIG_LV_USE_PERF_MONITOR=y
-
-# TEMP(measure): per-task CPU use (main.cpp log_cpu)
-CONFIG_FREERTOS_USE_TRACE_FACILITY=y
-CONFIG_FREERTOS_USE_STATS_FORMATTING_FUNCTIONS=y
-CONFIG_FREERTOS_VTASKLIST_INCLUDE_COREID=y
-CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
 
 # A stuck task is better restarted than left frozen: the task watchdog panics (prints a backtrace, then reboots) instead of only warning.
 CONFIG_ESP_TASK_WDT_PANIC=y

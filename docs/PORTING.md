@@ -215,5 +215,4 @@ blend per frame in software. Not reduced yet; two draw units would probably not 
 
 **Open:** encoder and a button (header JP1:
 GPIO 28..33 / 49..52 are free; 34/35 are strapping pins; check that the header is soldered), brightness / screen-off, the C6 ESP-Hosted firmware version,
-the track-change transition, removing the TEMP(diag) code (heap and CPU logs in `main.cpp`, the `cover:` timing in `media_poller.cpp`, the LVGL
-performance monitor and run-time statistics in `sdkconfig.defaults.esp32p4`), the S3 board (display code, a working unit).
+the track-change transition, the S3 board (display code, a working unit).
