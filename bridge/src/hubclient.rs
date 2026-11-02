@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use futures_util::{SinkExt, StreamExt};
 use serde::Serialize;
 use serde_json::{Value, json};
-use tokio::sync::mpsc;
+use tokio::sync::{Notify, mpsc};
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::config::{self, Config, DeviceCfg};
@@ -18,6 +18,11 @@ use crate::hub::{Cmd, Hub};
 const DEFAULT_PORT: u16 = 18322; // the hub (device) port when an address is typed without one
 const TICK: Duration = Duration::from_millis(500);
 const HEARTBEAT: Duration = Duration::from_secs(30);
+/// A WebSocket ping goes out this often, and a device that has said nothing (not even a pong) for DEAD_AFTER is taken for gone:
+/// without it a device that was reset or lost its WiFi is only noticed at the next push, up to HEARTBEAT later, and the
+/// reconnecting starts that much late.
+const PING_EVERY: Duration = Duration::from_secs(3);
+const DEAD_AFTER: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Serialize)]
 pub struct DeviceStatus {
@@ -32,6 +37,8 @@ pub struct DeviceStatus {
 struct Task {
     handle: tokio::task::JoinHandle<()>,
     pair_tx: mpsc::UnboundedSender<String>,
+    /// Ends the wait before the next attempt: the device announced itself again.
+    wake: Arc<Notify>,
 }
 
 pub struct HubClients {
@@ -139,10 +146,19 @@ impl HubClients {
             return;
         }
         let (pair_tx, pair_rx) = mpsc::unbounded_channel();
+        let wake = Arc::new(Notify::new());
         let me = self.clone();
         let a = addr.to_string();
-        let handle = tokio::spawn(async move { run_device(me, a, pair_rx).await });
-        tasks.insert(addr.to_string(), Task { handle, pair_tx });
+        let w = wake.clone();
+        let handle = tokio::spawn(async move { run_device(me, a, pair_rx, w).await });
+        tasks.insert(
+            addr.to_string(),
+            Task {
+                handle,
+                pair_tx,
+                wake,
+            },
+        );
     }
 
     /// Adds a device by address (saved in the config) and connects to it.
@@ -196,6 +212,17 @@ impl HubClients {
                 return;
             };
             if d.addr == addr {
+                drop(c);
+                // Same address: it may have been switched on again. A device that is waiting for its next attempt is tried now.
+                let connected = self
+                    .status
+                    .lock()
+                    .unwrap()
+                    .get(addr)
+                    .is_some_and(|s| s.state == "connected");
+                if !connected && let Some(t) = self.tasks.lock().unwrap().get(addr) {
+                    t.wake.notify_one();
+                }
                 return;
             }
             let old = std::mem::replace(&mut d.addr, addr.to_string());
@@ -260,6 +287,7 @@ async fn run_device(
     me: Arc<HubClients>,
     addr: String,
     mut pair_rx: mpsc::UnboundedReceiver<String>,
+    wake: Arc<Notify>,
 ) {
     let mut backoff = 1u64;
     loop {
@@ -273,8 +301,10 @@ async fn run_device(
         if started.elapsed() > Duration::from_secs(10) {
             backoff = 1; // it was a real connection, not a failed attempt
         }
-        tokio::time::sleep(Duration::from_secs(backoff)).await;
-        backoff = (backoff * 2).min(30);
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(backoff)) => backoff = (backoff * 2).min(30),
+            _ = wake.notified() => backoff = 1,
+        }
     }
 }
 
@@ -323,6 +353,8 @@ async fn session(
     let mut pushed_players = String::new();
     let mut pushed: HashMap<String, Pushed> = HashMap::new();
     let mut ticker = tokio::time::interval(TICK);
+    let mut ping = tokio::time::interval(PING_EVERY);
+    let mut last_rx = Instant::now();
     let mut lyrics_task: Option<tokio::task::JoinHandle<()>> = None; // only the newest lookup matters
 
     loop {
@@ -333,7 +365,14 @@ async fn session(
                     let _ = out_tx.send(text(json!({ "t": "pair", "code": code })));
                 }
             }
+            _ = ping.tick() => {
+                if last_rx.elapsed() > DEAD_AFTER {
+                    return Err("no answer from the device".into());
+                }
+                sink.send(Message::Ping(Vec::new().into())).await.map_err(|e| e.to_string())?;
+            }
             msg = stream.next() => {
+                last_rx = Instant::now();
                 let Some(msg) = msg else { return Err("connection lost".into()) };
                 match msg.map_err(|e| e.to_string())? {
                     Message::Text(t) => {
