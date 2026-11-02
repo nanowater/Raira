@@ -1,8 +1,9 @@
-# Porting notes: simulator → ESP32 (ESP32-P4 on the JC4880P443C_I_W; the ESP32-S3 on the JC8048W550 is the second target)
+# Porting notes: simulator → ESP32 (ESP32-P4 on the JC4880P443C_I_W)
 
 Status (2026-10-31): the app core is separated from the platform layer and runs on the Linux simulator **and on the ESP32-P4 board** (see "ESP32-P4
-board" at the end for what was verified, the constraints found and what is open). The sections in between were written for the first plan, the
-ESP32-S3: read them as the S3 notes; the memory numbers there are estimates from before anything ran.
+board" at the end for what was verified, the constraints found and what is open). The sections in between were written for the first plan, an
+ESP32-S3 board (JC8048W550), which is no longer supported (removed 2026-11-02; it is in the git history): read them as history, the memory
+numbers there are estimates from before anything ran.
 
 ## Layout
 
@@ -19,13 +20,12 @@ Volume input hook: `media_poller_volume_step(int delta)` (call from the encoder 
 
 ## ESP-IDF status (2026-10-23)
 
-ESP-IDF **v6.1** is installed in `~/projects/esp-idf` (clone + `./install.sh esp32s3`; it works with the system's Python 3.14; the cross
-compiler is GCC 15.2). `firmware/` is the ESP-IDF project; **the core compiles and links for the ESP32-S3** (nothing has run: there is no
-board yet).
+ESP-IDF **v6.1** is installed in `~/projects/esp-idf` (clone + `./install.sh esp32p4`; it works with the system's Python 3.14; the cross
+compiler is GCC 15.2). `firmware/` is the ESP-IDF project; the core compiles and links for the ESP32-P4.
 
 | Part | How |
 |---|---|
-| Build | `tools/firmware_build.sh` (or by hand: `. ~/projects/esp-idf/export.sh`, `cd firmware`, `idf.py set-target esp32s3`, `idf.py build`). It is part of `tools/run_checks.sh` when ESP-IDF is found. |
+| Build | `tools/firmware_build.sh` (or by hand: `. ~/projects/esp-idf/export.sh`, `cd firmware`, `idf.py set-target esp32p4`, `idf.py build`). It is part of `tools/run_checks.sh` when ESP-IDF is found. |
 | LVGL | the repository's own `lvgl/` (10.0.0-dev) as a component: `EXTRA_COMPONENT_DIRS` in `firmware/CMakeLists.txt` points at it, nothing is copied. Its Kconfig supplies the LVGL options. |
 | Core | `firmware/components/music_core/` lists the same `src/*.cpp` files the simulator builds (no copies; `platform_sim/`, `main.cpp`, `lib/` are not part of it). |
 | nlohmann_json | `firmware/components/nlohmann_json/`: the 3.12.0 single header (same version as the simulator), MIT. |
@@ -147,7 +147,7 @@ _The table below is what was known before the board ran anything: the display, t
 state is in "ESP32-P4 board: state, constraints, open points" at the end of this file._
 
 The first JC8048W550 had a dead display, so the **ESP32-P4 board JC4880P443C_I_W** (P4 + C6 for WiFi, ST7701 480×800 MIPI-DSI, 32 MB PSRAM,
-16 MB flash, GT911 touch, CSI camera connector, ES8311 codec, TF card, RS485) is tried next; the S3 stays supported (one project, two chips).
+16 MB flash, GT911 touch, CSI camera connector, ES8311 codec, TF card, RS485) is tried next; the S3 support was removed later.
 The ordered unit was expected to be a v1.3 (engineering sample, from a review), but `esptool chip-id` reads **ESP32-P4 revision v3.2** (400 MHz, dual core + LP core),
 so the vendor's examples (`docs/JC4880P443C_I_W/1-Demo/idf_examples/`, v3.x only) apply and `sdkconfig.defaults.esp32p4` uses IDF's default revision range. (ESP-IDF builds rev <3.0
 and rev >=3.0 separately, `CONFIG_ESP32P4_SELECTS_REV_LESS_V3`; a v1.x chip would need that option.) The board enumerates as USB-Serial/JTAG (`303a:1001`, `/dev/ttyACM0`);
@@ -156,7 +156,7 @@ the first plug-ins failed with `error -71` (cable/port), a later one worked.
 | Part | State |
 |---|---|
 | Build | `tools/firmware_build.sh esp32p4` (build dir `firmware/build_p4`, `sdkconfig.p4`, `dependencies.lock.esp32p4`). **Compiles and links with IDF 6.1, 0 warnings, 1.77 MB**; nothing has run. |
-| Settings | `sdkconfig.defaults` (shared) + `sdkconfig.defaults.esp32s3` / `.esp32p4` (flash, PSRAM, chip revision). |
+| Settings | `sdkconfig.defaults` (shared) + `sdkconfig.defaults.esp32p4` (flash, PSRAM, chip revision). |
 | WiFi | the P4 has no radio: `espressif/esp_wifi_remote` + `esp_hosted 2.11.*` (SDIO to the C6) make `esp_wifi` available, so `wifi_esp.cpp`, mDNS and the WebSocket server **compile unchanged**; whether they run over it is untested. The C6 needs a matching ESP-Hosted slave firmware (the vendor ships `JC-C6-slave_v2.3.2.bin` in `8-Burn operation/Burn files/`). |
 | JPEG | the P4 has **no TJpgDec in ROM**: `jpeg_p4.cpp` is a stub (returns false, no cover shown). Planned: the hardware codec (`esp_driver_jpeg`). |
 | Display | not written: MIPI-DSI + ST7701 (vendor config: 2 lanes, 750 Mbit/s, 28 MHz pixel clock, 480×800, porches h 42/12/42, v 8/2/166), shown rotated to 800×480 (software rotation in the vendor's `lvgl_sw_rotation`, or the PPA). |

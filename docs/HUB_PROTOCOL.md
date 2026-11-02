@@ -7,7 +7,7 @@ ESP32 load is an estimate, not a measurement (no hardware yet).
 
 ## Why turn it around
 
-The device (ESP32-S3, or the simulator) is what the user holds; the PCs are interchangeable *sources* of "what is playing".
+The device (ESP32-P4, or the simulator) is what the user holds; the PCs are interchangeable *sources* of "what is playing".
 So the device is the server and the center:
 
 - it **owns the connection point**: sources find it (mDNS) and connect to it, instead of the device being given each PC's
@@ -151,8 +151,7 @@ is valid *when the message arrives*.
 | Lyrics | ≤64 KB text frame, parsed once per track (the JSON array replaces the LRC parser on the device) |
 | TLS | none (it was the heaviest item of the v0 design) |
 
-Not covered by the estimates, to be measured first on hardware: WiFi + RGB panel + PSRAM contention, JPEG decode time on the
-S3 (no hardware decoder), real internal-RAM headroom with the WebSocket server running.
+Not covered by the estimates, to be measured first on hardware: WiFi + RGB panel + PSRAM contention, JPEG decode time, real internal-RAM headroom with the WebSocket server running.
 
 ## Migration and what changes in this repo
 

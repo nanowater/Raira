@@ -27,7 +27,6 @@ The protocols are described in `docs/HUB_PROTOCOL.md` and `docs/BRIDGE_PROTOCOL.
 | Bridge on Linux (MPRIS, tidal-hifi supplement, lyrics, tray, settings page) | works |
 | Bridge on Windows | not started |
 | ESP32-P4 firmware (board: JC4880P443C_I_W, P4 + C6) | **runs on the board**: display (MIPI-DSI, rotated to landscape by the PPA), touch, WiFi over the C6, pairing with the bridge, fonts, hardware JPEG; ~60 fps at rest, 28 min soak without a reboot; encoder/buttons, a multi-hour soak and the cost of the track-change transition are open |
-| ESP32-S3 firmware (board: JC8048W550) | builds; has not run on a screen (the first unit's display was dead); the same project, selected by chip |
 
 Playlist and queue browsing exists in the UI but no real source provides data yet (`lvglsim -F` shows it with sample data).
 `docs/PORTING.md` has the ESP32 status (P4 first), the constraints found on the board, the memory budget and checklists.

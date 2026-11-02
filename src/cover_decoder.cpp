@@ -1,6 +1,6 @@
 /* Cover pixels for the UI: decoding and scaling the cover (cover_decode) and the blurred full-screen background made
  * from it (cover_background). Plain integer/float loops on purpose, no SIMD or platform code, so the same code runs on
- * the PC and on the ESP32-S3. */
+ * the PC and on the ESP32-P4. */
 #include "cover_decoder.h"
 #include <algorithm>
 #include <cmath>

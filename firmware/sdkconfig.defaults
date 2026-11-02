@@ -1,4 +1,4 @@
-# Settings both boards share. What is specific to a chip is in sdkconfig.defaults.esp32s3 / sdkconfig.defaults.esp32p4
+# Shared settings; what is specific to the chip is in sdkconfig.defaults.esp32p4
 # (idf.py reads sdkconfig.defaults, then the file of the target; only when sdkconfig is created).
 
 # C++ exceptions: nlohmann_json can throw
