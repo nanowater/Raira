@@ -68,6 +68,8 @@ std::atomic<bool> g_conn_posted{true};
 
 void post_conn_state(bool connected)
 {
+    static std::atomic<bool> first_ok{false};
+    if(connected && !first_ok.exchange(true)) post_to_ui([] { music_ui_boot_done(); }); /* the start-up screen can go */
     if(g_conn_posted.exchange(connected) == connected) return;
     post_to_ui([connected] {
         music_ui_set_connected(connected);

@@ -17,6 +17,7 @@
 #include "hub_boot.h"
 #include "hub_source.h"
 #include "music_app.h"
+#include "music_ui.h"
 #include "nvs_flash.h"
 #include "platform/mdns.h"
 #include "platform/settings.h"
@@ -160,6 +161,11 @@ extern "C" void app_main(void)
         ESP_LOGE(TAG, "no display, the app is not started");
         return;
     }
+    // The start-up screen first: start_app() takes seconds (the C6 and WiFi come up), and the half-built UI and the
+    // "connection lost" banner must not show meanwhile. One handler call draws the still picture; the dots move
+    // once the loop below runs.
+    music_ui_boot_show();
+    lv_timer_handler();
     start_app();
 
     // This task owns LVGL from here on: lv_timer_handler() runs the timers, redraws and reads the touch, and says how

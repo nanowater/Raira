@@ -539,8 +539,94 @@ static void lyrics_sync_position(const music_ui_state_t * st, bool hold)
     }
 }
 
+/* ---- Start-up screen ---- */
+static lv_obj_t * boot_overlay     = nullptr;
+static lv_timer_t * boot_timer     = nullptr;
+static const uint32_t BOOT_MAX_MS  = 25000; /* no connection by then: show the screen as it is */
+static const uint32_t BOOT_FADE_MS = 500;
+
+static void boot_opa_cb(void * var, int32_t v)
+{
+    lv_obj_set_style_opa(static_cast<lv_obj_t *>(var), (lv_opa_t)v, 0);
+}
+
+static void boot_dot_opa_cb(void * var, int32_t v)
+{
+    lv_obj_set_style_bg_opa(static_cast<lv_obj_t *>(var), (lv_opa_t)v, 0);
+}
+
+void music_ui_boot_show(void)
+{
+    if(boot_overlay) return;
+    boot_overlay = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(boot_overlay);
+    lv_obj_set_size(boot_overlay, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_color(boot_overlay, lv_color_hex(0x12151B), 0);
+    lv_obj_set_style_bg_opa(boot_overlay, LV_OPA_COVER, 0);
+    lv_obj_set_scrollable(boot_overlay, false);
+    lv_obj_set_flex_flow(boot_overlay, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(boot_overlay, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(boot_overlay, 36, 0);
+
+    lv_obj_t * logo = lv_label_create(boot_overlay);
+    lv_label_set_text(logo, "Raira");
+    lv_obj_set_style_text_font(logo, &lv_font_montserrat_48, 0); /* built in: the Noto fonts may not be loaded yet */
+    lv_obj_set_style_text_letter_space(logo, 8, 0);
+    lv_obj_set_style_text_color(logo, lv_color_hex(0xFFFFFF), 0);
+
+    lv_obj_t * row = lv_obj_create(boot_overlay);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_column(row, 14, 0);
+    for(int k = 0; k < 3; k++) {
+        lv_obj_t * dot = lv_obj_create(row);
+        lv_obj_remove_style_all(dot);
+        lv_obj_set_size(dot, 12, 12);
+        lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(dot, lv_color_hex(0x60A5FA), 0);
+        lv_obj_set_style_bg_opa(dot, 50, 0);
+        lv_anim_t a;
+        lv_anim_init(&a);
+        lv_anim_set_var(&a, dot);
+        /* A short flash (0.6 s) in a 1.2 s cycle, each dot a quarter cycle after the last: the light travels left to
+         * right instead of all three breathing together. */
+        lv_anim_set_values(&a, 50, 255);
+        lv_anim_set_duration(&a, 300);
+        lv_anim_set_reverse_duration(&a, 300);
+        lv_anim_set_repeat_delay(&a, 600);
+        lv_anim_set_delay(&a, k * 300);
+        lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
+        lv_anim_set_exec_cb(&a, boot_dot_opa_cb);
+        lv_anim_start(&a);
+    }
+    boot_timer = lv_timer_create([](lv_timer_t *) { music_ui_boot_done(); }, BOOT_MAX_MS, nullptr);
+    lv_timer_set_repeat_count(boot_timer, 1);
+}
+
+void music_ui_boot_done(void)
+{
+    if(boot_timer) {
+        lv_timer_delete(boot_timer);
+        boot_timer = nullptr;
+    }
+    if(!boot_overlay) return;
+    lv_obj_t * o = boot_overlay;
+    boot_overlay = nullptr; /* a second call while it fades does nothing */
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, o);
+    lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_TRANSP);
+    lv_anim_set_duration(&a, BOOT_FADE_MS);
+    lv_anim_set_exec_cb(&a, boot_opa_cb);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
+    lv_anim_set_completed_cb(&a, [](lv_anim_t * an) { lv_obj_delete(static_cast<lv_obj_t *>(an->var)); });
+    lv_anim_start(&a);
+}
+
 void music_ui_set_connected(bool connected)
 {
+    if(connected) music_ui_boot_done();
     if(offline_banner) lv_obj_set_hidden(offline_banner, connected);
     if(!connected && pos_playing) {
         /* Nobody reports the position any more: stop our own clock, or the progress bar and the lyrics keep running

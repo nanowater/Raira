@@ -82,6 +82,13 @@ void music_ui_clear_content(void);
  * LVGL thread only. */
 void music_ui_set_connected(bool connected);
 
+/* The start-up screen (logo and pulsing dots, on the top layer above everything): show it as early as possible, it
+ * hides the half-built UI and the "connection lost" banner while the device starts and connects. music_ui_boot_done()
+ * fades it out (the first successful poll calls it; so does a 25 s timer, after that the banner shows the truth). LVGL
+ * thread only; both may be called more than once. */
+void music_ui_boot_show(void);
+void music_ui_boot_done(void);
+
 typedef struct
 {
     const char * text;
