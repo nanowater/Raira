@@ -26,6 +26,9 @@ constexpr const char * PLAYER_TITLE  = "Player";
 constexpr const char * SOURCES_ROW   = "Sources";
 constexpr const char * SOURCES_TITLE = "Sources";
 constexpr const char * NOT_SET       = "Not set";
+constexpr const char * DISPLAY_ROW   = "Display";
+constexpr const char * DISPLAY_TITLE = "Display";
+constexpr const char * BRIGHTNESS    = "Brightness";
 
 /* settings: player choice */
 constexpr const char * PLAYER_AUTO     = "Automatic";

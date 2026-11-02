@@ -5,6 +5,8 @@
 #include "media_poller.h"
 #include "music_ui.h"
 #include "settings_ui.h"
+#include <algorithm>
+#include <cstdlib>
 #include <nlohmann/json.hpp>
 
 namespace {
@@ -12,6 +14,15 @@ namespace {
 std::unique_ptr<WifiManager> g_wifi;
 std::unique_ptr<SettingsStore> g_store;
 AppSettings g_settings;
+std::function<void(int)> g_apply_brightness;
+
+const int BRIGHTNESS_MIN = 5; /* below this the screen is as good as off and the way back is not to be found */
+
+int saved_brightness()
+{
+    const int v = std::atoi(g_settings.brightness.c_str());
+    return g_settings.brightness.empty() || v <= 0 ? 100 : std::clamp(v, BRIGHTNESS_MIN, 100);
+}
 } // namespace
 
 /* Wires the portable app together; the host program (main() or app_main) calls this once, on the LVGL thread. Order
@@ -23,6 +34,9 @@ void music_app_start(MusicAppDeps deps)
     g_wifi     = std::move(deps.wifi);
     g_store    = std::move(deps.store);
     g_settings = std::move(deps.settings);
+
+    g_apply_brightness = std::move(deps.set_brightness);
+    if(g_apply_brightness) g_apply_brightness(saved_brightness());
 
     const bool picks_player = deps.source->can_select_player();
     HubSource * deps_hub    = deps.hub;
@@ -60,6 +74,16 @@ void music_app_start(MusicAppDeps deps)
             media_poller_set_player(id);
         };
         svc.list_players = [](media_players_cb_t done) { media_poller_list_players(std::move(done)); };
+    }
+    if(g_apply_brightness) {
+        svc.get_brightness = [] { return saved_brightness(); };
+        svc.set_brightness = [](int percent, bool save) {
+            percent = std::clamp(percent, BRIGHTNESS_MIN, 100);
+            g_apply_brightness(percent);
+            if(!save) return;
+            g_settings.brightness = std::to_string(percent);
+            if(g_store) g_store->save(g_settings);
+        };
     }
     settings_ui_init(std::move(svc)); /* after the main UI so the overlay sits on top */
 }

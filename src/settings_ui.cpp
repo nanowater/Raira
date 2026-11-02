@@ -13,15 +13,16 @@ namespace {
 /* The pages and where the back arrow (on_back) leads from each:
  *
  *   MENU     entered by the long press on the cover: tiles Player and Settings. Back closes the overlay.
- *   MAIN     the settings tiles: WiFi, Player, Sources (each only when the platform has it). Opened directly by a tap
+ *   MAIN     the settings tiles: WiFi, Sources, Display (each only when the platform has it). Opened directly by a tap
  * on the "Connection lost" banner (back closes the overlay) or from the menu's Settings tile (back returns to MENU).
  *   WIFI     scan result list; a tap on a network goes to PASSWORD, or connects at once when it is open. Back to MAIN.
  *   PASSWORD keyboard; Connect returns to WIFI, back too.
- *   PLAYER   the choice of the player. Back to MENU or MAIN, whichever it was entered from (player_from_menu).
+ *   PLAYER   the choice of the player; only the menu leads here. Back to MENU.
  *   SOURCES  pairing code and the paired PCs. Back to MAIN.
+ *   DISPLAY  the brightness slider (only when the platform can set it). Back to MAIN.
  *
  * Only one page is visible at a time (show_page). */
-enum Page { PAGE_MAIN, PAGE_WIFI, PAGE_PASSWORD, PAGE_PLAYER, PAGE_SOURCES, PAGE_MENU, PAGE_COUNT };
+enum Page { PAGE_MAIN, PAGE_WIFI, PAGE_PASSWORD, PAGE_PLAYER, PAGE_SOURCES, PAGE_MENU, PAGE_DISPLAY, PAGE_COUNT };
 
 const uint32_t COLOR_BG          = 0x12151B;
 const uint32_t COLOR_ROW         = 0x1F2937;
@@ -41,13 +42,16 @@ lv_timer_t * poll_timer      = nullptr;
 /* main page */
 lv_obj_t * wifi_value = nullptr;
 
+/* display page: the brightness slider and its percent */
+lv_obj_t * display_value  = nullptr; /* the value line of the tile */
+lv_obj_t * brightness_lbl = nullptr;
+lv_obj_t * brightness_sld = nullptr;
+
 /* menu page (long press on the cover): where back goes from the pages it leads to */
 lv_obj_t * menu_player_value = nullptr;
 bool settings_from_menu      = false; /* the settings page was entered from the menu: back returns there */
-bool player_from_menu        = false; /* so was the player page */
 
 /* player page: the players the service reported last, the row for the current choice is highlighted */
-lv_obj_t * player_value  = nullptr;
 lv_obj_t * player_status = nullptr;
 lv_obj_t * player_list   = nullptr;
 std::vector<PlayerInfo> player_infos;
@@ -219,6 +223,7 @@ const char * page_title(int p)
         case PAGE_PLAYER: return str::PLAYER_TITLE;
         case PAGE_SOURCES: return str::SOURCES_TITLE;
         case PAGE_MENU: return str::MENU_TITLE;
+        case PAGE_DISPLAY: return str::DISPLAY_TITLE;
         default: return str::SETTINGS;
     }
 }
@@ -255,7 +260,10 @@ void refresh_main()
             paired == 0 ? str::NOT_SET : std::to_string(connected) + " / " + std::to_string(paired) + " connected";
         lv_label_set_text(sources_value, text.c_str());
     }
-    if(player_value) lv_label_set_text(player_value, player_text().c_str());
+    if(display_value && svc.get_brightness) {
+        const std::string text = std::to_string(svc.get_brightness()) + " %";
+        lv_label_set_text(display_value, text.c_str());
+    }
 }
 
 void show_page(int p)
@@ -345,7 +353,6 @@ void fill_player_list()
 
 void on_open_player(lv_event_t *)
 {
-    player_from_menu = (page_now == PAGE_MENU);
     lv_obj_clean(player_list);
     set_status(player_status, str::PLAYER_LOADING, COLOR_DIM);
     show_page(PAGE_PLAYER);
@@ -503,8 +510,9 @@ void on_back(lv_event_t *)
     switch(page_now) {
         case PAGE_PASSWORD: show_page(PAGE_WIFI); break;
         case PAGE_WIFI:
+        case PAGE_DISPLAY:
         case PAGE_SOURCES: show_page(PAGE_MAIN); break;
-        case PAGE_PLAYER: show_page(player_from_menu ? PAGE_MENU : PAGE_MAIN); break;
+        case PAGE_PLAYER: show_page(PAGE_MENU); break;
         case PAGE_MAIN:
             if(settings_from_menu)
                 show_page(PAGE_MENU);
@@ -519,6 +527,33 @@ void on_open_settings_from_menu(lv_event_t *)
 {
     settings_from_menu = true;
     show_page(PAGE_MAIN);
+}
+
+void show_brightness_value(int percent)
+{
+    const std::string text = std::to_string(percent) + " %";
+    lv_label_set_text(brightness_lbl, text.c_str());
+}
+
+void on_open_display(lv_event_t *)
+{
+    const int v = svc.get_brightness();
+    lv_slider_set_value(brightness_sld, v, LV_ANIM_OFF);
+    show_brightness_value(v);
+    show_page(PAGE_DISPLAY);
+}
+
+/* While the slider moves the screen follows (the value is not saved yet); letting go saves it once. */
+void on_brightness_changed(lv_event_t *)
+{
+    const int v = lv_slider_get_value(brightness_sld);
+    show_brightness_value(v);
+    svc.set_brightness(v, false);
+}
+
+void on_brightness_released(lv_event_t *)
+{
+    svc.set_brightness(lv_slider_get_value(brightness_sld), true);
 }
 
 void on_open_wifi(lv_event_t *)
@@ -631,15 +666,37 @@ void settings_ui_init(SettingsServices services)
     }
 
     /* main page */
-    /* tiles: WiFi (when the platform has it), the player choice, the paired sources */
+    /* tiles: WiFi (when the platform has it), the paired sources, the brightness */
     std::vector<TileSpec> tiles;
     if(svc.wifi)
         tiles.push_back({LV_SYMBOL_WIFI, str::WIFI, &wifi_value, on_open_wifi});
     else
         wifi_value = lv_label_create(pages[PAGE_MAIN]);
-    if(svc.get_player) tiles.push_back({LV_SYMBOL_AUDIO, str::PLAYER_ROW, &player_value, on_open_player});
     if(svc.hub) tiles.push_back({LV_SYMBOL_USB, str::SOURCES_ROW, &sources_value, on_open_sources});
+    if(svc.set_brightness) tiles.push_back({LV_SYMBOL_EYE_OPEN, str::DISPLAY_ROW, &display_value, on_open_display});
     layout_tiles(pages[PAGE_MAIN], tiles);
+
+    /* display page: brightness */
+    if(svc.set_brightness) {
+        lv_obj_t * name = make_label(pages[PAGE_DISPLAY], str::BRIGHTNESS, 26, 0xFFFFFF);
+        lv_obj_set_pos(name, 60, 110);
+        brightness_lbl = make_label(pages[PAGE_DISPLAY], "", 26, COLOR_ACCENT);
+        lv_obj_align(brightness_lbl, LV_ALIGN_TOP_RIGHT, -60, 110);
+        brightness_sld = lv_slider_create(pages[PAGE_DISPLAY]);
+        lv_obj_set_size(brightness_sld, 680, 28);
+        lv_obj_set_pos(brightness_sld, 60, 190);
+        lv_slider_set_range(brightness_sld, 5, 100);
+        lv_obj_set_style_bg_color(brightness_sld, lv_color_hex(COLOR_ROW), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(brightness_sld, lv_color_hex(COLOR_ACCENT), LV_PART_INDICATOR);
+        lv_obj_set_style_bg_color(brightness_sld, lv_color_white(), LV_PART_KNOB);
+        lv_obj_set_style_pad_all(brightness_sld, 10, LV_PART_KNOB); /* a knob big enough for a finger */
+        lv_obj_add_event_cb(brightness_sld, on_brightness_changed, LV_EVENT_VALUE_CHANGED, nullptr);
+        lv_obj_add_event_cb(brightness_sld, on_brightness_released, LV_EVENT_RELEASED, nullptr);
+        lv_obj_t * dim = make_label(pages[PAGE_DISPLAY], LV_SYMBOL_EYE_CLOSE, 26, COLOR_DIM);
+        lv_obj_set_pos(dim, 60, 250);
+        lv_obj_t * bright = make_label(pages[PAGE_DISPLAY], LV_SYMBOL_EYE_OPEN, 26, COLOR_DIM);
+        lv_obj_align(bright, LV_ALIGN_TOP_RIGHT, -60, 250);
+    }
 
     /* wifi page */
     wifi_status = make_label(pages[PAGE_WIFI], "", 22, COLOR_DIM);
@@ -727,7 +784,6 @@ static void show_overlay(int page)
 {
     if(!root) return;
     settings_from_menu = false; /* set again when the settings page is entered from the menu */
-    player_from_menu   = false;
     show_page(page);
     lv_obj_set_hidden(root, false);
     lv_obj_move_foreground(root);

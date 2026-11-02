@@ -19,6 +19,11 @@ struct SettingsServices
     std::function<std::string()> get_player;
     std::function<void(const std::string &)> set_player;  /* apply + persist */
     std::function<void(media_players_cb_t)> list_players; /* ask the service; the answer comes on the LVGL thread */
+    /* Backlight: both unset = the device has no brightness control, the Display row is hidden. The percent is 5..100.
+     * `set_brightness(percent, save)` is called while the slider moves (save = false: only apply) and once when it is
+     * let go (save = true: persist as well). */
+    std::function<int()> get_brightness;
+    std::function<void(int percent, bool save)> set_brightness;
 };
 
 /* Build the (hidden) overlay on the active screen. Call once, after the main UI. LVGL thread only. */

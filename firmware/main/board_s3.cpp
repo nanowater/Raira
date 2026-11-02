@@ -10,3 +10,8 @@ bool board_init()
     ESP_LOGW("board", "JC8048W550: no display code yet");
     return false;
 }
+
+void board_set_backlight(int)
+{
+    // no panel yet
+}

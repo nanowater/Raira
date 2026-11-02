@@ -35,6 +35,7 @@ class NvsStore : public SettingsStore {
         get(h, "hub_sources", out.hub_sources);
         get(h, "wifi_ssid", out.wifi_ssid);
         get(h, "wifi_password", out.wifi_password);
+        get(h, "brightness", out.brightness);
 
         nvs_close(h);
 
@@ -58,6 +59,7 @@ class NvsStore : public SettingsStore {
         if(err == ESP_OK) err = set(h, "hub_sources", settings.hub_sources);
         if(err == ESP_OK) err = set(h, "wifi_ssid", settings.wifi_ssid);
         if(err == ESP_OK) err = set(h, "wifi_password", settings.wifi_password);
+        if(err == ESP_OK) err = set(h, "brightness", settings.brightness);
 
         if(err == ESP_OK) err = nvs_commit(h);
 

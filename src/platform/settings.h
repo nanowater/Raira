@@ -13,6 +13,7 @@ struct AppSettings
     std::string hub_sources;     /* paired sources as JSON [{id,name,secret}] (secrets: keep the file private) */
     std::string wifi_ssid;       /* last network the user connected to */
     std::string wifi_password;
+    std::string brightness; /* backlight in percent (5..100) as text; "" = full brightness */
 };
 
 class SettingsStore {

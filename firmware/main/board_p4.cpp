@@ -106,6 +106,15 @@ void touch_read_cb(lv_indev_t *, lv_indev_data_t * data)
 }
 } // namespace
 
+void board_set_backlight(int percent)
+{
+    if(percent < 5) percent = 5;
+    if(percent > 100) percent = 100;
+    const uint32_t duty = 1023 * percent * percent / 10000; // squared: the eye sees brightness roughly like that
+    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty));
+    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));
+}
+
 bool board_init()
 {
     static esp_ldo_channel_handle_t phy_pwr = nullptr;

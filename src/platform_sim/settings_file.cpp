@@ -32,6 +32,7 @@ class FileStore : public SettingsStore {
         get("hub_sources", out.hub_sources);
         get("wifi_ssid", out.wifi_ssid);
         get("wifi_password", out.wifi_password);
+        get("brightness", out.brightness);
         return true;
     }
 
@@ -42,7 +43,8 @@ class FileStore : public SettingsStore {
         mkdir(dir.c_str(), 0700);
         nlohmann::json j = {
             {"player", s.player},           {"hub_device_id", s.hub_device_id}, {"hub_device_name", s.hub_device_name},
-            {"hub_sources", s.hub_sources}, {"wifi_ssid", s.wifi_ssid},         {"wifi_password", s.wifi_password}};
+            {"hub_sources", s.hub_sources}, {"wifi_ssid", s.wifi_ssid},         {"wifi_password", s.wifi_password},
+            {"brightness", s.brightness}};
         std::string path = dir + "/settings.json";
         std::ofstream f(path);
         if(!f) return false;

@@ -268,8 +268,20 @@ int main(int argc, char ** argv)
         deps.hub = hub.get();
         if(fake_browse) deps.browse = fake_browse_create();
         deps.settings = saved;
-        deps.source   = std::move(hub);
-        deps.wifi     = wifi_manager_create(); /* simulator: fake networks */
+        /* No backlight here: a black veil over everything stands in for it, so the Display page can be tried. */
+        deps.set_brightness = [](int percent) {
+            static lv_obj_t * veil = nullptr;
+            if(!veil) {
+                veil = lv_obj_create(lv_layer_sys());
+                lv_obj_remove_style_all(veil);
+                lv_obj_set_size(veil, LV_PCT(100), LV_PCT(100));
+                lv_obj_set_style_bg_color(veil, lv_color_black(), 0);
+                lv_obj_set_clickable(veil, false);
+            }
+            lv_obj_set_style_bg_opa(veil, (lv_opa_t)((100 - percent) * 255 / 100), 0);
+        };
+        deps.source = std::move(hub);
+        deps.wifi   = wifi_manager_create(); /* simulator: fake networks */
         music_app_start(std::move(deps));
         install_volume_input();
     }

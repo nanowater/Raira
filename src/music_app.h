@@ -18,6 +18,9 @@ struct MusicAppDeps
     std::unique_ptr<WifiManager> wifi;    /* may be null: the settings page hides its WiFi row */
     std::unique_ptr<SettingsStore> store; /* may be null: settings are not persisted */
     AppSettings settings;                 /* current values */
+    /* Sets the backlight in percent (5..100); null = this device cannot, the settings hide the Display row. Called at
+     * once with the saved value, so the platform needs nothing else for it. */
+    std::function<void(int percent)> set_brightness;
 };
 
 /* Portable app entry: builds the UI (incl. the settings page) and starts the background threads. Call

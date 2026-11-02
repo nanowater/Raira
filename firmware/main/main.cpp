@@ -114,6 +114,7 @@ static void start_app()
     deps.wifi           = std::move(wifi);
     deps.source         = std::move(hub);
     deps.settings       = boot.settings;
+    deps.set_brightness = [](int percent) { board_set_backlight(percent); };
     // The background threads of the app (poller, lyrics, browse, the hub start-up) run on core 1; core 0 keeps the LVGL
     // loop. Every std::thread that this task creates from here on takes this configuration. (The cover background alone
     // takes ~0.5 s of CPU per track.)
