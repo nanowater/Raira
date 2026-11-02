@@ -184,8 +184,12 @@ thumbnails through the hardware JPEG codec (~52 ms), about 60 fps at rest, a 28 
 **What matters (found the hard way):**
 - *The internal RAM is the scarce resource.* ESP-Hosted allocates its receive buffers from `MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA` and asserts
   (`sdio_push_data_to_queue ... pkt_rxbuff`, a reboot) when that is gone. What keeps it available: LVGL strips of 20 lines (2 × 32 KB, not 2 × 64 KB),
-  `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=64` (almost every malloc goes to the PSRAM), and not re-fetching a cover that cannot be decoded
+  `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=8` (only blocks under 8 bytes stay internal), smaller task stacks (main 8 KB, app threads 6 KB: measured
+  headroom of 1.7 KB and 3 KB, +22 KB), and not re-fetching a cover that cannot be decoded
   (`media_poller.cpp`: with no decoder the poller used to download the same cover twice a second).
+  Measured (2026-11-02): free internal RAM 258 KB (largest block 216 KB) and flat over a 2 h soak with a playlist changing tracks. With 64 it kept
+  falling (103 → 73 KB in 2.5 h): a heap trace showed the TinyTTF caches (`lv_cache_lru_rb`: glyph info, bitmap and kerning nodes of 12-32 bytes per
+  new character, per font instance) filling the internal RAM.
 - `CONFIG_FREERTOS_HZ=1000` (at 100 Hz a 5 ms delay is zero ticks), LVGL refresh period 16 ms (the default 33 ms caps the frame rate at 30), the task
   watchdog panics instead of only warning (a stuck LVGL loop was seen once, 415 s in, not reproduced), the app's std::threads are pinned to core 1
   (`esp_pthread`), core 0 keeps the LVGL loop.
@@ -195,11 +199,21 @@ thumbnails through the hardware JPEG codec (~52 ms), about 60 fps at rest, a 28 
   replug USB. Opening the serial port from a PC tool resets the board (DTR/RTS).
 - The bootloader has to fit in 24 KB (0x2000..0x8000): frame pointers or more logging push it over.
 
+**Start-up** (measured 2026-11-02, from reset): the C6 answers at ~3 s, WiFi connects at ~7 s, the IP comes at ~8.1 s, the hub listens and announces itself at ~8.6 s. The bridge used to notice that the connection it held was dead only at its next push (up to 30 s), so it was connected at ~16.7 s; with a WebSocket ping every 3 s (dead after 10 s without any frame; the device's httpd answers pings itself) and an immediate retry when the device announces itself over mDNS again, it is connected at ~11.2 s and the first cover shows at ~12.1 s. The start-up screen (logo and dots, `music_ui_boot_show()`) covers that time and ends at the first successful poll.
+
+**Cover quality**: the bridge sends the device a 400 px JPEG (Lanczos3, quality 92); for tidal-hifi from the 640 px picture TIDAL serves (MPRIS's artUrl is a 150 px file). Sizes 24-165 KB; hardware decode 51-63 ms and the background ~270-380 ms are as before.
+
+**CPU while playing** (core 0, LVGL; measured per second): ~9 % at rest, ~4 % idle. The lyrics glide to the next line (450 ms, every few seconds) is
+render-bound at ~30 fps: ~175 Kpx per frame (the lyrics panel, not the screen), ~16 ms per frame, ~500 ms of the second, about a third of it the
+full-screen background image copied from the PSRAM under the panel, the rest the text. Updating the glide every 2nd or 3rd frame changes nothing (it
+is already render-bound); the edge fade of the lyric lines and the colour fade cost nothing measurable; the title scroll ~2 points. Mean `main` while
+lyrics play: ~10 %. Not worth more work unless the background copy gets cheaper.
+
 **Track change** (about 1 s of LVGL at up to 93 % of core 0): the new background fades in over the old one as two full-screen images, a full-screen alpha
 blend per frame in software. Not reduced yet; two draw units would probably not help (one big blend per strip). The background computation itself
 (`cover_background`, ~360 ms) runs on core 1 and does not compete with it. The cover and background resolution is not to be lowered.
 
-**Open:** a multi-hour soak (the free internal RAM went 229 KB → 103 KB in 28 min, stepwise with activity, not yet flat), encoder and a button (header JP1:
+**Open:** encoder and a button (header JP1:
 GPIO 28..33 / 49..52 are free; 34/35 are strapping pins; check that the header is soldered), brightness / screen-off, the C6 ESP-Hosted firmware version,
 the track-change transition, removing the TEMP(diag) code (heap and CPU logs in `main.cpp`, the `cover:` timing in `media_poller.cpp`, the LVGL
 performance monitor and run-time statistics in `sdkconfig.defaults.esp32p4`), the S3 board (display code, a working unit).
