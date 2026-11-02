@@ -23,8 +23,8 @@ CONFIG_SPI_FLASH_SUPPORT_BOYA_CHIP=y
 # Allocations of 4 KB and more go to the PSRAM (the vendor's value; the default 16 KB keeps the internal RAM full of mid-size blocks).
 # The ESP-Hosted receive buffers come from the internal DMA RAM (MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA), and its driver asserts when that
 # is exhausted ("sdio_push_data_to_queue ... pkt_rxbuff": a reboot while many covers were being fetched).
-# TEMP(experiment): 64 instead of the vendor's 4096: nearly every malloc() goes to the PSRAM, the internal RAM is left to what asks for it (DMA, stacks)
-CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=64
+# 8 instead of the vendor's 4096: only tiny blocks stay internal. The LVGL font caches made thousands of 12-32 byte nodes there that kept filling the internal RAM (it fell from 100 to 73 KB in 2.5 h); with 8 it stays flat at ~258 KB (2 h soak).
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=8
 
 # Frame rate. LVGL redraws at most every LV_DEF_REFR_PERIOD ms: the default 33 ms caps it at ~30 fps (the vendor's example uses 15).
 CONFIG_LV_DEF_REFR_PERIOD=16
