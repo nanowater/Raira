@@ -20,6 +20,9 @@ pub struct TidalState {
     pub repeat: Option<&'static str>,
     /// (tier, badge text), e.g. ("HI_RES_LOSSLESS", "24-bit 96.0kHz")
     pub quality: Option<(String, String)>,
+    /// The cover as TIDAL serves it, at 640 px. MPRIS only has a 150 px file of chromium's here, far too small for a cover that
+    /// the device shows at 400 px.
+    pub image: Option<String>,
 }
 
 impl Tidal {
@@ -79,7 +82,13 @@ impl Tidal {
                         .to_string(),
                 )
             });
+        // `image` names the 1280 px file; 640 px is plenty for the device and a quarter of the download
+        let image = v["image"]
+            .as_str()
+            .filter(|u| u.starts_with("http"))
+            .map(|u| u.replace("1280x1280", "640x640"));
         Some(TidalState {
+            image,
             title: v["title"].as_str().unwrap_or("").to_string(),
             shuffle: player["shuffle"].as_bool(),
             repeat: player["repeat"]

@@ -4,6 +4,11 @@
 use std::sync::OnceLock;
 
 use image::codecs::jpeg::JpegEncoder;
+use image::imageops::FilterType;
+
+/// Quality of the JPEG the device gets (it was 85): the device decodes it in hardware, so a bigger file costs the PC and the
+/// link, hardly the device.
+const COVER_JPEG_QUALITY: u8 = 92;
 
 fn client() -> &'static reqwest::Client {
     static C: OnceLock<reqwest::Client> = OnceLock::new();
@@ -60,9 +65,12 @@ pub async fn load(url: &str) -> Result<Vec<u8>, String> {
 pub async fn to_jpeg(bytes: Vec<u8>, px: u32) -> Result<Vec<u8>, String> {
     tokio::task::spawn_blocking(move || {
         let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
-        let rgb = img.thumbnail(px, px).to_rgb8();
+        // Lanczos, not `thumbnail()`: that one is a fast box-like pass that aliases when the size is close to the source's
+        // (a 640 or 1280 px cover shown at 400 px), and the cover is the biggest picture on the screen. The result always
+        // measures `px` on its long side, a small source is scaled up: the device counts on it.
+        let rgb = img.resize(px, px, FilterType::Lanczos3).to_rgb8();
         let mut out = Vec::new();
-        JpegEncoder::new_with_quality(&mut out, 85)
+        JpegEncoder::new_with_quality(&mut out, COVER_JPEG_QUALITY)
             .encode_image(&rgb)
             .map_err(|e| e.to_string())?;
         Ok(out)

@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use axum::Json;
 use axum::http::StatusCode;
@@ -76,7 +76,12 @@ struct Inner {
     cover_urls: HashMap<String, String>,
     /// covers already downloaded and re-encoded, by (key, size)
     cover_cache: HashMap<(String, u32), Arc<Vec<u8>>>,
+    /// per player: the cover key last reported, and since when tidal-hifi has been on another track than MPRIS (see state_of)
+    cover_shown: HashMap<String, (Option<String>, Option<Instant>)>,
 }
+
+/// How long the cover of the last track stays while tidal-hifi still talks about the previous one.
+const COVER_HOLD: Duration = Duration::from_secs(3);
 
 pub struct Hub {
     backend: Backend,
@@ -392,21 +397,48 @@ impl Hub {
     /// was read, so that the receiver can move it forward.
     async fn state_of(&self, id: &str, raw: &Raw) -> State {
         let tid = track_id(raw);
-        let cover = raw.meta.art_url.as_ref().map(|url| {
-            let key = format!("{:016x}", fnv1a(&format!("{url}|{tid}")));
-            self.inner
-                .lock()
-                .unwrap()
-                .cover_urls
-                .insert(key.clone(), url.clone());
-            key
-        });
 
         // Supplement: fills what the MPRIS player lacks. It never overrides MPRIS, and a supplement that does not
         // answer only takes its own capabilities away.
         let sup = match self.tidal_for(raw) {
             Some(t) => t.current().await,
             None => None,
+        };
+        // The cover: MPRIS's art of tidal-hifi is a 150 px file, so for that player the picture TIDAL serves is used, as long
+        // as tidal-hifi is on the same track. It lags behind MPRIS for a moment after a skip: the cover that was shown stays
+        // for COVER_HOLD then (a blurry stand-in followed by the real one made two transitions, each a full-screen fade);
+        // when tidal-hifi does not catch up, or is not there, the MPRIS art is the cover.
+        let lagging = sup
+            .as_ref()
+            .is_some_and(|s| s.title.trim() != raw.meta.title.trim());
+        let art_url = sup
+            .as_ref()
+            .filter(|s| s.title.trim() == raw.meta.title.trim())
+            .and_then(|s| s.image.clone())
+            .or_else(|| raw.meta.art_url.clone());
+        let cover = {
+            let mut inner = self.inner.lock().unwrap();
+            let entry = inner.cover_shown.entry(id.to_string()).or_default();
+            let since = if lagging {
+                *entry.1.get_or_insert_with(Instant::now)
+            } else {
+                entry.1 = None;
+                Instant::now()
+            };
+            let held = if lagging && since.elapsed() < COVER_HOLD {
+                entry.0.clone()
+            } else {
+                None
+            };
+            let key = held.or_else(|| {
+                art_url.as_ref().map(|url| {
+                    let key = format!("{:016x}", fnv1a(&format!("{url}|{tid}")));
+                    inner.cover_urls.insert(key.clone(), url.clone());
+                    key
+                })
+            });
+            inner.cover_shown.entry(id.to_string()).or_default().0 = key.clone();
+            key
         };
         let mut caps = capabilities(raw);
         let mut shuffle = raw.shuffle;
