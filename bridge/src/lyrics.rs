@@ -342,7 +342,8 @@ enum Answer {
     Failed,   // no usable answer (network, 5xx, rate limit that did not clear)
 }
 
-/// LRCLIB answers 429 when requests come in bursts: back off and retry a couple of times.
+/// LRCLIB answers 429 when requests come in bursts and 502/503/504 when it is overloaded (a third of the requests for a while):
+/// both usually pass a moment later, so back off and retry a couple of times.
 async fn get(url: &str) -> Answer {
     for attempt in 0..3u64 {
         match client().get(url).send().await {
@@ -354,24 +355,28 @@ async fn get(url: &str) -> Answer {
                     .unwrap_or(Answer::Failed);
             }
             Ok(resp) if resp.status().as_u16() == 404 => return Answer::NotFound,
-            Ok(resp) if resp.status().as_u16() == 429 => {
+            Ok(resp) if matches!(resp.status().as_u16(), 429 | 502 | 503 | 504) => {
                 tracing::warn!(
-                    "lyrics: LRCLIB answered 429 (attempt {}) for {url}",
+                    "lyrics: LRCLIB answered {} (attempt {}) for {url}",
+                    resp.status(),
                     attempt + 1
                 );
-                tokio::time::sleep(Duration::from_millis(1500 * (attempt + 1))).await
+                tokio::time::sleep(Duration::from_millis(800 * (attempt + 1))).await
             }
             Ok(resp) => {
                 tracing::warn!("lyrics: LRCLIB answered {} for {url}", resp.status());
                 return Answer::Failed;
             }
             Err(e) => {
-                tracing::warn!("lyrics: request failed for {url}: {e}");
-                return Answer::Failed;
+                tracing::warn!(
+                    "lyrics: request failed (attempt {}) for {url}: {e}",
+                    attempt + 1
+                );
+                tokio::time::sleep(Duration::from_millis(800 * (attempt + 1))).await
             }
         }
     }
-    tracing::warn!("lyrics: still 429 after the retries for {url}");
+    tracing::warn!("lyrics: LRCLIB still did not answer after the retries for {url}");
     Answer::Failed
 }
 
@@ -382,6 +387,27 @@ fn esc(s: &str) -> String {
 }
 
 /// The ranking part, separate from the network so it can be tested: the best candidate's lyrics, if any is usable.
+/// True when a kana/Hangul/Han character is in `s`.
+fn has_native_script(s: &str) -> bool {
+    s.chars().any(|c| {
+        let cp = c as u32;
+        (0x3040..=0x30FF).contains(&cp)
+            || (0xAC00..=0xD7A3).contains(&cp)
+            || (0x4E00..=0x9FFF).contains(&cp)
+    })
+}
+
+/// The `/get` result alone settles it: synced lyrics that fit the track, and, for a song whose title or artists are in
+/// kana/Hangul/Han, lyrics that are mostly in that script (LRCLIB also holds romanized versions under the same title, and the
+/// search is how the original is found then).
+fn exact_is_enough(item: &Value, t: &Track) -> bool {
+    if !synced_fits(item, t) || score(item, 0, true, t) < 0 {
+        return false;
+    }
+    let sung_in_native = has_native_script(&t.title) || has_native_script(&t.artists);
+    !sung_in_native || native_script_ratio(&parse_lrc(jstr(item, "syncedLyrics"))) >= 0.5
+}
+
 fn pick(cands: &[(Value, bool)], t: &Track) -> Option<Lyrics> {
     let mut best: Option<(&Value, i64)> = None;
     for (rank, (item, exact)) in cands.iter().enumerate() {
@@ -428,6 +454,17 @@ pub async fn lookup_network(t: &Track) -> Result<Option<Lyrics>, ()> {
         }
         Answer::NotFound => answered = true,
         Answer::Failed => failed = true,
+    }
+
+    // The free-text search only adds something when the exact lookup is not good enough: one request less is one less chance
+    // of an error from LRCLIB. Good enough = synced lyrics of the right length, in the original script when the song has one.
+    if cands
+        .first()
+        .is_some_and(|(item, _)| exact_is_enough(item, t))
+    {
+        let picked = pick(&cands, t);
+        tracing::info!("lyrics: \"{}\" — exact match is enough", t.title);
+        return Ok(picked);
     }
 
     let q = format!("{} {}", strip_suffix(&t.title), first_artist(&t.artists));
@@ -641,6 +678,28 @@ mod tests {
         // too different in length
         let off = serde_json::json!({"trackName":"Bubble","duration":260.0,"plainLyrics":"x"});
         assert!(pick(&[(off, true)], &tr).is_none());
+    }
+
+    #[test]
+    fn the_exact_match_alone_is_enough_only_when_it_is_the_right_one() {
+        // an English song with synced lyrics of the right length: no search needed
+        let en = serde_json::json!({"trackName":"Feel","duration":200.0,"syncedLyrics":"[00:01.00]hello there\n[00:05.00]general kenobi"});
+        assert!(exact_is_enough(&en, &t("Feel", "Someone", "x", 200)));
+        // plain lyrics only, or another edit: the search may find better
+        let plain = serde_json::json!({"trackName":"Feel","duration":200.0,"plainLyrics":"hello"});
+        assert!(!exact_is_enough(&plain, &t("Feel", "Someone", "x", 200)));
+        let long = serde_json::json!({"trackName":"Feel","duration":200.0,"syncedLyrics":"[09:00.00]late"});
+        assert!(!exact_is_enough(&long, &t("Feel", "Someone", "x", 200)));
+        // a Japanese song whose exact entry is the romanized text: the original has to be searched for
+        let romaji = serde_json::json!({"trackName":"Bubble","duration":200.0,"syncedLyrics":"[00:01.00]ima ga subete\n[00:05.00]kimi to boku"});
+        let jp = t("あぶく", "羊文学", "x", 200);
+        assert!(!exact_is_enough(&romaji, &jp));
+        // the same song in the original script is enough
+        let orig = serde_json::json!({"trackName":"あぶく","duration":200.0,"syncedLyrics":"[00:01.00]今がすべて\n[00:05.00]君と僕"});
+        assert!(exact_is_enough(&orig, &jp));
+        // not usable at all (instrumental): never
+        let inst = serde_json::json!({"trackName":"Feel","duration":200.0,"instrumental":true,"syncedLyrics":"[00:01.00]x"});
+        assert!(!exact_is_enough(&inst, &t("Feel", "Someone", "x", 200)));
     }
 
     #[test]

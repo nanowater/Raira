@@ -7,18 +7,23 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 BIN="$ROOT/bridge/target/debug/raira-bridge"
 [ -x "$BIN" ] || { echo "build the bridge first: cd bridge && cargo build"; exit 1; }
 fail=0
-case_() { # label, fake mode, bad calls, expected output, expected cache files
+case_() { # label, fake mode, bad calls, expected output, expected cache files, [expected number of /search requests]
   local W; W=$(mktemp -d)
-  python3 -I "$ROOT/tools/lyrics_retry/fake_lrclib.py" "$2" "$3" 18398 & local P=$!
+  FAKE_LOG=$W/requests python3 -I "$ROOT/tools/lyrics_retry/fake_lrclib.py" "$2" "$3" 18398 & local P=$!
   sleep 0.7
   local out; out=$(RAIRA_LRCLIB=http://127.0.0.1:18398/api/ XDG_CACHE_HOME=$W "$BIN" --lyrics-test-full Song Artist Album 200 2>/dev/null)
   local files; files=$(ls "$W/raira-bridge/lyrics" 2>/dev/null | wc -l)
-  if [ "${out%% *}" = "$4" ] && [ "$files" = "$5" ]; then echo "ok   $1 -> $out, $files cache file(s)"; else echo "FAIL $1 -> '$out', $files cache file(s) (expected $4, $5)"; fail=1; fi
+  local searches; searches=$(grep -c "^/api/search" "$W/requests" 2>/dev/null); searches=${searches:-0}
+  local want_s="${6:-$searches}"
+  if [ "${out%% *}" = "$4" ] && [ "$files" = "$5" ] && [ "$searches" = "$want_s" ]; then echo "ok   $1 -> $out, $files cache file(s), $searches search request(s)"; else echo "FAIL $1 -> '$out', $files cache file(s), $searches search request(s) (expected $4, $5, $want_s)"; fail=1; fi
   kill -9 $P 2>/dev/null; wait $P 2>/dev/null; rm -rf "$W"
 }
 case_ "search fine"                          drop 0  found 1
 case_ "search connection lost once"          drop 1  found 1
 case_ "search answered 500 once"             err  1  found 1
-case_ "search lost twice in a row"           drop 2  error 0
+case_ "search lost twice in a row"           drop 2  found 1
+case_ "search lost 3 times (a whole round)"   drop 3  found 1
 case_ "search broken for good"               drop 99 error 0
+case_ "get answers 503 twice, then fine"      get503 2 found 1 0
+case_ "get answers 503 for good (search 500)" get503 99 error 0
 exit $fail
