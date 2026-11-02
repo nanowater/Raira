@@ -9,6 +9,7 @@ namespace str {
 constexpr const char * CONNECTION_LOST = "Connection lost";
 constexpr const char * LOADING_LYRICS  = "Loading lyrics...";
 constexpr const char * LYRICS_RETRYING = "Retrying lyrics...";
+constexpr const char * NO_LYRICS       = "No lyrics found";
 
 /* playlist / queue browser */
 constexpr const char * BROWSE_QUEUE     = "Queue";

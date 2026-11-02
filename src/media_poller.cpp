@@ -196,7 +196,7 @@ void apply_lyrics(const LyricsResult * r)
             for(const LyricLine & l : r->lyrics.lines) lines.push_back({l.text.c_str(), l.time_ms});
             music_ui_set_lyrics(lines.data(), lines.size(), r->lyrics.synced);
         } else {
-            music_ui_set_no_lyrics(); /* switches to the layout without the lyrics panel */
+            music_ui_set_no_lyrics(); /* the lyrics area says "No lyrics found" */
         }
     }
 }

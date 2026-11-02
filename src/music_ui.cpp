@@ -216,7 +216,6 @@ static lv_obj_t * intro_gap_dots[3] = {nullptr, nullptr, nullptr};
 static bool intro_dots_pulsing      = false; /* the dots currently run their pulse animation */
 static bool lyrics_synced           = false;
 static int lyric_cur                = -1;
-static bool lyrics_available        = false; /* the current track has lyrics to show */
 static bool lyrics_hidden_by_user   = false; /* swiped the lyrics away: keep the lyrics-free layout */
 static bool browse_open             = false; /* the playlist/queue panel replaces the lyrics panel */
 static lv_obj_t * browse_panel      = nullptr;
@@ -448,8 +447,7 @@ static void lyrics_tick_cb(lv_timer_t *)
 void music_ui_set_lyrics_message(const char * msg)
 {
     if(!lyrics_panel) return;
-    lyrics_available = false; /* loading / not found */
-    lyrics_synced    = false;
+    lyrics_synced = false;
     lyrics_clear_labels();
     lv_obj_t * l = lv_label_create(lyrics_panel);
     lv_label_set_text(l, msg ? msg : "");
@@ -516,7 +514,6 @@ void music_ui_set_lyrics(const music_ui_lyric_line_t * lines, size_t count, bool
     lv_obj_update_layout(lyrics_panel);
     lyrics_update_edge_fade();
     if(lyrics_synced) lyrics_tick_cb(nullptr);
-    lyrics_available = true;
     request_layout(lyrics_hidden_by_user && !browse_open ? LAYOUT_NOW_PLAYING : LAYOUT_LYRICS);
 }
 
@@ -1014,8 +1011,10 @@ static void request_layout(int mode)
 
 void music_ui_set_no_lyrics(void)
 {
-    music_ui_set_lyrics_message("");
-    request_layout(browse_open ? LAYOUT_LYRICS : LAYOUT_NOW_PLAYING); /* the browse panel needs the narrow cover */
+    /* The lyrics area says so and the layout stays; only a cover the user tapped away (lyrics_hidden_by_user) keeps the
+     * big cover. The browse panel needs the narrow cover anyway. */
+    music_ui_set_lyrics_message(str::NO_LYRICS);
+    request_layout(browse_open || !lyrics_hidden_by_user ? LAYOUT_LYRICS : LAYOUT_NOW_PLAYING);
 }
 
 /* Open/close the playlist/queue panel in place of the lyrics. Opening forces the LYRICS layout (small
@@ -1026,8 +1025,7 @@ static void set_browse_open(bool open)
     browse_open = open;
     if(browse_btn_label) lv_label_set_text(browse_btn_label, open ? LV_SYMBOL_CLOSE : LV_SYMBOL_LIST);
 
-    const int target =
-        open ? LAYOUT_LYRICS : (lyrics_available && !lyrics_hidden_by_user ? LAYOUT_LYRICS : LAYOUT_NOW_PLAYING);
+    const int target  = open ? LAYOUT_LYRICS : (!lyrics_hidden_by_user ? LAYOUT_LYRICS : LAYOUT_NOW_PLAYING);
     const int current = layout_animating ? layout_to : layout_mode;
     if(target == current)
         update_right_panels(current); /* no layout change: swap the panels directly */
@@ -1036,8 +1034,8 @@ static void set_browse_open(bool open)
     if(open) browse_ui_opened();
 }
 
-/* Tapping the cover shows or hides the lyrics. The choice sticks across tracks; tracks without
- * lyrics always use the lyrics-free layout. With the browse panel open it just closes the panel. */
+/* Tapping the cover shows or hides the lyrics area (for a track without lyrics it says "No lyrics found"). The choice
+ * sticks across tracks. With the browse panel open it just closes the panel. */
 static void on_cover_clicked(lv_event_t *)
 {
     if(browse_open) {
@@ -1048,7 +1046,7 @@ static void on_cover_clicked(lv_event_t *)
     if(current == LAYOUT_LYRICS) {
         lyrics_hidden_by_user = true;
         request_layout(LAYOUT_NOW_PLAYING);
-    } else if(lyrics_available) {
+    } else {
         lyrics_hidden_by_user = false;
         request_layout(LAYOUT_LYRICS);
     }
