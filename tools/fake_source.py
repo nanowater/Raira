@@ -130,6 +130,10 @@ FEEL = dict(artists=("Hitsujibungaku",), album="Feel")  # a track LRCLIB has syn
 SCENARIOS = {
     "playing": [{"send": [players("p", ("p", "Fake player", "other", "playing")), state("p", "Feel", "playing", 30000, **FEEL)], "wait": 30,
                  "expect_focus": "p"}],
+    # every control the device can show (shuffle, repeat, volume): for looking at the control row
+    "controls": [{"send": [players("p", ("p", "Fake player", "other", "playing")),
+                           state("p", "Feel", "playing", 30000, caps=("seek", "volume", "shuffle", "repeat", "prev_next"), **FEEL)],
+                  "wait": 30, "expect_focus": "p"}],
     "idle": [{"send": [players(None)], "wait": 8}],
     # paused 150 ms either side of a lyric line boundary: the highlight must flip between the two (needs network for lyrics)
     "boundary": [{"send": [players("p", ("p", "Fake player", "other", "paused")), state("p", "Feel", "paused", pos, **FEEL)], "wait": w}

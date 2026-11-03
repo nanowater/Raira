@@ -26,6 +26,9 @@ void media_post_to_ui(std::function<void()> fn);
  * This is the hook for the rotary encoder. */
 void media_poller_volume_step(int delta);
 
+/* Set the volume to `level` (0.0..1.0), e.g. from the on-screen slider; same coalescing as the steps. */
+void media_poller_volume_set(double level);
+
 /* Which player of the service to show and control ("" = automatic). Thread-safe, applied on the poller thread;
  * the next poll uses it. Only meaningful for services that can_select_player(). */
 void media_poller_set_player(const std::string & id);

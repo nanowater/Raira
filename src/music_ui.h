@@ -54,10 +54,22 @@ void music_ui_set_transport_cb(music_ui_transport_cb_t cb);
 typedef void (*music_ui_seek_cb_t)(int seconds);
 void music_ui_set_seek_cb(music_ui_seek_cb_t cb);
 
+/* The volume slider (a speaker button next to the transport controls opens a popup that closes itself after a few
+ * seconds): `percent` 0..100 while the slider moves. Not called for changes from outside. */
+typedef void (*music_ui_volume_cb_t)(int percent);
+void music_ui_set_volume_cb(music_ui_volume_cb_t cb);
+
+/* The volume the service reports (0.0..1.0); ignored while the user is on the slider or just let go. LVGL thread. */
+void music_ui_set_volume(double level);
+
+/* Whether the speaker button may show: 0 = automatic (hidden once a rotary encoder is in use), 1 = always, 2 = never.
+ * `encoder_present`: the encoder driver saw input. The button also needs MUSIC_UI_CAP_VOLUME. */
+void music_ui_set_volume_button(int mode, bool encoder_present);
+
 /* Which transport controls to show: services that cannot drive them are reflected here (unsupported
- * ones are hidden). Bit values mirror MediaCapability in media_source.h (asserted in media_poller.cpp);
- * MEDIA_CAP_VOLUME has no control in this UI, so it has no mirror here. */
+ * ones are hidden). Bit values mirror MediaCapability in media_source.h (asserted in media_poller.cpp). */
 #define MUSIC_UI_CAP_SEEK (1u << 0)
+#define MUSIC_UI_CAP_VOLUME (1u << 1)
 #define MUSIC_UI_CAP_SHUFFLE (1u << 2)
 #define MUSIC_UI_CAP_REPEAT (1u << 3)
 #define MUSIC_UI_CAP_PREV_NEXT (1u << 4)

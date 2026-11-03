@@ -75,7 +75,22 @@ static lv_obj_t * btn_prev         = nullptr;
 static lv_obj_t * btn_next         = nullptr;
 static lv_obj_t * btn_repeat       = nullptr;
 /* Which controls the service can drive; absent ones are hidden (bitmask in music_ui.h). */
-static unsigned supported_caps = ~0u; /* everything shown until music_ui_set_capabilities() */
+/* Volume popup: opened by the speaker button in the controls row, closes itself after VOLUME_POPUP_MS without a touch.
+ */
+static const uint32_t VOLUME_POPUP_MS = 2500;
+static const int VOLUME_BTN_CMD       = 100; /* not a music_ui_cmd_t: handled in on_transport_clicked */
+static lv_obj_t * btn_volume          = nullptr;
+static lv_obj_t * volume_popup        = nullptr;
+static lv_obj_t * volume_slider       = nullptr;
+static lv_obj_t * volume_value_lbl    = nullptr;
+static lv_timer_t * volume_timer      = nullptr;
+static music_ui_volume_cb_t volume_cb = nullptr;
+static uint32_t volume_touched_at     = 0; /* last time the user used the slider (tick) */
+static bool volume_touched            = false;
+static int volume_percent             = 50; /* last known volume */
+static int volume_mode                = 0;
+static bool volume_encoder            = false;
+static unsigned supported_caps        = ~0u; /* everything shown until music_ui_set_capabilities() */
 
 static void show_playing(bool playing)
 {
@@ -659,6 +674,129 @@ void music_ui_clear_content(void)
     music_ui_set_lyrics_message(""); /* the layout stays as it is: it animates when the lyrics come back */
 }
 
+/* ---- volume popup ---- */
+
+static void update_volume_button()
+{
+    if(!btn_volume) return;
+    const bool shown =
+        (supported_caps & MUSIC_UI_CAP_VOLUME) && volume_mode != 2 && !(volume_mode == 0 && volume_encoder);
+    lv_obj_set_hidden(btn_volume, !shown);
+    if(!shown && volume_popup) lv_obj_set_hidden(volume_popup, true);
+    if(controls) {
+        int visible = 1; /* play/pause is always shown */
+        for(lv_obj_t * b : {btn_shuffle, btn_prev, btn_next, btn_repeat, btn_volume})
+            if(b && !lv_obj_is_hidden(b)) visible++;
+        lv_obj_set_flex_align(controls, visible <= 1 ? LV_FLEX_ALIGN_CENTER : LV_FLEX_ALIGN_SPACE_BETWEEN,
+                              LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    }
+}
+
+static void volume_show_value(int percent)
+{
+    if(volume_slider) lv_slider_set_value(volume_slider, percent, LV_ANIM_OFF);
+    if(volume_value_lbl) lv_label_set_text_fmt(volume_value_lbl, "%d", percent);
+}
+
+static void volume_popup_close()
+{
+    if(volume_popup) lv_obj_set_hidden(volume_popup, true);
+    if(volume_timer) {
+        lv_timer_delete(volume_timer);
+        volume_timer = nullptr;
+    }
+}
+
+static void volume_touch()
+{
+    volume_touched    = true;
+    volume_touched_at = lv_tick_get();
+}
+
+static void volume_timer_cb(lv_timer_t *)
+{
+    if(!volume_slider || lv_slider_is_dragged(volume_slider)) return;
+    if(lv_tick_elaps(volume_touched_at) > VOLUME_POPUP_MS) volume_popup_close();
+}
+
+static void on_volume_changed(lv_event_t *)
+{
+    volume_percent = (int)lv_slider_get_value(volume_slider);
+    volume_touch();
+    lv_label_set_text_fmt(volume_value_lbl, "%d", volume_percent);
+    if(volume_cb) volume_cb(volume_percent);
+}
+
+static void volume_popup_toggle()
+{
+    if(!volume_popup) {
+        volume_popup = lv_obj_create(lv_screen_active());
+        lv_obj_set_size(volume_popup, 420, 76);
+        lv_obj_align(volume_popup, LV_ALIGN_BOTTOM_MID, 0, -20);
+        lv_obj_set_style_radius(volume_popup, 38, 0);
+        lv_obj_set_style_bg_color(volume_popup, lv_color_hex(0x1F2937), 0);
+        lv_obj_set_style_bg_opa(volume_popup, LV_OPA_90, 0);
+        lv_obj_set_style_border_width(volume_popup, 0, 0);
+        lv_obj_set_style_pad_all(volume_popup, 0, 0);
+        lv_obj_set_scrollable(volume_popup, false);
+        lv_obj_set_hidden(volume_popup, true); /* shown below */
+
+        lv_obj_t * icon = lv_label_create(volume_popup);
+        lv_label_set_text(icon, LV_SYMBOL_VOLUME_MID);
+        lv_obj_set_style_text_font(icon, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_color(icon, lv_color_white(), 0);
+        lv_obj_align(icon, LV_ALIGN_LEFT_MID, 26, 0);
+
+        volume_slider = lv_slider_create(volume_popup);
+        lv_obj_set_size(volume_slider, 230, 14);
+        lv_obj_align(volume_slider, LV_ALIGN_LEFT_MID, 74, 0);
+        lv_slider_set_range(volume_slider, 0, 100);
+        lv_obj_set_style_bg_color(volume_slider, lv_color_hex(0x6B7280), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(volume_slider, lv_color_white(), LV_PART_INDICATOR);
+        lv_obj_set_style_bg_color(volume_slider, lv_color_white(), LV_PART_KNOB);
+        lv_obj_set_style_pad_all(volume_slider, 8, LV_PART_KNOB);
+        lv_obj_set_ext_click_area(volume_slider, 20);
+        lv_obj_add_event_cb(volume_slider, on_volume_changed, LV_EVENT_VALUE_CHANGED, nullptr);
+        lv_obj_add_event_cb(volume_slider, [](lv_event_t *) { volume_touch(); }, LV_EVENT_RELEASED, nullptr);
+
+        volume_value_lbl = lv_label_create(volume_popup);
+        lv_obj_set_style_text_font(volume_value_lbl, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_color(volume_value_lbl, lv_color_white(), 0);
+        lv_obj_align(volume_value_lbl, LV_ALIGN_RIGHT_MID, -26, 0);
+    }
+    if(!lv_obj_is_hidden(volume_popup)) {
+        volume_popup_close();
+        return;
+    }
+    volume_show_value(volume_percent);
+    lv_obj_set_hidden(volume_popup, false);
+    lv_obj_move_foreground(volume_popup);
+    volume_touched_at = lv_tick_get();
+    if(!volume_timer) volume_timer = lv_timer_create(volume_timer_cb, 200, nullptr);
+}
+
+void music_ui_set_volume_cb(music_ui_volume_cb_t cb)
+{
+    volume_cb = cb;
+}
+
+void music_ui_set_volume(double level)
+{
+    if(level < 0) return;
+    /* own input wins for a moment: the service reports the new value a little late */
+    if(volume_touched && lv_tick_elaps(volume_touched_at) < 2000) return;
+    if(volume_slider && lv_slider_is_dragged(volume_slider)) return;
+    volume_percent = (int)(level * 100.0 + 0.5);
+    if(volume_popup && !lv_obj_is_hidden(volume_popup)) volume_show_value(volume_percent);
+}
+
+void music_ui_set_volume_button(int mode, bool encoder_present)
+{
+    volume_mode    = mode;
+    volume_encoder = encoder_present;
+    update_volume_button();
+}
+
 void music_ui_set_capabilities(unsigned caps)
 {
     supported_caps = caps;
@@ -669,15 +807,7 @@ void music_ui_set_capabilities(unsigned caps)
     if(btn_next) lv_obj_set_hidden(btn_next, !(supported_caps & MUSIC_UI_CAP_PREV_NEXT));
     if(browse_btn) lv_obj_set_hidden(browse_btn, !(supported_caps & MUSIC_UI_CAP_BROWSE));
     if(!(supported_caps & MUSIC_UI_CAP_BROWSE)) set_browse_open(false); /* the player changed: no list to show */
-
-    /* SPACE_BETWEEN pushes a lone button to the left edge: with only play/pause left, center it */
-    if(controls) {
-        int visible = 1; /* play/pause is always shown */
-        for(lv_obj_t * b : {btn_shuffle, btn_prev, btn_next, btn_repeat})
-            if(b && !lv_obj_is_hidden(b)) visible++;
-        lv_obj_set_flex_align(controls, visible <= 1 ? LV_FLEX_ALIGN_CENTER : LV_FLEX_ALIGN_SPACE_BETWEEN,
-                              LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    }
+    update_volume_button();
 }
 
 void music_ui_set_seek_cb(music_ui_seek_cb_t cb)
@@ -718,9 +848,16 @@ void music_ui_set_transport_cb(music_ui_transport_cb_t cb)
     transport_cb = cb;
 }
 
+static void volume_popup_toggle();
+
 static void on_transport_clicked(lv_event_t * e)
 {
-    music_ui_cmd_t cmd = (music_ui_cmd_t)(intptr_t)lv_event_get_user_data(e);
+    const int raw = (int)(intptr_t)lv_event_get_user_data(e);
+    if(raw == VOLUME_BTN_CMD) {
+        volume_popup_toggle();
+        return;
+    }
+    music_ui_cmd_t cmd = (music_ui_cmd_t)raw;
     if(cmd == MUSIC_UI_CMD_PLAY_PAUSE) {
         show_playing(!shown_playing);
         opt_play.start();
@@ -747,7 +884,7 @@ static std::vector<TransportBtn> transport_btns;
 
 /* Round icon button using a built-in LVGL symbol. Returns the label (for icon swaps). */
 static lv_obj_t * create_transport_button(lv_obj_t * parent, const char * symbol, int32_t size, const lv_font_t * font,
-                                          int32_t big_size, const lv_font_t * big_font, music_ui_cmd_t cmd)
+                                          int32_t big_size, const lv_font_t * big_font, int cmd)
 {
     lv_obj_t * btn = lv_button_create(parent);
     lv_obj_set_size(btn, size, size);
@@ -1197,6 +1334,11 @@ void music_ui_create(void)
     lv_obj_center(repeat_one_label);
     show_shuffle(false);
     show_repeat(MUSIC_UI_REPEAT_OFF);
+
+    lv_obj_t * volume_lbl = create_transport_button(controls, LV_SYMBOL_VOLUME_MID, 40, &lv_font_montserrat_22, 52,
+                                                    &lv_font_montserrat_28, VOLUME_BTN_CMD);
+    btn_volume            = lv_obj_get_parent(volume_lbl);
+    update_volume_button();
 
     // Lyrics area (right)
     /* Bold; Regular for any missing glyph */

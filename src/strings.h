@@ -29,6 +29,10 @@ constexpr const char * NOT_SET       = "Not set";
 constexpr const char * DISPLAY_ROW   = "Display";
 constexpr const char * DISPLAY_TITLE = "Display";
 constexpr const char * BRIGHTNESS    = "Brightness";
+constexpr const char * VOLUME_BUTTON = "Volume button";
+constexpr const char * VOL_AUTO      = "Auto";
+constexpr const char * VOL_SHOW      = "Show";
+constexpr const char * VOL_HIDE      = "Hide";
 
 /* settings: player choice */
 constexpr const char * PLAYER_AUTO     = "Automatic";

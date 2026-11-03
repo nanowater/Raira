@@ -27,3 +27,7 @@ struct MusicAppDeps
  * once, on the LVGL thread, after LVGL and the display/input drivers are initialised. Used by the
  * simulator's main() and by the ESP32 app_main alike. */
 void music_app_start(MusicAppDeps deps);
+
+/* The rotary encoder driver calls this on its first input (LVGL thread; later calls cost nothing): the on-screen
+ * volume button then hides in the "Auto" mode (Settings > Display > Volume button) and the fact is saved. */
+void music_app_encoder_seen();

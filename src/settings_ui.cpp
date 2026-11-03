@@ -43,9 +43,10 @@ lv_timer_t * poll_timer      = nullptr;
 lv_obj_t * wifi_value = nullptr;
 
 /* display page: the brightness slider and its percent */
-lv_obj_t * display_value  = nullptr; /* the value line of the tile */
-lv_obj_t * brightness_lbl = nullptr;
-lv_obj_t * brightness_sld = nullptr;
+lv_obj_t * display_value      = nullptr; /* the value line of the tile */
+lv_obj_t * brightness_lbl     = nullptr;
+lv_obj_t * brightness_sld     = nullptr;
+lv_obj_t * volume_mode_btn[3] = {nullptr, nullptr, nullptr};
 
 /* menu page (long press on the cover): where back goes from the pages it leads to */
 lv_obj_t * menu_player_value = nullptr;
@@ -535,11 +536,28 @@ void show_brightness_value(int percent)
     lv_label_set_text(brightness_lbl, text.c_str());
 }
 
+void show_volume_mode(int mode)
+{
+    for(int i = 0; i < 3; i++)
+        if(volume_mode_btn[i])
+            lv_obj_set_style_bg_color(volume_mode_btn[i], lv_color_hex(i == mode ? COLOR_ACCENT : COLOR_ROW), 0);
+}
+
+void on_volume_mode(lv_event_t * e)
+{
+    const int mode = (int)(intptr_t)lv_event_get_user_data(e);
+    show_volume_mode(mode);
+    if(svc.set_volume_mode) svc.set_volume_mode(mode);
+}
+
 void on_open_display(lv_event_t *)
 {
-    const int v = svc.get_brightness();
-    lv_slider_set_value(brightness_sld, v, LV_ANIM_OFF);
-    show_brightness_value(v);
+    if(svc.get_volume_mode) show_volume_mode(svc.get_volume_mode());
+    if(svc.get_brightness && brightness_sld) {
+        const int v = svc.get_brightness();
+        lv_slider_set_value(brightness_sld, v, LV_ANIM_OFF);
+        show_brightness_value(v);
+    }
     show_page(PAGE_DISPLAY);
 }
 
@@ -673,10 +691,11 @@ void settings_ui_init(SettingsServices services)
     else
         wifi_value = lv_label_create(pages[PAGE_MAIN]);
     if(svc.hub) tiles.push_back({LV_SYMBOL_USB, str::SOURCES_ROW, &sources_value, on_open_sources});
-    if(svc.set_brightness) tiles.push_back({LV_SYMBOL_EYE_OPEN, str::DISPLAY_ROW, &display_value, on_open_display});
+    if(svc.set_brightness || svc.set_volume_mode)
+        tiles.push_back({LV_SYMBOL_EYE_OPEN, str::DISPLAY_ROW, &display_value, on_open_display});
     layout_tiles(pages[PAGE_MAIN], tiles);
 
-    /* display page: brightness */
+    /* display page: brightness, volume button */
     if(svc.set_brightness) {
         lv_obj_t * name = make_label(pages[PAGE_DISPLAY], str::BRIGHTNESS, 26, 0xFFFFFF);
         lv_obj_set_pos(name, 60, 110);
@@ -696,6 +715,17 @@ void settings_ui_init(SettingsServices services)
         lv_obj_set_pos(dim, 60, 250);
         lv_obj_t * bright = make_label(pages[PAGE_DISPLAY], LV_SYMBOL_EYE_OPEN, 26, COLOR_DIM);
         lv_obj_align(bright, LV_ALIGN_TOP_RIGHT, -60, 250);
+    }
+    if(svc.set_volume_mode) {
+        lv_obj_t * name = make_label(pages[PAGE_DISPLAY], str::VOLUME_BUTTON, 26, 0xFFFFFF);
+        lv_obj_set_pos(name, 60, 310);
+        const char * names[3] = {str::VOL_AUTO, str::VOL_SHOW, str::VOL_HIDE};
+        for(int i = 0; i < 3; i++) {
+            volume_mode_btn[i] =
+                make_button(pages[PAGE_DISPLAY], names[i], 120, 50, COLOR_ROW, on_volume_mode, (void *)(intptr_t)i);
+            lv_obj_set_pos(volume_mode_btn[i], 380 + i * 130, 298);
+        }
+        if(svc.get_volume_mode) show_volume_mode(svc.get_volume_mode());
     }
 
     /* wifi page */

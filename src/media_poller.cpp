@@ -26,6 +26,7 @@ static_assert(MUSIC_UI_CAP_SEEK == MEDIA_CAP_SEEK, "UI capability bits must matc
 static_assert(MUSIC_UI_CAP_SHUFFLE == MEDIA_CAP_SHUFFLE, "UI capability bits must match media_source.h");
 static_assert(MUSIC_UI_CAP_REPEAT == MEDIA_CAP_REPEAT, "UI capability bits must match media_source.h");
 static_assert(MUSIC_UI_CAP_PREV_NEXT == MEDIA_CAP_PREV_NEXT, "UI capability bits must match media_source.h");
+static_assert(MUSIC_UI_CAP_VOLUME == MEDIA_CAP_VOLUME, "UI capability bits must match media_source.h");
 static_assert(MUSIC_UI_CAP_BROWSE == MEDIA_CAP_BROWSE, "UI capability bits must match media_source.h");
 
 /* Capabilities of the current service: set in media_poller_start, then updated by the poller thread
@@ -417,7 +418,11 @@ void poll_loop(std::unique_ptr<MediaSource> source)
             }
         }
         if(polled) {
-            if(info.volume >= 0) volume_sync_polled(info.volume);
+            if(info.volume >= 0) {
+                volume_sync_polled(info.volume);
+                const double v = info.volume;
+                post_to_ui([v] { music_ui_set_volume(v); });
+            }
             if(info.caps >= 0) {
                 const uint32_t caps = with_browse_mode((uint32_t)info.caps);
                 bool changed;
@@ -504,9 +509,22 @@ void media_poller_start(std::unique_ptr<MediaSource> source, media_browse_mode_t
     music_ui_set_capabilities(g_caps); /* hide the controls this service cannot drive */
     music_ui_set_transport_cb(on_transport);
     music_ui_set_seek_cb(on_seek);
+    music_ui_set_volume_cb([](int percent) { media_poller_volume_set(percent / 100.0); });
     lv_timer_create(drain_ui_queue, 20, nullptr); /* runs queued UI work on the LVGL thread */
     std::thread(lyrics_loop).detach();
     std::thread(poll_loop, std::move(source)).detach();
+}
+
+void media_poller_volume_set(double level)
+{
+    {
+        std::lock_guard<std::mutex> lk(g_mu);
+        if(!(g_caps & MEDIA_CAP_VOLUME)) return;
+        g_vol_target    = level < 0 ? 0 : level > 1 ? 1 : std::round(level * 100.0) / 100.0;
+        g_vol_dirty     = true;
+        g_vol_last_step = std::chrono::steady_clock::now();
+    }
+    g_cv.notify_one();
 }
 
 void media_poller_volume_step(int delta)

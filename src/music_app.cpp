@@ -18,6 +18,11 @@ std::function<void(int)> g_apply_brightness;
 
 const int BRIGHTNESS_MIN = 5; /* below this the screen is as good as off and the way back is not to be found */
 
+int volume_mode()
+{
+    return g_settings.volume_button == "show" ? 1 : g_settings.volume_button == "hide" ? 2 : 0;
+}
+
 int saved_brightness()
 {
     const int v = std::atoi(g_settings.brightness.c_str());
@@ -52,6 +57,7 @@ void music_app_start(MusicAppDeps deps)
         });
     }
     music_ui_create();
+    music_ui_set_volume_button(volume_mode(), g_settings.encoder_seen == "1");
     const media_browse_mode_t browse_mode = !deps.browse                      ? MEDIA_BROWSE_NONE
                                             : deps.browse->always_available() ? MEDIA_BROWSE_ALWAYS
                                                                               : MEDIA_BROWSE_WHEN_REPORTED;
@@ -87,5 +93,19 @@ void music_app_start(MusicAppDeps deps)
             if(g_store) g_store->save(g_settings);
         };
     }
+    svc.get_volume_mode = [] { return volume_mode(); };
+    svc.set_volume_mode = [](int mode) {
+        g_settings.volume_button = mode == 1 ? "show" : mode == 2 ? "hide" : "";
+        if(g_store) g_store->save(g_settings);
+        music_ui_set_volume_button(mode, g_settings.encoder_seen == "1");
+    };
     settings_ui_init(std::move(svc)); /* after the main UI so the overlay sits on top */
+}
+
+void music_app_encoder_seen()
+{
+    if(g_settings.encoder_seen == "1") return;
+    g_settings.encoder_seen = "1";
+    if(g_store) g_store->save(g_settings);
+    music_ui_set_volume_button(volume_mode(), true);
 }
