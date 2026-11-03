@@ -78,7 +78,6 @@ static lv_obj_t * btn_repeat       = nullptr;
 /* Volume popup: opened by the speaker button in the controls row, closes itself after VOLUME_POPUP_MS without a touch.
  */
 static const uint32_t VOLUME_POPUP_MS = 2500;
-static const int VOLUME_BTN_CMD       = 100; /* not a music_ui_cmd_t: handled in on_transport_clicked */
 static lv_obj_t * btn_volume          = nullptr;
 static lv_obj_t * volume_popup        = nullptr;
 static lv_obj_t * volume_slider       = nullptr;
@@ -683,13 +682,9 @@ static void update_volume_button()
         (supported_caps & MUSIC_UI_CAP_VOLUME) && volume_mode != 2 && !(volume_mode == 0 && volume_encoder);
     lv_obj_set_hidden(btn_volume, !shown);
     if(!shown && volume_popup) lv_obj_set_hidden(volume_popup, true);
-    if(controls) {
-        int visible = 1; /* play/pause is always shown */
-        for(lv_obj_t * b : {btn_shuffle, btn_prev, btn_next, btn_repeat, btn_volume})
-            if(b && !lv_obj_is_hidden(b)) visible++;
-        lv_obj_set_flex_align(controls, visible <= 1 ? LV_FLEX_ALIGN_CENTER : LV_FLEX_ALIGN_SPACE_BETWEEN,
-                              LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    }
+    /* bottom right; the playlist button, when it shows, takes the corner and this one sits to its left */
+    const bool browse_shown = browse_btn && !lv_obj_is_hidden(browse_btn);
+    lv_obj_set_pos(btn_volume, browse_shown ? 654 : 718, 408);
 }
 
 static void volume_show_value(int percent)
@@ -902,12 +897,7 @@ static void volume_popup_toggle();
 
 static void on_transport_clicked(lv_event_t * e)
 {
-    const int raw = (int)(intptr_t)lv_event_get_user_data(e);
-    if(raw == VOLUME_BTN_CMD) {
-        volume_popup_toggle();
-        return;
-    }
-    music_ui_cmd_t cmd = (music_ui_cmd_t)raw;
+    music_ui_cmd_t cmd = (music_ui_cmd_t)(intptr_t)lv_event_get_user_data(e);
     if(cmd == MUSIC_UI_CMD_PLAY_PAUSE) {
         show_playing(!shown_playing);
         opt_play.start();
@@ -934,7 +924,7 @@ static std::vector<TransportBtn> transport_btns;
 
 /* Round icon button using a built-in LVGL symbol. Returns the label (for icon swaps). */
 static lv_obj_t * create_transport_button(lv_obj_t * parent, const char * symbol, int32_t size, const lv_font_t * font,
-                                          int32_t big_size, const lv_font_t * big_font, int cmd)
+                                          int32_t big_size, const lv_font_t * big_font, music_ui_cmd_t cmd)
 {
     lv_obj_t * btn = lv_button_create(parent);
     lv_obj_set_size(btn, size, size);
@@ -1385,11 +1375,6 @@ void music_ui_create(void)
     show_shuffle(false);
     show_repeat(MUSIC_UI_REPEAT_OFF);
 
-    lv_obj_t * volume_lbl = create_transport_button(controls, LV_SYMBOL_VOLUME_MID, 40, &lv_font_montserrat_22, 52,
-                                                    &lv_font_montserrat_28, VOLUME_BTN_CMD);
-    btn_volume            = lv_obj_get_parent(volume_lbl);
-    update_volume_button();
-
     // Lyrics area (right)
     /* Bold; Regular for any missing glyph */
     lyrics_font  = noto_font(LYRICS_FONT_PX, noto_font(LYRICS_FONT_PX, &lv_font_montserrat_28), true);
@@ -1465,6 +1450,23 @@ void music_ui_create(void)
     lv_obj_center(browse_btn_label);
     lv_obj_add_event_cb(browse_btn, [](lv_event_t *) { set_browse_open(!browse_open); }, LV_EVENT_CLICKED, nullptr);
     lv_obj_set_hidden(browse_btn, true); /* until music_ui_set_capabilities() says the service can browse */
+
+    /* The volume button: a round button like the playlist one (not in the transport row, which stays symmetric). */
+    btn_volume = lv_obj_create(screen);
+    lv_obj_set_size(btn_volume, 52, 52);
+    lv_obj_set_style_radius(btn_volume, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(btn_volume, lv_color_hex(0x1F2937), 0);
+    lv_obj_set_style_bg_opa(btn_volume, LV_OPA_90, 0);
+    lv_obj_set_style_border_width(btn_volume, 0, 0);
+    lv_obj_set_style_pad_all(btn_volume, 0, 0);
+    lv_obj_set_scrollable(btn_volume, false);
+    lv_obj_t * volume_lbl = lv_label_create(btn_volume);
+    lv_label_set_text(volume_lbl, LV_SYMBOL_VOLUME_MID);
+    lv_obj_set_style_text_font(volume_lbl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_color(volume_lbl, lv_color_white(), 0);
+    lv_obj_center(volume_lbl);
+    lv_obj_add_event_cb(btn_volume, [](lv_event_t *) { volume_popup_toggle(); }, LV_EVENT_CLICKED, nullptr);
+    update_volume_button();
 }
 
 void music_ui_set_browse_cb(browse_cb_t cb)
