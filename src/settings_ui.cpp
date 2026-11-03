@@ -233,10 +233,23 @@ const char * page_title(int p)
 std::string player_text()
 {
     const std::string id = svc.get_player ? svc.get_player() : "";
-    std::string text     = id.empty() ? str::PLAYER_AUTO : id;
+    if(id.empty()) return str::PLAYER_AUTO;
     for(const PlayerInfo & p : player_infos)
-        if(!id.empty() && p.id == id) text = p.name;
-    return text;
+        if(p.id == id) return p.name;
+    /* the list is not loaded yet: the id is "<source id>/<player id>", the source part is a hex string */
+    const size_t slash = id.find('/');
+    return slash == std::string::npos ? id : id.substr(slash + 1);
+}
+
+/* Load the player names in the background so the menu can show the chosen one by its name. */
+void preload_players()
+{
+    if(!svc.list_players) return;
+    svc.list_players([](bool ok, const std::vector<PlayerInfo> & players, const std::string &) {
+        if(!root || !ok) return;
+        player_infos = players;
+        if(page_now == PAGE_MENU && menu_player_value) lv_label_set_text(menu_player_value, player_text().c_str());
+    });
 }
 
 void refresh_main()
@@ -275,7 +288,10 @@ void show_page(int p)
     lv_obj_set_hidden(keyboard, p != PAGE_PASSWORD);
     if(p == PAGE_PASSWORD) lv_keyboard_set_textarea(keyboard, pw_input);
     if(p == PAGE_MAIN) refresh_main();
-    if(p == PAGE_MENU && menu_player_value) lv_label_set_text(menu_player_value, player_text().c_str());
+    if(p == PAGE_MENU && menu_player_value) {
+        lv_label_set_text(menu_player_value, player_text().c_str());
+        preload_players();
+    }
 }
 
 void fill_wifi_list()
