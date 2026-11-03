@@ -7,7 +7,8 @@
 The Han set is every ideograph that decodes in Python's euc_kr (KS X 1001 hanja, lead bytes 0xCA-0xFD) or shift_jis (JIS X 0208
 levels 1 and 2, lead bytes 0x88-0x9F and 0xE0-0xEA, trail bytes 0x40-0xFC). An earlier build missed 132 of the JIS ones (洒, 滲, ...), which
 showed up as blank glyphs in lyrics; check_coverage() below fails the run if anything of the set is still missing. Costs ~0.04 MB per face
-more than that build. Characters outside JIS X 0208 (level 3/4, +2918 kanji, +0.85 MB per face) are not included: none of 104 real lyrics needed them.
+more than that build. Chinese was added later (2026-11-03): GB2312 (+3291 characters the other two sets lack) and Big5 level 1 (+381 more), about
++0.94 MB per face; Big5 level 2 and GBK would not fit the flash (6.1 and 7.3 MB per face). Characters outside JIS X 0208 (level 3/4, +2918 kanji, +0.85 MB per face) are not included: none of 104 real lyrics needed them.
 """
 import subprocess
 import sys
@@ -37,7 +38,13 @@ def han(codec, leads, trails):
 
 
 def wanted():
-    return han("euc_kr", range(0xCA, 0xFE), range(0x40, 0xFF)) | han("shift_jis", [*range(0x88, 0xA0), *range(0xE0, 0xEB)], range(0x40, 0xFD))
+    return (
+        han("euc_kr", range(0xCA, 0xFE), range(0x40, 0xFF))
+        | han("shift_jis", [*range(0x88, 0xA0), *range(0xE0, 0xEB)], range(0x40, 0xFD))
+        # Chinese: GB2312 (simplified, 6763 characters) and Big5 level 1 (the 5401 most common traditional ones)
+        | han("gb2312", range(0xB0, 0xF8), range(0xA1, 0xFF))
+        | han("big5", range(0xA4, 0xC7), range(0x40, 0xFF))
+    )
 
 
 def check_coverage(path, han_set):

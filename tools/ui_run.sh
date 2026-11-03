@@ -37,13 +37,17 @@ if ss -ltn 2>/dev/null | grep -q ":$PORT "; then echo "port $PORT is in use (--p
 TMP=$(mktemp -d)
 PIDS=()
 # kill -9 only sends the signal: wait until the processes are really gone, or the next run finds the port still taken
-cleanup() { for p in "${PIDS[@]}"; do kill -9 "$p" 2>/dev/null; done; for p in "${PIDS[@]}"; do wait "$p" 2>/dev/null; done; rm -rf "$TMP"; }
+cleanup() { for p in "${PIDS[@]}"; do kill -9 "$p" 2>/dev/null; done; for p in "${PIDS[@]}"; do wait "$p" 2>/dev/null; done; [ -n "${DISP:-}" ] && rm -f "/tmp/.X${DISP#:}-lock" "/tmp/.X11-unix/X${DISP#:}"; rm -rf "$TMP"; }
 trap cleanup EXIT INT TERM
 mkdir -p "$OUT"
 
 # a free X display number
 DISP=""
 for n in $(seq 70 99); do
+  # a lock left by an Xvfb that was killed with -9 (its pid is gone) is stale: clear it
+  if [ -e "/tmp/.X$n-lock" ] && ! kill -0 "$(tr -d ' ' < "/tmp/.X$n-lock" 2>/dev/null)" 2>/dev/null; then
+    rm -f "/tmp/.X$n-lock" "/tmp/.X11-unix/X$n"
+  fi
   if [ ! -e "/tmp/.X$n-lock" ] && [ ! -e "/tmp/.X11-unix/X$n" ]; then DISP=:$n; break; fi
 done
 [ -n "$DISP" ] || { echo "no free X display"; exit 2; }

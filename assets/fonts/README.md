@@ -1,7 +1,7 @@
 # Fonts
 
 `NotoSansKR-Regular-subset.otf` — Noto Sans CJK KR Regular (SIL OFL 1.1), subset to Latin,
-punctuation, kana, Hangul jamo/syllables, fullwidth forms (！？～…), Latin Extended, Greek, Cyrillic, arrows, geometric shapes and misc symbols (★♪♡), and ~7k Han characters (KS X 1001 hanja + JIS X 0208 kanji). Embedded via `src/fonts/noto_sans_kr.c` and rendered
+punctuation, kana, Hangul jamo/syllables, fullwidth forms (！？～…), Latin Extended, Greek, Cyrillic, arrows, geometric shapes and misc symbols (★♪♡), and ~10.8k Han characters (KS X 1001 hanja, JIS X 0208 kanji, GB2312 simplified Chinese and Big5 level 1 traditional Chinese). Embedded via `src/fonts/noto_sans_kr.c` and rendered
 with LVGL TinyTTF at runtime (any size, one file).
 
 Regenerate with `python3 assets/fonts/make_subset.py` (needs `pip install fonttools` and the system's Noto Sans CJK, default
@@ -13,7 +13,7 @@ Kanji outside JIS X 0208 (JIS X 0213 level 3/4, +2918 kanji) would cost about 0.
 `NotoSansKR-Bold-subset.otf` is the same glyph set from `NotoSansCJK-Bold.ttc` (used for lyrics);
 the script builds both.
 
-Simplified-Chinese-only characters (GB2312, ~+0.9MB) are not included. The font is the KR face, so
+GBK and Big5 level 2 are not included (6.1 and 7.3 MB per face, they would not fit the flash). The font is the KR face, so
 Japanese kanji are drawn with Korean glyph variants.
 `src/fonts/font_mono_16.c` (DejaVu Sans Mono, digits and ":") is generated with lv_font_conv; see its header.
 
