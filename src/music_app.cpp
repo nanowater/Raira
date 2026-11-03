@@ -55,6 +55,8 @@ void music_app_start(MusicAppDeps deps)
     const media_browse_mode_t browse_mode = !deps.browse                      ? MEDIA_BROWSE_NONE
                                             : deps.browse->always_available() ? MEDIA_BROWSE_ALWAYS
                                                                               : MEDIA_BROWSE_WHEN_REPORTED;
+    /* the saved player choice is shown in the settings, so it has to be applied as well (before the poller runs) */
+    if(picks_player && !g_settings.player.empty()) deps.source->set_player(g_settings.player);
     media_poller_start(std::move(deps.source), browse_mode);
     browse_worker_start(std::move(deps.browse));
 
