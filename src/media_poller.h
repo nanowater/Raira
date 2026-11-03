@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include "media_source.h"
+#include "music_ui.h"
 
 /* Whether the browse button can ever show: NONE = no BrowseSource (the bit is always cleared), WHEN_REPORTED =
  * only while the source's capabilities include MEDIA_CAP_BROWSE, ALWAYS = the browse provider does not depend on
@@ -25,6 +26,10 @@ void media_post_to_ui(std::function<void()> fn);
  * first poll has reported the current volume, or when the service reports no MEDIA_CAP_VOLUME.
  * This is the hook for the rotary encoder. */
 void media_poller_volume_step(int delta);
+
+/* Send a transport command (play/pause, next, ...) as if its button had been pressed; thread-safe, non-blocking. The
+ * UI icon follows with the next poll (it is not flipped optimistically). This is the hook for the encoder's click. */
+void media_poller_command(music_ui_cmd_t cmd);
 
 /* Set the volume to `level` (0.0..1.0), e.g. from the on-screen slider; same coalescing as the steps. */
 void media_poller_volume_set(double level);

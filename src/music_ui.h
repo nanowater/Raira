@@ -62,6 +62,10 @@ void music_ui_set_volume_cb(music_ui_volume_cb_t cb);
 /* The volume the service reports (0.0..1.0); ignored while the user is on the slider or just let go. LVGL thread. */
 void music_ui_set_volume(double level);
 
+/* Flash the volume level (0.0..1.0) as a thin white bar along the top edge, which fades out by itself. For changes that
+ * have no slider on screen (the encoder). LVGL thread. */
+void music_ui_show_volume(double level);
+
 /* Whether the speaker button may show: 0 = automatic (hidden once a rotary encoder is in use), 1 = always, 2 = never.
  * `encoder_present`: the encoder driver saw input. The button also needs MUSIC_UI_CAP_VOLUME. */
 void music_ui_set_volume_button(int mode, bool encoder_present);

@@ -515,6 +515,11 @@ void media_poller_start(std::unique_ptr<MediaSource> source, media_browse_mode_t
     std::thread(poll_loop, std::move(source)).detach();
 }
 
+void media_poller_command(music_ui_cmd_t cmd)
+{
+    on_transport(cmd);
+}
+
 void media_poller_volume_set(double level)
 {
     {
@@ -529,6 +534,7 @@ void media_poller_volume_set(double level)
 
 void media_poller_volume_step(int delta)
 {
+    double shown = 0;
     {
         std::lock_guard<std::mutex> lk(g_mu);
         if(!(g_caps & MEDIA_CAP_VOLUME)) return; /* the service has no volume to adjust */
@@ -538,8 +544,10 @@ void media_poller_volume_step(int delta)
         g_vol_target    = v < 0 ? 0 : v > 1 ? 1 : v;
         g_vol_dirty     = true;
         g_vol_last_step = std::chrono::steady_clock::now();
+        shown           = g_vol_target;
     }
     g_cv.notify_one();
+    post_to_ui([shown] { music_ui_show_volume(shown); });
 }
 
 void media_poller_set_player(const std::string & id)

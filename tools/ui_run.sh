@@ -7,13 +7,13 @@
 #
 # Options: --scenario NAME (see tools/fake_source.py: playing, idle, boundary, pick)   --scenario-file FILE
 #          --shots S1,S2,..  seconds after the source is connected (default 3)         --out DIR  (default $TMPDIR/raira-shots)
-#          --click T:X:Y[:HOLD]  (click at pixel X,Y T seconds in, held HOLD s; repeatable; needs xdotool)   --port N (default 18399)   --features cover,lyrics   --keep-log (print the simulator log at the end)
+#          --key T:NAME (xdotool key, e.g. 5:Down)   --click T:X:Y[:HOLD]  (click at pixel X,Y T seconds in, held HOLD s; repeatable; needs xdotool)   --port N (default 18399)   --features cover,lyrics   --keep-log (print the simulator log at the end)
 # Needs: a built build/bin/lvglsim, Xvfb, ImageMagick's `import`, python3. The simulator runs with a throw-away HOME in which the
 # fake source is already paired (tools/seed_device.py), so nothing of your own settings is touched.
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SIM="$ROOT/build/bin/lvglsim"
-CLICKS="";
+CLICKS=""; KEYS="";
 SCENARIO=playing; SCENARIO_FILE=""; SHOTS=3; PORT=18399; FEATURES=""; KEEP_LOG=0
 OUT="${TMPDIR:-/tmp}/raira-shots"
 while [ $# -gt 0 ]; do
@@ -25,11 +25,12 @@ while [ $# -gt 0 ]; do
     --port) PORT=$2; shift 2;;
     --features) FEATURES=$2; shift 2;;
     --click) CLICKS="$CLICKS $2"; shift 2;;
+    --key) KEYS="$KEYS $2"; shift 2;;
     --keep-log) KEEP_LOG=1; shift;;
     *) echo "unknown option $1"; exit 2;;
   esac
 done
-for need in Xvfb import python3 $([ -n "$CLICKS" ] && echo xdotool); do command -v "$need" >/dev/null || { echo "missing: $need"; exit 2; }; done
+for need in Xvfb import python3 $([ -n "$CLICKS$KEYS" ] && echo xdotool); do command -v "$need" >/dev/null || { echo "missing: $need"; exit 2; }; done
 [ -x "$SIM" ] || { echo "build the simulator first: cmake -B build && cmake --build build -j"; exit 2; }
 if ss -ltn 2>/dev/null | grep -q ":$PORT "; then echo "port $PORT is in use (--port N)"; exit 2; fi
 
@@ -65,11 +66,14 @@ PIDS+=($SRCPID)
 
 # events in time order: "T shot", "T click X Y" (a click happens before a screenshot taken at the same second)
 EVENTS=$( { for t in $(echo "$SHOTS" | tr ',' ' '); do echo "$t 1 shot"; done
+            for k in $KEYS; do IFS=: read -r t name <<< "$k"; echo "$t 0 key $name"; done
             for c in $CLICKS; do IFS=: read -r t x y h <<< "$c"; echo "$t 0 click $x $y ${h:-0}"; done; } | sort -n -k1,1 -k2,2)
 prev=0
 while read -r t _ kind x y hold; do
   sleep "$(python3 -I -c "print(max(0, $t - $prev))")"
-  if [ "$kind" = click ]; then
+  if [ "$kind" = key ]; then
+    DISPLAY=$DISP xdotool key "$x" && echo "key: $x at ${t}s"
+  elif [ "$kind" = click ]; then
     if [ "${hold:-0}" != 0 ]; then
       DISPLAY=$DISP xdotool mousemove "$x" "$y" mousedown 1; sleep "$hold"; DISPLAY=$DISP xdotool mouseup 1
     else

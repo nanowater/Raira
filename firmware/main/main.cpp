@@ -6,6 +6,7 @@
 #include <thread>
 #include <lvgl.h>
 #include "board.h"
+#include "encoder.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_pthread.h"
@@ -100,6 +101,7 @@ extern "C" void app_main(void)
     music_ui_boot_show();
     lv_timer_handler();
     start_app();
+    if(!encoder_start()) ESP_LOGW(TAG, "no encoder: the touch screen still works");
 
     // This task owns LVGL from here on: lv_timer_handler() runs the timers, redraws and reads the touch, and says how
     // many ms until it needs to run again. Everything slow lives on other threads (they hand work over through the UI

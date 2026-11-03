@@ -775,6 +775,56 @@ static void volume_popup_toggle()
     if(!volume_timer) volume_timer = lv_timer_create(volume_timer_cb, 200, nullptr);
 }
 
+/* ---- volume bar: a thin white line along the top edge that shows the level after a change (encoder turn), then fades
+ * ---- */
+
+static const int VOLUME_BAR_H            = 5;
+static const uint32_t VOLUME_BAR_HOLD_MS = 1100;
+static const uint32_t VOLUME_BAR_FADE_MS = 450;
+static lv_obj_t * volume_bar             = nullptr; /* faint full-width track, the fill is its child */
+static lv_obj_t * volume_bar_fill        = nullptr;
+
+static void volume_bar_opa_cb(void * obj, int32_t v)
+{
+    lv_obj_set_style_opa((lv_obj_t *)obj, (lv_opa_t)v, 0);
+}
+
+void music_ui_show_volume(double level)
+{
+    if(level < 0) return;
+    if(level > 1) level = 1;
+    if(volume_popup && !lv_obj_is_hidden(volume_popup)) return; /* the slider popup shows it already */
+    if(!volume_bar) {
+        volume_bar = lv_obj_create(lv_layer_top());
+        lv_obj_remove_style_all(volume_bar);
+        lv_obj_set_size(volume_bar, LV_PCT(100), VOLUME_BAR_H);
+        lv_obj_set_pos(volume_bar, 0, 0);
+        lv_obj_set_style_bg_color(volume_bar, lv_color_white(), 0);
+        lv_obj_set_style_bg_opa(volume_bar, LV_OPA_20, 0);
+        lv_obj_set_scrollable(volume_bar, false);
+        lv_obj_set_clickable(volume_bar, false);
+        volume_bar_fill = lv_obj_create(volume_bar);
+        lv_obj_remove_style_all(volume_bar_fill);
+        lv_obj_set_height(volume_bar_fill, VOLUME_BAR_H);
+        lv_obj_set_pos(volume_bar_fill, 0, 0);
+        lv_obj_set_style_bg_color(volume_bar_fill, lv_color_white(), 0);
+        lv_obj_set_style_bg_opa(volume_bar_fill, LV_OPA_COVER, 0);
+        lv_obj_set_clickable(volume_bar_fill, false);
+    }
+    lv_obj_update_layout(volume_bar);
+    lv_obj_set_width(volume_bar_fill, (int32_t)(level * lv_obj_get_width(volume_bar) + 0.5));
+    lv_anim_delete(volume_bar, volume_bar_opa_cb); /* a new turn restarts the hold */
+    lv_obj_set_style_opa(volume_bar, LV_OPA_COVER, 0);
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, volume_bar);
+    lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_TRANSP);
+    lv_anim_set_delay(&a, VOLUME_BAR_HOLD_MS);
+    lv_anim_set_duration(&a, VOLUME_BAR_FADE_MS);
+    lv_anim_set_exec_cb(&a, volume_bar_opa_cb);
+    lv_anim_start(&a);
+}
+
 void music_ui_set_volume_cb(music_ui_volume_cb_t cb)
 {
     volume_cb = cb;

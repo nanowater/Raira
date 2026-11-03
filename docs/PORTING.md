@@ -160,7 +160,7 @@ the first plug-ins failed with `error -71` (cable/port), a later one worked.
 | WiFi | the P4 has no radio: `espressif/esp_wifi_remote` + `esp_hosted 2.11.*` (SDIO to the C6) make `esp_wifi` available, so `wifi_esp.cpp`, mDNS and the WebSocket server **compile unchanged**; whether they run over it is untested. The C6 needs a matching ESP-Hosted slave firmware (the vendor ships `JC-C6-slave_v2.3.2.bin` in `8-Burn operation/Burn files/`). |
 | JPEG | the P4 has **no TJpgDec in ROM**: `jpeg_p4.cpp` is a stub (returns false, no cover shown). Planned: the hardware codec (`esp_driver_jpeg`). |
 | Display | not written: MIPI-DSI + ST7701 (vendor config: 2 lanes, 750 Mbit/s, 28 MHz pixel clock, 480×800, porches h 42/12/42, v 8/2/166), shown rotated to 800×480 (software rotation in the vendor's `lvgl_sw_rotation`, or the PPA). |
-| Pins (from the schematic, unchecked on the board) | I2C (touch, codec) SDA 7 / SCL 8; touch INT 21, RST 22 (GT911, 0x5D or 0x14); LCD backlight PWM 23; LCD reset 5; C6 SDIO CLK 18, CMD 19, D0 14 (D1..D3 15..17); SD card 39..44; codec I2S 9..13, 48; BOOT button = GPIO35 (do not use for inputs). Free on the 26-pin header JP1: 28..33, 49..52 (and 34, 32; avoid 34/35, strapping). |
+| Pins (from the schematic, unchecked on the board) | I2C (touch, codec) SDA 7 / SCL 8; touch INT 21, RST 22 (GT911, 0x5D or 0x14); LCD backlight PWM 23; LCD reset 5; C6 SDIO CLK 18, CMD 19, D0 14 (D1..D3 15..17); SD card 39..44; codec I2S 9..13, 48; BOOT button = GPIO35 (do not use for inputs). Header JP1 (2x13, 2.54 mm; pin 1 = the end with 3V3/5V, odd pins on the 3V3 side): 1/3 3V3, 2/4 5V, 5/6 GND, 7 GPIO52, 8 GPIO33, 9 GPIO51, 10 GPIO31, 11 GPIO50, 12 GPIO30, 13 GPIO49, 15 GPIO35, 17 GPIO34, 19 GPIO32, 21 GPIO28, 23/25 the I2C bus (SDA/SCL, shared with touch and codec), 20..26 even = the C6 (UART, IO9, CHIP_PU); avoid 34/35 (strapping) and pins 14..18 (the schematic is ambiguous there). Checked on the board: GPIO33, 31 and 30 are the ones at pins 8, 10 and 12. The board's MX1.25 4-pin sockets are not usable for an encoder: UART0 (GPIO37/38) is the log console and strapping, the UART socket's GPIO27 is driven by the RS485 chip, RS485 has no GPIO, the I2C socket is the touch/codec bus. |
 | Not decided | encoder + one extra button: GPIO 28..31 are the proposal; the camera (OV02C10 on the CSI connector) comes later. |
 
 **P4 board verified with the vendor example (2026-10-30):** the factory demo works (display, touch, WiFi). The vendor's `lvgl_sw_rotation` example
@@ -213,6 +213,7 @@ lyrics play: ~10 %. Not worth more work unless the background copy gets cheaper.
 blend per frame in software. Not reduced yet; two draw units would probably not help (one big blend per strip). The background computation itself
 (`cover_background`, ~360 ms) runs on core 1 and does not compete with it. The cover and background resolution is not to be lowered.
 
-**Open:** encoder and a button (header JP1:
-GPIO 28..33 / 49..52 are free; 34/35 are strapping pins; check that the header is soldered), brightness / screen-off, the C6 ESP-Hosted firmware version,
-the track-change transition, the S3 board (display code, a working unit).
+**Done:** the EC11 encoder (`firmware/main/encoder.cpp`: PCNT decodes A = GPIO31 / B = GPIO30, KEY = GPIO33 polled; module powered from 3V3, never 5V: the GPIOs are 3.3 V only; one detent = 4 counts = one volume step, `REVERSE` flips the direction), a brightness slider.
+
+**Open:** an extra button (GPIO28 at JP1 pin 21 is free), screen-off, the C6 ESP-Hosted firmware version,
+the track-change transition.
