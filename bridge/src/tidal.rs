@@ -18,6 +18,8 @@ pub struct TidalState {
     pub title: String,
     pub shuffle: Option<bool>,
     pub repeat: Option<&'static str>,
+    /// 0.0..1.0. tidal-hifi's MPRIS `Volume` is always 1 and ignores writes, so this is the real volume.
+    pub volume: Option<f64>,
     /// (tier, badge text), e.g. ("HI_RES_LOSSLESS", "24-bit 96.0kHz")
     pub quality: Option<(String, String)>,
     /// The cover as TIDAL serves it, at 640 px. MPRIS only has a 150 px file of chromium's here, far too small for a cover that
@@ -91,6 +93,7 @@ impl Tidal {
             image,
             title: v["title"].as_str().unwrap_or("").to_string(),
             shuffle: player["shuffle"].as_bool(),
+            volume: v["volume"].as_f64().map(|x| x.clamp(0.0, 1.0)),
             repeat: player["repeat"]
                 .as_str()
                 .and_then(|r| REPEAT_CYCLE.iter().copied().find(|c| *c == r)),
@@ -102,6 +105,21 @@ impl Tidal {
         let resp = self
             .http
             .post(format!("{}{path}", self.base))
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        if resp.status().is_success() {
+            Ok(())
+        } else {
+            Err(format!("tidal-hifi {path}: HTTP {}", resp.status()))
+        }
+    }
+
+    pub async fn set_volume(&self, level: f64) -> Result<(), String> {
+        let path = format!("/player/volume?volume={:.2}", level.clamp(0.0, 1.0));
+        let resp = self
+            .http
+            .put(format!("{}{path}", self.base))
             .send()
             .await
             .map_err(|e| e.to_string())?;

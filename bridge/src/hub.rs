@@ -448,7 +448,18 @@ impl Hub {
             _ => "off",
         });
         let mut quality = None;
+        let mut volume = raw.volume;
+        // tidal-hifi's MPRIS volume is a dummy (always 1, writes do nothing): its own API has the real one. When that API
+        // does not answer there is no volume to show or set for this player.
+        if self.tidal_for(raw).is_some() {
+            caps.retain(|c| *c != "volume");
+            volume = None;
+        }
         if let Some(s) = sup {
+            if self.tidal_for(raw).is_some() && s.volume.is_some() {
+                volume = s.volume;
+                caps.push("volume");
+            }
             if raw.shuffle.is_none() && s.shuffle.is_some() {
                 shuffle = s.shuffle;
                 caps.push("shuffle");
@@ -480,7 +491,7 @@ impl Hub {
             position_ms: raw.position_us.map(|us| us / 1000),
             position_at_ms: now_ms(),
             rate: raw.rate,
-            volume: raw.volume,
+            volume,
             shuffle,
             repeat,
             quality,
@@ -509,8 +520,19 @@ impl Hub {
             Cmd::Next | Cmd::Previous => return Err(unsupported("prev/next")),
             Cmd::SeekMs(ms) if raw.can_seek => Command::SeekAbsoluteUs(ms.max(0) * 1000),
             Cmd::SeekMs(_) => return Err(unsupported("seek")),
-            Cmd::Volume(v) if raw.volume.is_some() => Command::Volume(v.clamp(0.0, 1.0)),
-            Cmd::Volume(_) => return Err(unsupported("volume")),
+            Cmd::Volume(v) => {
+                // tidal-hifi: its own API (the MPRIS volume does nothing there)
+                if let Some(t) = self.tidal_for(raw) {
+                    return t
+                        .set_volume(v)
+                        .await
+                        .map_err(|e| ApiError::new(StatusCode::BAD_GATEWAY, "upstream_failed", e));
+                }
+                if raw.volume.is_none() {
+                    return Err(unsupported("volume"));
+                }
+                Command::Volume(v.clamp(0.0, 1.0))
+            }
             Cmd::Shuffle(on) if raw.shuffle.is_some() => Command::Shuffle(on),
             Cmd::Shuffle(on) => {
                 let Some(t) = self.tidal_for(raw) else {
