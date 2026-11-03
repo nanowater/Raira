@@ -22,9 +22,9 @@ static const int COUNTS_PER_DETENT = 4;
 // Swap to turn the knob the other way round (or swap the A and B wires).
 static const bool REVERSE = false;
 
-static const int POLL_MS         = 10;
-static const int DEBOUNCE_POLLS  = 3;   // the key must read the same this many polls in a row (30 ms)
-static const int LONG_PRESS_MS   = 600; // longer than this is not a click (reserved for later)
+static const int POLL_MS        = 10;
+static const int DEBOUNCE_POLLS = 3;   // the key must read the same this many polls in a row (30 ms)
+static const int LONG_PRESS_MS  = 600; // longer than this is not a click (reserved for later)
 
 static pcnt_unit_handle_t g_unit;
 static bool g_seen = false;
@@ -39,11 +39,11 @@ static void note_input()
 
 static void encoder_task(void *)
 {
-    int rest         = 0;     // counts that do not make a whole detent yet
-    bool key_down    = false; // debounced state
-    int same         = 0;     // polls the raw key state has been the same
-    bool last_raw    = false;
-    int down_polls   = 0;
+    int rest       = 0;     // counts that do not make a whole detent yet
+    bool key_down  = false; // debounced state
+    int same       = 0;     // polls the raw key state has been the same
+    bool last_raw  = false;
+    int down_polls = 0;
 
     while(true) {
         vTaskDelay(pdMS_TO_TICKS(POLL_MS));
@@ -116,7 +116,8 @@ bool encoder_start()
     chan_b_cfg.level_gpio_num     = PIN_A;
     pcnt_channel_handle_t chan_a  = nullptr;
     pcnt_channel_handle_t chan_b  = nullptr;
-    if(pcnt_new_channel(g_unit, &chan_a_cfg, &chan_a) != ESP_OK || pcnt_new_channel(g_unit, &chan_b_cfg, &chan_b) != ESP_OK) {
+    if(pcnt_new_channel(g_unit, &chan_a_cfg, &chan_a) != ESP_OK ||
+       pcnt_new_channel(g_unit, &chan_b_cfg, &chan_b) != ESP_OK) {
         ESP_LOGE(TAG, "pcnt channel failed");
         return false;
     }
@@ -129,7 +130,8 @@ bool encoder_start()
     gpio_set_pull_mode(PIN_A, GPIO_PULLUP_ONLY);
     gpio_set_pull_mode(PIN_B, GPIO_PULLUP_ONLY);
 
-    if(pcnt_unit_enable(g_unit) != ESP_OK || pcnt_unit_clear_count(g_unit) != ESP_OK || pcnt_unit_start(g_unit) != ESP_OK) {
+    if(pcnt_unit_enable(g_unit) != ESP_OK || pcnt_unit_clear_count(g_unit) != ESP_OK ||
+       pcnt_unit_start(g_unit) != ESP_OK) {
         ESP_LOGE(TAG, "pcnt start failed");
         return false;
     }
