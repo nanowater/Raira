@@ -4,6 +4,8 @@ A media controller in the style of the Spotify Car Thing that is not tied to one
 with a rotary encoder that shows what is playing on your PC (cover, title, progress, synced lyrics) and sends play/pause, skip,
 seek, shuffle, repeat and volume back.
 
+![Raira on the simulator](docs/img/screenshot.png)
+
 The device only controls; the music plays on the PC. A small program on the PC, the **bridge**, reads the players over MPRIS
 (TIDAL through `tidal-hifi`, Spotify, browsers and anything else that speaks MPRIS) and talks to the device over WiFi.
 
@@ -26,7 +28,7 @@ The protocols are described in `docs/HUB_PROTOCOL.md` and `docs/BRIDGE_PROTOCOL.
 | Linux simulator (`lvglsim`) acting as the hub | works |
 | Bridge on Linux (MPRIS, tidal-hifi supplement, lyrics, tray, settings page) | works |
 | Bridge on Windows | not started |
-| ESP32-P4 firmware (board: JC4880P443C_I_W, P4 + C6) | **runs on the board**: display (MIPI-DSI, rotated to landscape by the PPA), touch, WiFi over the C6, pairing with the bridge, fonts, hardware JPEG; ~60 fps at rest, 28 min soak without a reboot; encoder/buttons, a multi-hour soak and the cost of the track-change transition are open |
+| ESP32-P4 firmware (board: JC4880P443C_I_W, P4 + C6) | **runs on the board**: display (MIPI-DSI, rotated to landscape by the PPA), touch, WiFi over the C6, pairing with the bridge, fonts, hardware JPEG; ~60 fps at rest, 28 min soak without a reboot; rotary encoder (EC11: volume, click = play/pause), on-screen volume slider, brightness and player settings, Chinese/Japanese/Korean fonts; a multi-hour soak and the cost of the track-change transition are open |
 
 Playlist and queue browsing exists in the UI but no real source provides data yet (`lvglsim -F` shows it with sample data).
 `docs/PORTING.md` has the ESP32 status (P4 first), the constraints found on the board, the memory budget and checklists.

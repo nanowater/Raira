@@ -97,7 +97,9 @@ check("SRV carries the port and the host name", srv and srv[0]["port"] == PORT a
 txt = [r[3] for r in recs if r[1] == 16 and r[0] == INSTANCE]
 check("TXT has proto, id and name", txt and {"proto=1", "id=probe123", "name=Raira (probe)"} <= set(txt[0]), txt)
 check("an A record with an IPv4 address comes along", any(r[1] == 1 and r[0] == "raira-probe.local" for r in recs), recs)
-check("every record has a TTL of 120 s", all(r[2] == 120 for r in recs if r[0] in ("_raira._tcp.local", INSTANCE, "raira-probe.local")))
+# a real hub on the same network answers the PTR question too (other TTL): judge only records that belong to our instance
+ours = [r for r in recs if (r[0] == "_raira._tcp.local" and r[1] == 12 and r[3] == INSTANCE) or r[0] in (INSTANCE, "raira-probe.local")]
+check("every record has a TTL of 120 s", all(r[2] == 120 for r in ours), [(r[0], r[1], r[2]) for r in ours if r[2] != 120])
 
 recs = ask("raira-probe.local", 1)
 check("an A question for the host name is answered", any(r[1] == 1 and r[0] == "raira-probe.local" for r in recs), recs)

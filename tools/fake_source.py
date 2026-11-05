@@ -111,6 +111,11 @@ class Ws:
 
 TINY_JPEG = base64.b64decode("/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAoHBwgHBgoICAgLCgoLDhgQDg0NDh0VFhEYIx8lJCIfIiEmKzcvJik0KSEiMEExNDk7Pj4+JS5ESUM8SDc9Pjv/2wBDAQoLCw4NDhwQEBw7KCIoOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozv/wAARCABAAEADASIAAhEBAxEB/8QAFwABAQEBAAAAAAAAAAAAAAAAAAIBBf/EABUQAQEAAAAAAAAAAAAAAAAAAAAR/8QAFgEBAQEAAAAAAAAAAAAAAAAAAAUE/8QAFREBAQAAAAAAAAAAAAAAAAAAABP/2gAMAwEAAhEDEQA/AONCKhF2iZFMIqEKEUwioQoRTCKhChFUI2EYKLMWQjYQoRZCNhChFkI2EKEWwioRgosQTCKhChBMIqEKEEwioQoQVCNhGCizFkI2EKEWQjYQoRZCNhChF//Z")  # 64x64 baseline JPEG
 LYRICS = [{"ms": 1000 + 4000 * i, "text": f"fake lyric line {i + 1}"} for i in range(8)] + [{"ms": 34000, "text": ""}]
+# for screenshots: RAIRA_FAKE_COVER = a JPEG file, RAIRA_FAKE_LYRICS = a JSON list of {"ms", "text"} replace the built-ins
+if os.environ.get("RAIRA_FAKE_COVER"):
+    TINY_JPEG = open(os.environ["RAIRA_FAKE_COVER"], "rb").read()
+if os.environ.get("RAIRA_FAKE_LYRICS"):
+    LYRICS = json.load(open(os.environ["RAIRA_FAKE_LYRICS"]))
 
 
 def players(selected, *ps):
