@@ -29,6 +29,10 @@ class WifiManager {
     virtual void connect(const std::string & ssid, const std::string & password) = 0;
     virtual WifiState state() const                                              = 0;
     virtual std::string connected_ssid() const                                   = 0; /* "" unless Connected */
+
+    /* Drop the connection and forget the network the radio itself keeps (the ESP32-P4's WiFi chip stores its last
+     * network in its own flash, which erasing the app's settings does not touch). State is Idle afterwards. */
+    virtual void forget() = 0;
 };
 
 /* Provided by the platform layer. */

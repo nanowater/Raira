@@ -5,6 +5,7 @@
 #include <cstring>
 #include <vector>
 #include "media_poller.h"
+#include "music_ui.h"
 #include "platform/device_info.h"
 #include "strings.h"
 #include "ui_fonts.h"
@@ -21,6 +22,8 @@ namespace {
  *   PLAYER   the choice of the player; only the menu leads here. Back to MENU.
  *   SOURCES  pairing code and the paired PCs. Back to MAIN.
  *   DISPLAY  the brightness slider (only when the platform can set it). Back to MAIN.
+ *   RESET    the confirmation of the factory reset: Cancel goes back, Reset calls svc.factory_reset. Back to MAIN.
+ *   NAME     setup only: the device's name with the keyboard.
  *   ABOUT    the device name and what the platform reports about the hardware and the firmware. Back to MAIN.
  *
  * Only one page is visible at a time (show_page). */
@@ -33,6 +36,8 @@ enum Page {
     PAGE_MENU,
     PAGE_DISPLAY,
     PAGE_ABOUT,
+    PAGE_NAME,
+    PAGE_RESET,
     PAGE_COUNT
 };
 
@@ -60,6 +65,16 @@ lv_obj_t * brightness_lbl     = nullptr;
 lv_obj_t * brightness_sld     = nullptr;
 lv_obj_t * volume_mode_btn[3] = {nullptr, nullptr, nullptr};
 
+/* first-start guide (settings_ui_open_setup): 0 = not running, else the step 1..3 (name, WiFi, pairing). While it runs
+ * the back arrow is gone (except on the password page, which has to lead back to the network list) and the Next button
+ * leads on. */
+int setup_step                = 0;
+lv_obj_t * back_btn           = nullptr;
+lv_obj_t * setup_btn          = nullptr;
+lv_obj_t * setup_btn_lbl      = nullptr;
+lv_obj_t * name_input         = nullptr;
+const int DEVICE_NAME_MAX_LEN = 20; /* characters; an mDNS label holds 63 bytes, 20 Korean letters are 60 */
+
 /* about page: one row per fact, rebuilt each time the page opens */
 lv_obj_t * about_list = nullptr;
 
@@ -84,6 +99,13 @@ std::string sources_sig; /* what the list shows now: rebuilt only when this chan
 lv_obj_t * wifi_status = nullptr;
 lv_obj_t * wifi_list   = nullptr;
 bool scan_was_running  = false;
+/* A scan that ends with no network at all is retried (the WiFi may not be up yet right after the start: the first scan
+ * of the setup guide runs before the radio is ready). The user's own Rescan starts the count again. */
+const int SCAN_RETRIES       = 10;
+const uint32_t SCAN_RETRY_MS = 1500;
+int scan_retries             = 0;
+bool scan_retry_pending      = false;
+uint32_t scan_retry_at       = 0;
 std::string selected_ssid;    /* network being configured */
 std::string pending_password; /* password of the connection attempt in progress */
 bool wait_for_connect = false;
@@ -100,6 +122,7 @@ const lv_font_t * f(int px, bool bold = false)
 }
 
 void show_page(int p);
+void update_setup_chrome();
 
 /* One row of the network list; freed when the row is deleted. */
 struct NetRow
@@ -236,6 +259,8 @@ const char * page_title(int p)
     switch(p) {
         case PAGE_WIFI: return str::WIFI;
         case PAGE_PASSWORD: return str::PASSWORD;
+        case PAGE_NAME: return str::DEVICE_NAME;
+        case PAGE_RESET: return str::RESET_TITLE;
         case PAGE_PLAYER: return str::PLAYER_TITLE;
         case PAGE_SOURCES: return str::SOURCES_TITLE;
         case PAGE_MENU: return str::MENU_TITLE;
@@ -327,8 +352,10 @@ void show_page(int p)
     page_now = p;
     for(int i = 0; i < PAGE_COUNT; i++) lv_obj_set_hidden(pages[i], i != p);
     lv_label_set_text(title_lbl, page_title(p));
-    lv_obj_set_hidden(keyboard, p != PAGE_PASSWORD);
+    lv_obj_set_hidden(keyboard, p != PAGE_PASSWORD && p != PAGE_NAME);
     if(p == PAGE_PASSWORD) lv_keyboard_set_textarea(keyboard, pw_input);
+    if(p == PAGE_NAME) lv_keyboard_set_textarea(keyboard, name_input);
+    update_setup_chrome();
     if(p == PAGE_MAIN) refresh_main();
     if(p == PAGE_ABOUT) fill_about();
     if(p == PAGE_MENU && menu_player_value) {
@@ -529,14 +556,26 @@ void poll_cb(lv_timer_t *)
 {
     if(page_now == PAGE_SOURCES) refresh_sources(); /* the code counts down and sources come and go */
     if(!svc.wifi) return;
+    /* lv_tick_elaps() wraps to a huge number while the retry time is still ahead */
+    if(scan_retry_pending && page_now == PAGE_WIFI && lv_tick_elaps(scan_retry_at) < 0x80000000u) {
+        scan_retry_pending = false;
+        start_scan();
+    }
     if(page_now == PAGE_WIFI && scan_was_running && !svc.wifi->scan_running()) {
         scan_was_running = false;
         fill_wifi_list();
-        set_status(wifi_status,
-                   svc.wifi->state() == WifiState::Connected
-                       ? (std::string(str::CONNECTED_TO) + svc.wifi->connected_ssid())
-                       : str::SELECT_NETWORK,
-                   svc.wifi->state() == WifiState::Connected ? COLOR_GOOD : COLOR_DIM);
+        if(svc.wifi->scan_result().empty() && scan_retries < SCAN_RETRIES) {
+            scan_retries++;
+            scan_retry_pending = true;
+            scan_retry_at      = lv_tick_get() + SCAN_RETRY_MS;
+            set_status(wifi_status, str::SCANNING, COLOR_DIM);
+        } else {
+            set_status(wifi_status,
+                       svc.wifi->state() == WifiState::Connected
+                           ? (std::string(str::CONNECTED_TO) + svc.wifi->connected_ssid())
+                           : str::SELECT_NETWORK,
+                       svc.wifi->state() == WifiState::Connected ? COLOR_GOOD : COLOR_DIM);
+        }
     }
     if(wait_for_connect) {
         switch(svc.wifi->state()) {
@@ -557,6 +596,7 @@ void poll_cb(lv_timer_t *)
         }
     }
     if(page_now == PAGE_MAIN) refresh_main();
+    if(setup_step) update_setup_chrome();
 }
 
 void close_overlay()
@@ -572,6 +612,7 @@ void on_back(lv_event_t *)
         case PAGE_WIFI:
         case PAGE_DISPLAY:
         case PAGE_ABOUT:
+        case PAGE_RESET:
         case PAGE_SOURCES: show_page(PAGE_MAIN); break;
         case PAGE_PLAYER: show_page(PAGE_MENU); break;
         case PAGE_MAIN:
@@ -610,6 +651,21 @@ void on_volume_mode(lv_event_t * e)
     if(svc.set_volume_mode) svc.set_volume_mode(mode);
 }
 
+void on_open_reset(lv_event_t *)
+{
+    show_page(PAGE_RESET);
+}
+
+void on_reset_cancel(lv_event_t *)
+{
+    show_page(PAGE_MAIN);
+}
+
+void on_reset_do(lv_event_t *)
+{
+    if(svc.factory_reset) svc.factory_reset();
+}
+
 void on_open_about(lv_event_t *)
 {
     show_page(PAGE_ABOUT);
@@ -641,6 +697,8 @@ void on_brightness_released(lv_event_t *)
 
 void on_open_wifi(lv_event_t *)
 {
+    scan_retries       = 0;
+    scan_retry_pending = false;
     show_page(PAGE_WIFI);
     if(svc.wifi->state() == WifiState::Connected)
         set_status(wifi_status, std::string(str::CONNECTED_TO) + svc.wifi->connected_ssid(), COLOR_GOOD);
@@ -649,6 +707,8 @@ void on_open_wifi(lv_event_t *)
 
 void on_rescan(lv_event_t *)
 {
+    scan_retries       = 0;
+    scan_retry_pending = false;
     start_scan();
 }
 
@@ -675,9 +735,86 @@ void on_toggle_eye(lv_event_t *)
 }
 
 /* Enter key on the keyboard */
+void on_setup_next(lv_event_t *);
+
 void on_keyboard_ready(lv_event_t *)
 {
     if(page_now == PAGE_PASSWORD) connect_with_password();
+    if(page_now == PAGE_NAME) on_setup_next(nullptr);
+}
+
+/* Title, back arrow and Next button for the current page and setup step. Cheap: also called from the poll timer. */
+void update_setup_chrome()
+{
+    if(!back_btn || !setup_btn) return;
+    lv_obj_set_hidden(back_btn, setup_step != 0 && page_now != PAGE_PASSWORD);
+    bool show_next     = false;
+    const char * label = str::SETUP_NEXT;
+    switch(setup_step) {
+        case 1:
+            lv_label_set_text(title_lbl, str::SETUP_NAME);
+            show_next = true;
+            break;
+        case 2:
+            lv_label_set_text(title_lbl, str::SETUP_WIFI);
+            show_next = page_now == PAGE_WIFI && svc.wifi && svc.wifi->state() == WifiState::Connected;
+            break;
+        case 3: {
+            lv_label_set_text(title_lbl, str::SETUP_PAIR);
+            show_next       = true;
+            bool any_paired = false;
+            if(svc.hub)
+                for(const HubSourceInfo & src : svc.hub->sources()) any_paired = any_paired || src.paired;
+            label = any_paired ? str::SETUP_DONE : str::SETUP_SKIP;
+            break;
+        }
+        default: break;
+    }
+    lv_obj_set_hidden(setup_btn, !show_next);
+    lv_label_set_text(setup_btn_lbl, label);
+}
+
+std::string trimmed_name()
+{
+    std::string name = lv_textarea_get_text(name_input);
+    const size_t a   = name.find_first_not_of(" \t");
+    if(a == std::string::npos) return "";
+    return name.substr(a, name.find_last_not_of(" \t") - a + 1);
+}
+
+/* Next: name -> WiFi -> pairing -> closed. The name is saved when the first step is left, so the hub announces itself
+ * under it from the first moment it is on the network and pairs under it. */
+void on_setup_next(lv_event_t *)
+{
+    switch(setup_step) {
+        case 1: {
+            const std::string name = trimmed_name();
+            if(name.empty()) return; /* keep the step: the device needs a name */
+            if(svc.set_device_name) svc.set_device_name(name);
+            setup_step         = 2;
+            scan_retries       = 0;
+            scan_retry_pending = false;
+            show_page(PAGE_WIFI);
+            set_status(wifi_status, str::SELECT_NETWORK, COLOR_DIM);
+            start_scan();
+            break;
+        }
+        case 2: {
+            setup_step = 3;
+            sources_sig.clear();
+            show_page(PAGE_SOURCES);
+            if(svc.hub && svc.hub->pairing_code().empty()) svc.hub->start_pairing();
+            refresh_sources();
+            break;
+        }
+        case 3:
+            if(svc.hub) svc.hub->stop_pairing();
+            setup_step = 0;
+            show_page(PAGE_MAIN);
+            close_overlay();
+            break;
+        default: break;
+    }
 }
 
 lv_obj_t * make_page(lv_obj_t * parent)
@@ -726,17 +863,22 @@ void settings_ui_init(SettingsServices services)
     lv_obj_set_scrollable(root, false);
 
     /* header */
-    lv_obj_t * back = lv_button_create(root);
-    lv_obj_set_size(back, 56, 56);
-    lv_obj_set_pos(back, 12, 4);
-    lv_obj_set_style_bg_opa(back, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_shadow_width(back, 0, 0);
-    lv_obj_set_style_bg_opa(back, LV_OPA_20, LV_STATE_PRESSED);
-    lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, nullptr);
-    lv_obj_t * back_lbl = make_label(back, LV_SYMBOL_LEFT, 28, 0xFFFFFF);
+    back_btn = lv_button_create(root);
+    lv_obj_set_size(back_btn, 56, 56);
+    lv_obj_set_pos(back_btn, 12, 4);
+    lv_obj_set_style_bg_opa(back_btn, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_shadow_width(back_btn, 0, 0);
+    lv_obj_set_style_bg_opa(back_btn, LV_OPA_20, LV_STATE_PRESSED);
+    lv_obj_add_event_cb(back_btn, on_back, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t * back_lbl = make_label(back_btn, LV_SYMBOL_LEFT, 28, 0xFFFFFF);
     lv_obj_center(back_lbl);
     title_lbl = make_label(root, str::SETTINGS, 28, 0xFFFFFF);
     lv_obj_set_pos(title_lbl, 84, 12);
+    /* the setup guide's Next button, top right, only while the guide runs */
+    setup_btn = make_button(root, str::SETUP_NEXT, 150, 48, 0x2563EB, on_setup_next);
+    lv_obj_set_pos(setup_btn, 638, 8);
+    setup_btn_lbl = lv_obj_get_child(setup_btn, 0);
+    lv_obj_set_hidden(setup_btn, true);
 
     for(int i = 0; i < PAGE_COUNT; i++) pages[i] = make_page(root);
 
@@ -759,6 +901,7 @@ void settings_ui_init(SettingsServices services)
     if(svc.set_brightness || svc.set_volume_mode)
         tiles.push_back({LV_SYMBOL_EYE_OPEN, str::DISPLAY_ROW, &display_value, on_open_display});
     tiles.push_back({LV_SYMBOL_LIST, str::ABOUT_ROW, nullptr, on_open_about});
+    if(svc.factory_reset) tiles.push_back({LV_SYMBOL_TRASH, str::RESET_ROW, nullptr, on_open_reset});
     layout_tiles(pages[PAGE_MAIN], tiles);
 
     /* display page: brightness, volume button */
@@ -792,6 +935,26 @@ void settings_ui_init(SettingsServices services)
             lv_obj_set_pos(volume_mode_btn[i], 380 + i * 130, 298);
         }
         if(svc.get_volume_mode) show_volume_mode(svc.get_volume_mode());
+    }
+
+    /* factory reset page: the question and two buttons */
+    {
+        lv_obj_t * text = make_label(pages[PAGE_RESET], str::RESET_TEXT, 26, 0xFFFFFF);
+        lv_obj_set_width(text, 700);
+        lv_obj_set_pos(text, 50, 50);
+        lv_obj_t * cancel = make_button(pages[PAGE_RESET], str::RESET_CANCEL, 220, 64, COLOR_ROW, on_reset_cancel);
+        lv_obj_set_pos(cancel, 130, 240);
+        lv_obj_t * reset = make_button(pages[PAGE_RESET], str::RESET_DO, 220, 64, 0xDC2626, on_reset_do);
+        lv_obj_set_pos(reset, 450, 240);
+    }
+
+    /* name page (setup only) */
+    {
+        lv_obj_t * hint = make_label(pages[PAGE_NAME], str::SETUP_NAME_HINT, 22, COLOR_DIM);
+        lv_obj_set_pos(hint, 30, 14);
+        name_input = make_textarea(pages[PAGE_NAME], 30, 56, 740);
+        lv_textarea_set_max_length(name_input, DEVICE_NAME_MAX_LEN);
+        lv_textarea_set_placeholder_text(name_input, "Raira");
     }
 
     /* about page */
@@ -905,4 +1068,14 @@ void settings_ui_open()
 void settings_ui_open_menu()
 {
     show_overlay(PAGE_MENU);
+}
+
+void settings_ui_open_setup()
+{
+    if(!root || !svc.wifi) return;
+    setup_step = 1;
+    svc.wifi->forget();   /* a reset device must not stay on the network its WiFi chip remembers */
+    music_ui_boot_done(); /* the start-up screen would hide the guide until the first poll succeeds (never, here) */
+    lv_textarea_set_text(name_input, svc.get_device_name ? svc.get_device_name().c_str() : "");
+    show_overlay(PAGE_NAME);
 }

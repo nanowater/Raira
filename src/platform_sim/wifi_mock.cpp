@@ -37,6 +37,11 @@ class MockWifi : public WifiManager {
         connected_.clear();
     }
 
+    void forget() override
+    {
+        connecting_ = false;
+        connected_.clear();
+    }
     WifiState state() const override
     {
         if(connecting_ && Clock::now() - started_ > std::chrono::milliseconds(1500)) {

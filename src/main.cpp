@@ -266,6 +266,18 @@ int main(int argc, char ** argv)
          * as a HubSource for the settings UI (deps.hub, a plain pointer for pairing and the source list). Take the
          * pointer before the move: afterwards `hub` is empty. */
         deps.hub = hub.get();
+        /* the simulator cannot restart itself: a factory reset ends it, the next start is a first start */
+        deps.restart_device = [] { g_quit = 1; };
+        /* a rename (the first-start guide, later maybe the settings) is announced under the new name at once */
+        deps.on_device_name_changed = [id = saved.hub_device_id, port = (uint16_t)hub_port](const std::string & name) {
+            if(!g_mdns) return;
+            g_mdns->stop();
+            MdnsService adv;
+            adv.instance = name;
+            adv.port     = port;
+            adv.txt      = {{"proto", "1"}, {"id", id}, {"name", name}};
+            g_mdns->start(adv);
+        };
         if(fake_browse) deps.browse = fake_browse_create();
         deps.settings = saved;
         /* No backlight here: a black veil over everything stands in for it, so the Display page can be tried. */

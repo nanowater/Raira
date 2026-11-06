@@ -67,6 +67,10 @@ class HubSource : public MediaSource {
     int pairing_seconds_left();
     std::vector<HubSourceInfo> sources();
     void remove_source(const std::string & id); /* forget the secret and drop the connection */
+    /* The name sources show in their device list. A rename reaches sources at their next hello (and the mDNS TXT
+     * record, which the host re-announces); open connections keep the name they were told. */
+    void set_device_name(const std::string & name);
+    std::string device_name();
 
     /* ---- MediaSource ---- */
     const char * name() const override

@@ -660,6 +660,18 @@ std::string HubSource::start_pairing()
     return pair_code_;
 }
 
+void HubSource::set_device_name(const std::string & name)
+{
+    std::lock_guard<std::mutex> lk(mu_);
+    identity_.device_name = name;
+}
+
+std::string HubSource::device_name()
+{
+    std::lock_guard<std::mutex> lk(mu_);
+    return identity_.device_name;
+}
+
 void HubSource::stop_pairing()
 {
     std::lock_guard<std::mutex> lk(mu_);

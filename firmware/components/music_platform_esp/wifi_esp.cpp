@@ -96,6 +96,21 @@ class EspWifi : public WifiManager {
             state_ = WifiState::Failed;
         }
     }
+    // Drops the connection and overwrites the network the WiFi chip keeps in its own flash with an empty one (erasing
+    // the app's settings does not reach it), so a reset device does not connect to its previous owner's network. State
+    // goes to Idle first: on_disconnected() then leaves the disconnect alone.
+    void forget() override
+    {
+        state_ = WifiState::Idle;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            pending_ssid_.clear();
+        }
+        esp_wifi_disconnect();
+        wifi_config_t empty{};
+        esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &empty);
+        if(err != ESP_OK) ESP_LOGW(TAG, "forget: clearing the stored network failed: %s", esp_err_to_name(err));
+    }
     WifiState state() const override
     {
         return state_;
@@ -125,7 +140,14 @@ class EspWifi : public WifiManager {
 
         // Connected means an IP address was obtained, not just that the access point accepted us: only from now on can
         // the hub's server listen and mDNS announce.
+        // A connection nobody asked for (state Idle: the chip reconnected to the network it had stored) is dropped; the
+        // app only uses networks it was told to connect to.
         if(base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
+            if(self->state_ == WifiState::Idle) {
+                ESP_LOGW(TAG, "unrequested connection (stored network), dropping it");
+                esp_wifi_disconnect();
+                return;
+            }
             self->retries_ = 0;
             self->state_   = WifiState::Connected;
         }

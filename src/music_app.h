@@ -21,6 +21,12 @@ struct MusicAppDeps
     /* Sets the backlight in percent (5..100); null = this device cannot, the settings hide the Display row. Called at
      * once with the saved value, so the platform needs nothing else for it. */
     std::function<void(int percent)> set_brightness;
+    /* Called (LVGL thread) after the user renamed the device and the name is saved and given to the hub: the host
+     * announces the new name on mDNS. Null = nothing to announce. */
+    std::function<void(const std::string & name)> on_device_name_changed;
+    /* Restarts the device (ESP32: esp_restart; the simulator quits). Called by the factory reset once everything is
+     * erased; null = the settings offer no factory reset. */
+    std::function<void()> restart_device;
 };
 
 /* Portable app entry: builds the UI (incl. the settings page) and starts the background threads. Call

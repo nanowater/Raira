@@ -29,6 +29,10 @@ struct SettingsServices
     std::function<void(int mode)> set_volume_mode; /* apply + persist */
     /* The name sources show in their device list; unset = the About page has no such line. */
     std::function<std::string()> get_device_name;
+    /* Erase everything the user set up and restart; unset = the device cannot (no Factory reset tile). Called after the
+     * confirmation page. */
+    std::function<void()> factory_reset;
+    std::function<void(const std::string &)> set_device_name; /* apply + persist; unset = the name cannot be changed */
 };
 
 /* Build the (hidden) overlay on the active screen. Call once, after the main UI. LVGL thread only. */
@@ -40,3 +44,8 @@ void settings_ui_open();
 /* Show the overlay on its menu (long press on the cover): quick access to the player choice and to the settings. Back
  * from either returns to the menu, back from the menu closes the overlay. */
 void settings_ui_open_menu();
+
+/* The first-start guide: the device's name, WiFi, pairing the first PC, as three steps with a Next button instead of
+ * the back arrow. Opens the overlay at step 1 (the name); after the last step (or Skip on the pairing step) it closes.
+ * Needs the WiFi service. */
+void settings_ui_open_setup();

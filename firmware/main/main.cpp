@@ -1,6 +1,7 @@
 #include <chrono>
 #include <cstdio>
 #include <memory>
+#include <mutex>
 #include <cstring>
 #include <string>
 #include <thread>
@@ -10,6 +11,7 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_pthread.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "hub_boot.h"
@@ -25,6 +27,7 @@
 static const char * TAG = "main";
 
 static std::unique_ptr<MdnsAdvertiser> g_mdns;
+static std::mutex g_mdns_mu; // the announcing thread and a rename (LVGL thread) both touch g_mdns
 
 // The port sources connect to (the hub's WebSocket server), the same as the simulator's default.
 static const uint16_t HUB_PORT = 18322;
@@ -52,6 +55,32 @@ static void start_app()
     deps.source         = std::move(hub);
     deps.settings       = boot.settings;
     deps.set_brightness = [](int percent) { board_set_backlight(percent); };
+    // A restart sends no mDNS goodbye of its own, and the records live 75 minutes (the PTR's TTL is 4500 s): a PC that
+    // saw the device would list it long after a factory reset. So stop announcing first and give the goodbye packets
+    // time to leave before the chip restarts.
+    deps.restart_device = [] {
+        {
+            std::lock_guard<std::mutex> lk(g_mdns_mu);
+            if(g_mdns) {
+                g_mdns->stop();
+                g_mdns.reset();
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(400));
+        esp_restart();
+    };
+    // A rename (the first-start guide) is announced again under the new name. Before the first announcement g_mdns is
+    // still empty; the thread below then reads the current name when it gets there.
+    deps.on_device_name_changed = [id = boot.settings.hub_device_id](const std::string & name) {
+        std::lock_guard<std::mutex> lk(g_mdns_mu);
+        if(!g_mdns) return;
+        g_mdns->stop();
+        MdnsService adv;
+        adv.instance = name;
+        adv.port     = HUB_PORT;
+        adv.txt      = {{"proto", "1"}, {"id", id}, {"name", name}};
+        g_mdns->start(adv);
+    };
     // The background threads of the app (poller, lyrics, browse, the hub start-up) run on core 1; core 0 keeps the LVGL
     // loop. Every std::thread that this task creates from here on takes this configuration. (The cover background alone
     // takes ~0.5 s of CPU per track.)
@@ -61,7 +90,7 @@ static void start_app()
     ESP_ERROR_CHECK(esp_pthread_set_cfg(&pcfg));
     music_app_start(std::move(deps));
 
-    std::thread([hub_ptr, wifi_ptr, id = boot.settings.hub_device_id, name = boot.settings.hub_device_name]() {
+    std::thread([hub_ptr, wifi_ptr, id = boot.settings.hub_device_id]() {
         while(wifi_ptr->state() != WifiState::Connected) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
@@ -69,7 +98,9 @@ static void start_app()
             ESP_LOGE(TAG, "hub cannot listen on port %d, not announcing it", HUB_PORT);
             return;
         }
-        g_mdns = mdns_advertiser_create();
+        std::lock_guard<std::mutex> lk(g_mdns_mu);
+        const std::string name = hub_ptr->device_name(); // current: the guide may have renamed the device meanwhile
+        g_mdns                 = mdns_advertiser_create();
         MdnsService adv;
         adv.instance = name;
         adv.port     = HUB_PORT;
