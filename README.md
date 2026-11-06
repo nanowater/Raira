@@ -1,65 +1,69 @@
 # Raira
 
-A media controller in the style of the Spotify Car Thing that is not tied to one music service: a small 800×480 touch screen
-with a rotary encoder that shows what is playing on your PC (cover, title, progress, synced lyrics) and sends play/pause, skip,
-seek, shuffle, repeat and volume back.
+> ⚠️ **This project is still under development.** Things may change, break or be missing.
+
+**English** | [한국어](README.ko.md)
+
+Raira is a media controller inspired by the Spotify Car Thing. It is not tied to one music service, and I started it because I wanted something I could use anywhere, not just in the car.
+
+It shows what is playing on your PC (cover, title, progress, synced lyrics) on a small touch screen. You play/pause, skip, seek, shuffle, repeat and change the volume by touching the screen or turning the dial.
 
 ![Raira on the simulator](docs/img/screenshot.png)
 
-The device only controls; the music plays on the PC. A small program on the PC, the **bridge**, reads the players over MPRIS
-(TIDAL through `tidal-hifi`, Spotify, browsers and anything else that speaks MPRIS) and talks to the device over WiFi.
+## How does it work?
 
-## How it fits together
+The Raira device is only a remote; the music keeps playing on your PC as usual. To talk to Raira, a program on the PC called the **bridge** tells the device what is playing and passes the device's commands on to the player.
 
-- **The device is the hub.** It announces itself on the network (mDNS, `_raira._tcp`) and runs a WebSocket server.
-  Sources such as the bridge find it, pair once with a six-digit code shown on the device, and then push player state and
-  answer requests for covers and lyrics. Several PCs can be connected at once.
-- **The bridge** (`bridge/`, Rust) runs on the PC, has a settings page at `http://127.0.0.1:18801/` and a tray icon. It also
-  looks up synced lyrics on [LRCLIB](https://lrclib.net), so the device needs no HTTPS.
-- **The UI** (`src/`, C++23 with [LVGL](https://lvgl.io)) is the same code on the Linux simulator and on the device.
-  Everything OS-specific sits behind `src/platform/`.
+- Most players that support Linux media controls (MPRIS) work, such as Spotify, Tidal and browsers.
+- You connect them once by typing the six-digit code shown on the device into the bridge. After that they find each other on the same WiFi by themselves.
+- The bridge looks up lyrics on [LRCLIB](https://lrclib.net) and sends them to the device.
 
-The protocols are described in `docs/HUB_PROTOCOL.md` and `docs/BRIDGE_PROTOCOL.md`.
+## What you need
+
+Raira currently needs:
+
+- An ESP32-P4 board (tested with the Guition JC4880P443C_I_W)
+- A PC running Linux (Windows support is planned)
 
 ## Status
 
-| part | state |
-|---|---|
-| Linux simulator (`lvglsim`) acting as the hub | works |
-| Bridge on Linux (MPRIS, tidal-hifi supplement, lyrics, tray, settings page) | works |
-| Bridge on Windows | not started |
-| ESP32-P4 firmware (board: JC4880P443C_I_W, P4 + C6) | **runs on the board**: display (MIPI-DSI, rotated to landscape by the PPA), touch, WiFi over the C6, pairing with the bridge, fonts, hardware JPEG; ~60 fps at rest, 28 min soak without a reboot; rotary encoder (EC11: volume, click = play/pause), on-screen volume slider, brightness and player settings, Chinese/Japanese/Korean fonts; a multi-hour soak and the cost of the track-change transition are open |
+| part                                                              | state   |
+| ----------------------------------------------------------------- | ------- |
+| Simulator for the PC (try the screen without the hardware)        | ✅      |
+| Bridge for Linux (tray icon, settings page, lyrics)               | ✅      |
+| Confirmed working on the ESP32-P4 device (JC4880P443C_I_W)        | ✅      |
+| Volume control with the encoder                                   | ✅      |
+| Bridge for Windows                                                | planned |
 
-Playlist and queue browsing exists in the UI but no real source provides data yet (`lvglsim -F` shows it with sample data).
-`docs/PORTING.md` has the ESP32 status (P4 first), the constraints found on the board, the memory budget and checklists.
+## Tested streaming services
 
-## Try it on one PC (Linux)
+| service           | state |
+| ----------------- | ----- |
+| Spotify           | ✅    |
+| Tidal (tidal-hifi) | ✅   |
 
-Needs a C++23 compiler, CMake, SDL2, libturbojpeg, libwebsockets and nlohmann_json, plus a Rust toolchain for the bridge.
+## Try it yourself
+
+For now the PC side runs on Linux only. You can try the screen with the simulator, no device needed.
+
+You need: a C++23 compiler, CMake, SDL2, libturbojpeg, libwebsockets, nlohmann_json, and Rust.
 
     cmake -B build && cmake --build build -j
-    build/bin/lvglsim                 # the simulator, which is the hub on port 18322
-    cd bridge && cargo run            # the bridge; it finds the hub over mDNS
+    build/bin/lvglsim                 # start the simulator
+    cd bridge && cargo run            # start the bridge
 
-Then open Settings > Sources > Pair a source on the simulator and type the code on the bridge's settings page
-(`http://127.0.0.1:18801/`). If mDNS does not find the hub, start the bridge with `--device 127.0.0.1:18322`.
+1. In the simulator, open Settings > Sources > Pair a source.
+2. Open the bridge's settings page (`http://127.0.0.1:18801/`) and type the code shown on the screen.
+3. If they do not connect on their own, start the bridge with `--device 127.0.0.1:18322`.
 
-To install the bridge for your user and start it at every login: `tools/install_bridge.sh` (options are in the
-script's header, `--uninstall` removes it).
+To have the bridge start at every login, run `tools/install_bridge.sh`. Add `--uninstall` to undo it.
 
-## Firmware
+An installer that makes this easier is planned.
 
-ESP-IDF v6.1 project in `firmware/`. `tools/firmware_build.sh` builds it and prints the size; flashing and the partition layout
-are in `docs/PORTING.md`.
+## Building the real device
 
-## Checks
-
-`tools/run_checks.sh` runs the bridge's unit tests, formatting and lint, a conformance suite for the simulator's WebSocket
-server, an mDNS probe, the device's focus/reconnect/lyrics-retry rules against a fake source and the firmware build.
-`tools/README.md` lists them.
+The firmware for the ESP32-P4 board (JC4880P443C_I_W) is in `firmware/` (ESP-IDF v6.1). Build it with `tools/firmware_build.sh`; how to flash it is in `docs/PORTING.md`. With a rotary encoder (EC11) attached you can change the volume with the dial and press it to play/pause.
 
 ## Credits and licenses
 
-This project is MIT licensed (`LICENSE`). It includes [LVGL](https://github.com/lvgl/lvgl) (MIT, in `lvgl/`),
-[nlohmann/json](https://github.com/nlohmann/json) (MIT), subsets of Noto Sans CJK (SIL OFL 1.1, `assets/fonts/OFL.txt`) and
-a bitmap font generated from DejaVu Sans Mono. Lyrics come from LRCLIB; please keep its rate limits in mind.
+MIT licensed (`LICENSE`). It includes [LVGL](https://github.com/lvgl/lvgl) (MIT), [nlohmann/json](https://github.com/nlohmann/json) (MIT), subsets of Noto Sans CJK (SIL OFL 1.1, `assets/fonts/OFL.txt`) and a bitmap font made from DejaVu Sans Mono. Lyrics come from LRCLIB; please keep its rate limits in mind.
