@@ -4,6 +4,7 @@ set(SRC ${CMAKE_CURRENT_LIST_DIR}/../../../src)
 
 idf_component_register(
     SRCS
+        device_info_esp.cpp
         jpeg_p4.cpp
         ${SRC}/fonts/font_image.cpp
         font_partition.cpp
@@ -14,6 +15,7 @@ idf_component_register(
     INCLUDE_DIRS .
     REQUIRES music_core
     PRIV_REQUIRES esp_partition esp_rom nvs_flash esp_wifi esp_netif esp_event mdns esp_http_server esp_driver_jpeg
+                  esp_hw_support esp_psram esp_app_format heap spi_flash
     # The core only CALLS these functions and this component does not know the core, so the linker may reach the core after it has
     # passed this library and then never takes the functions out of it: link every file of the library.
     WHOLE_ARCHIVE

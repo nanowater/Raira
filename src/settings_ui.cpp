@@ -5,6 +5,7 @@
 #include <cstring>
 #include <vector>
 #include "media_poller.h"
+#include "platform/device_info.h"
 #include "strings.h"
 #include "ui_fonts.h"
 
@@ -20,9 +21,20 @@ namespace {
  *   PLAYER   the choice of the player; only the menu leads here. Back to MENU.
  *   SOURCES  pairing code and the paired PCs. Back to MAIN.
  *   DISPLAY  the brightness slider (only when the platform can set it). Back to MAIN.
+ *   ABOUT    the device name and what the platform reports about the hardware and the firmware. Back to MAIN.
  *
  * Only one page is visible at a time (show_page). */
-enum Page { PAGE_MAIN, PAGE_WIFI, PAGE_PASSWORD, PAGE_PLAYER, PAGE_SOURCES, PAGE_MENU, PAGE_DISPLAY, PAGE_COUNT };
+enum Page {
+    PAGE_MAIN,
+    PAGE_WIFI,
+    PAGE_PASSWORD,
+    PAGE_PLAYER,
+    PAGE_SOURCES,
+    PAGE_MENU,
+    PAGE_DISPLAY,
+    PAGE_ABOUT,
+    PAGE_COUNT
+};
 
 const uint32_t COLOR_BG          = 0x12151B;
 const uint32_t COLOR_ROW         = 0x1F2937;
@@ -47,6 +59,9 @@ lv_obj_t * display_value      = nullptr; /* the value line of the tile */
 lv_obj_t * brightness_lbl     = nullptr;
 lv_obj_t * brightness_sld     = nullptr;
 lv_obj_t * volume_mode_btn[3] = {nullptr, nullptr, nullptr};
+
+/* about page: one row per fact, rebuilt each time the page opens */
+lv_obj_t * about_list = nullptr;
 
 /* menu page (long press on the cover): where back goes from the pages it leads to */
 lv_obj_t * menu_player_value = nullptr;
@@ -225,6 +240,7 @@ const char * page_title(int p)
         case PAGE_SOURCES: return str::SOURCES_TITLE;
         case PAGE_MENU: return str::MENU_TITLE;
         case PAGE_DISPLAY: return str::DISPLAY_TITLE;
+        case PAGE_ABOUT: return str::ABOUT_TITLE;
         default: return str::SETTINGS;
     }
 }
@@ -280,6 +296,32 @@ void refresh_main()
     }
 }
 
+/* One line per fact: the name on the left (dim), the value on the right. */
+void fill_about()
+{
+    lv_obj_clean(about_list);
+    std::vector<DeviceInfoRow> rows;
+    if(svc.get_device_name) rows.push_back({str::DEVICE_NAME, svc.get_device_name()});
+    for(DeviceInfoRow & r : device_info_rows()) rows.push_back(std::move(r));
+    for(const DeviceInfoRow & r : rows) {
+        lv_obj_t * row = lv_obj_create(about_list);
+        lv_obj_set_size(row, 740, 40);
+        lv_obj_set_style_bg_color(row, lv_color_hex(COLOR_ROW), 0);
+        lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
+        lv_obj_set_style_radius(row, 12, 0);
+        lv_obj_set_style_border_width(row, 0, 0);
+        lv_obj_set_style_pad_all(row, 0, 0);
+        lv_obj_set_scrollable(row, false);
+        lv_obj_t * name = make_label(row, r.name.c_str(), 22, COLOR_DIM);
+        lv_obj_align(name, LV_ALIGN_LEFT_MID, 20, 0);
+        lv_obj_t * value = make_label(row, r.value.c_str(), 22, 0xFFFFFF);
+        lv_obj_set_width(value, 480);
+        lv_obj_set_style_text_align(value, LV_TEXT_ALIGN_RIGHT, 0);
+        lv_label_set_long_mode(value, LV_LABEL_LONG_DOT);
+        lv_obj_align(value, LV_ALIGN_RIGHT_MID, -20, 0);
+    }
+}
+
 void show_page(int p)
 {
     page_now = p;
@@ -288,6 +330,7 @@ void show_page(int p)
     lv_obj_set_hidden(keyboard, p != PAGE_PASSWORD);
     if(p == PAGE_PASSWORD) lv_keyboard_set_textarea(keyboard, pw_input);
     if(p == PAGE_MAIN) refresh_main();
+    if(p == PAGE_ABOUT) fill_about();
     if(p == PAGE_MENU && menu_player_value) {
         lv_label_set_text(menu_player_value, player_text().c_str());
         preload_players();
@@ -528,6 +571,7 @@ void on_back(lv_event_t *)
         case PAGE_PASSWORD: show_page(PAGE_WIFI); break;
         case PAGE_WIFI:
         case PAGE_DISPLAY:
+        case PAGE_ABOUT:
         case PAGE_SOURCES: show_page(PAGE_MAIN); break;
         case PAGE_PLAYER: show_page(PAGE_MENU); break;
         case PAGE_MAIN:
@@ -564,6 +608,11 @@ void on_volume_mode(lv_event_t * e)
     const int mode = (int)(intptr_t)lv_event_get_user_data(e);
     show_volume_mode(mode);
     if(svc.set_volume_mode) svc.set_volume_mode(mode);
+}
+
+void on_open_about(lv_event_t *)
+{
+    show_page(PAGE_ABOUT);
 }
 
 void on_open_display(lv_event_t *)
@@ -709,6 +758,7 @@ void settings_ui_init(SettingsServices services)
     if(svc.hub) tiles.push_back({LV_SYMBOL_USB, str::SOURCES_ROW, &sources_value, on_open_sources});
     if(svc.set_brightness || svc.set_volume_mode)
         tiles.push_back({LV_SYMBOL_EYE_OPEN, str::DISPLAY_ROW, &display_value, on_open_display});
+    tiles.push_back({LV_SYMBOL_LIST, str::ABOUT_ROW, nullptr, on_open_about});
     layout_tiles(pages[PAGE_MAIN], tiles);
 
     /* display page: brightness, volume button */
@@ -743,6 +793,17 @@ void settings_ui_init(SettingsServices services)
         }
         if(svc.get_volume_mode) show_volume_mode(svc.get_volume_mode());
     }
+
+    /* about page */
+    about_list = lv_obj_create(pages[PAGE_ABOUT]);
+    lv_obj_set_size(about_list, 740, 480 - 64 - 20);
+    lv_obj_set_pos(about_list, 30, 12);
+    lv_obj_set_style_bg_opa(about_list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(about_list, 0, 0);
+    lv_obj_set_style_pad_all(about_list, 0, 0);
+    lv_obj_set_style_pad_row(about_list, 4, 0);
+    lv_obj_set_flex_flow(about_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_scrollbar_mode(about_list, LV_SCROLLBAR_MODE_OFF);
 
     /* wifi page */
     wifi_status = make_label(pages[PAGE_WIFI], "", 22, COLOR_DIM);

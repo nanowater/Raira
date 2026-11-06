@@ -115,6 +115,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(TURBOJPEG REQUIRED IMPORTED_TARGET libturbojpeg)
 pkg_check_modules(LWS REQUIRED IMPORTED_TARGET libwebsockets)
 add_library(music_platform_sim STATIC
+    src/platform_sim/device_info_sim.cpp
     src/platform_sim/jpeg_turbo.cpp
     src/platform_sim/settings_file.cpp
     src/platform_sim/wifi_mock.cpp

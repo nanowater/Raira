@@ -27,6 +27,8 @@ struct SettingsServices
     /* The on-screen volume button: 0 = auto, 1 = show, 2 = hide. Both unset = no choice offered. */
     std::function<int()> get_volume_mode;
     std::function<void(int mode)> set_volume_mode; /* apply + persist */
+    /* The name sources show in their device list; unset = the About page has no such line. */
+    std::function<std::string()> get_device_name;
 };
 
 /* Build the (hidden) overlay on the active screen. Call once, after the main UI. LVGL thread only. */

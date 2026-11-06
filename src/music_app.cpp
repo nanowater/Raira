@@ -93,6 +93,7 @@ void music_app_start(MusicAppDeps deps)
             if(g_store) g_store->save(g_settings);
         };
     }
+    svc.get_device_name = [] { return g_settings.hub_device_name; };
     svc.get_volume_mode = [] { return volume_mode(); };
     svc.set_volume_mode = [](int mode) {
         g_settings.volume_button = mode == 1 ? "show" : mode == 2 ? "hide" : "";
