@@ -16,10 +16,11 @@
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
   main { max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; }
-  header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
   h1 { font-size: 22px; margin: 0; }
   .ver { color: var(--dim); font-size: 13px; }
-  section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+  #summary { margin-bottom: 16px; color: var(--dim); }
+  section, details.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
   h2 { font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--dim); margin: 0 0 10px; }
   .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0; }
   .grow { flex: 1 1 auto; min-width: 0; }
@@ -27,10 +28,9 @@
   .small { font-size: 13px; }
   .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; background: var(--dim); margin-right: 6px; }
   .dot.good { background: var(--good); } .dot.bad { background: var(--bad); } .dot.warn { background: var(--warn); }
-  code, .mono { font-family: ui-monospace, monospace; background: var(--field); border-radius: 6px; padding: 2px 7px; word-break: break-all; }
-  .big { font-size: 20px; letter-spacing: .06em; }
   button { font: inherit; color: var(--text); background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
-  button:hover { border-color: var(--accent); }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .6; cursor: default; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   input[type=text], input[type=number] { font: inherit; color: var(--text); background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; width: 100%; }
   label.field { display: block; margin: 8px 0; }
@@ -40,10 +40,19 @@
   .player.off .grow { opacity: .55; }
   .dev { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 6px; border-top: 1px solid var(--line); }
   .dev:first-child { border-top: 0; }
-  .dev input[type=text] { width: 9em; }
+  .dev input.code { width: 8.5em; text-align: center; letter-spacing: .18em; font-size: 17px; font-variant-numeric: tabular-nums; }
   .tag { font-size: 12px; color: var(--dim); border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; }
   .note { font-size: 13px; margin-top: 8px; }
   .note.bad { color: var(--bad); } .note.good { color: var(--good); } .note.warn { color: var(--warn); }
+  .steps { margin: 4px 0 6px; padding-left: 22px; }
+  .steps li { margin: 4px 0; }
+  .welcome { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; margin-bottom: 12px; }
+  .welcome b.title { display: block; font-size: 17px; margin-bottom: 4px; }
+  summary { cursor: pointer; font-weight: 600; }
+  details.card > summary { color: var(--text); }
+  details.more { margin-top: 12px; }
+  details.more > summary { font-weight: 400; color: var(--dim); font-size: 13px; }
+  details > .body { margin-top: 10px; }
   #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--text); color: var(--bg);
            padding: 8px 14px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; }
   #toast.show { opacity: .95; }
@@ -55,35 +64,29 @@
     <h1>Raira Bridge</h1>
     <span class="ver" id="ver"></span>
   </header>
+  <div id="summary"></div>
 
   <section>
-    <h2>Devices</h2>
-    <div class="dim small">Raira devices this PC reports to. Press <b>Pair a source</b> in the device's Settings &rarr; Sources, then type the code it shows.</div>
+    <h2>Your Raira</h2>
+    <div class="welcome" id="welcome" hidden>
+      <b class="title">Let's connect your Raira</b>
+      <ol class="steps">
+        <li>Switch the device on. A new one guides you through its setup; otherwise open <b>Settings &rarr; Sources &rarr; Pair a source</b> on it.</li>
+        <li>When it shows up below, type the 6-digit code from its screen and press <b>Pair</b>.</li>
+      </ol>
+    </div>
     <div id="devices"></div>
     <div id="nearby"></div>
-    <div class="row" style="margin-top:10px">
-      <input type="text" id="newdev" class="grow" placeholder="Device address, e.g. 192.168.0.40 or raira.local">
-      <button id="adddev">Add device</button>
-    </div>
-  </section>
-
-  <section>
-    <h2>Older mode: a device that polls this PC</h2>
-    <div class="note dim" id="legacy-off" hidden>Not in use. The bridge listens on this PC only (the default), which is all the way above needs: the bridge connects to the device itself. Only a device that polls this PC would need the listen address 0.0.0.0 (Network, below) and the token.</div>
-    <div id="legacy-body">
-    <div class="row"><span class="dim">Address</span><span id="addr" class="grow"></span></div>
-    <div class="row">
-      <span class="dim">Token</span>
-      <code class="big" id="token">••••••••••••••••</code>
-      <span class="grow"></span>
-      <button id="show">Show</button>
-      <button id="copy">Copy</button>
-      <button id="regen">New token</button>
-    </div>
-    <div class="note dim" id="authnote"></div>
-    <div class="row" style="margin-top:12px"><span class="dim">Device</span><span id="device" class="grow"></span></div>
-    <div class="note" id="denied"></div>
-    </div>
+    <div class="note dim" id="searching"></div>
+    <details class="more">
+      <summary>Add a device by its address</summary>
+      <div class="body">
+        <div class="row">
+          <input type="text" id="newdev" class="grow" placeholder="Device address, e.g. 192.168.0.40 or raira.local">
+          <button id="adddev">Add</button>
+        </div>
+      </div>
+    </details>
   </section>
 
   <section>
@@ -93,29 +96,31 @@
     <div class="note dim" id="now"></div>
   </section>
 
-  <section>
-    <h2>TIDAL (tidal-hifi)</h2>
-    <div class="dim small">Adds shuffle, repeat and audio quality to the TIDAL desktop app.</div>
-    <label class="field"><span>tidal-hifi address (empty = off)</span><input type="text" id="tidal" placeholder="127.0.0.1:47836"></label>
-    <div class="row"><span id="tidalstate" class="grow"></span></div>
-  </section>
+  <details class="card">
+    <summary>Advanced</summary>
+    <div class="body">
+      <h2>TIDAL (tidal-hifi)</h2>
+      <div class="dim small">Adds shuffle, repeat, volume and audio quality to the TIDAL desktop app.</div>
+      <label class="field"><span>tidal-hifi address (empty = off)</span><input type="text" id="tidal" placeholder="127.0.0.1:47836"></label>
+      <div class="row"><span id="tidalstate" class="grow"></span></div>
 
-  <section>
-    <h2>Network</h2>
-    <div class="row">
-      <label class="field grow"><span>Listen address</span><input type="text" id="bind"></label>
-      <label class="field" style="width:120px"><span>Port</span><input type="number" id="port" min="1024" max="65535"></label>
+      <h2 style="margin-top:18px">Network</h2>
+      <div class="row">
+        <label class="field grow"><span>Listen address</span><input type="text" id="bind"></label>
+        <label class="field" style="width:120px"><span>Port</span><input type="number" id="port" min="1024" max="65535"></label>
+      </div>
+      <div class="note dim">Leave this as it is unless another program has to reach the bridge. 127.0.0.1 means this PC only.</div>
+      <div class="note warn" id="restart" hidden>Saved. The listen address and port change after the bridge is restarted.</div>
+      <div class="row" style="margin-top:12px"><span class="grow dim small" id="cfgpath"></span><button class="primary" id="save">Save settings</button></div>
     </div>
-    <div class="note dim">0.0.0.0 lets other devices connect (they need the token); 127.0.0.1 only this PC.</div>
-    <div class="note warn" id="restart" hidden>Saved. The listen address and port change after the bridge is restarted.</div>
-    <div class="row" style="margin-top:12px"><span class="grow dim small" id="cfgpath"></span><button class="primary" id="save">Save settings</button></div>
-  </section>
+  </details>
 </main>
 <div id="toast"></div>
 
 <script>
 const $ = id => document.getElementById(id);
-let data = null, shown = false, editing = false;
+let data = null, editing = false;
+const opened = Date.now();
 
 async function api(path, method = 'GET', body) {
   const opt = { method, headers: { 'X-Bridge-UI': '1' } };
@@ -124,97 +129,117 @@ async function api(path, method = 'GET', body) {
   if (!r.ok) throw new Error((await r.text()) || r.statusText);
   return r;
 }
-function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2200); }
-function ago(s) { if (s == null) return null; if (s < 2) return 'just now'; if (s < 90) return Math.round(s) + ' s ago'; if (s < 5400) return Math.round(s / 60) + ' min ago'; return Math.round(s / 3600) + ' h ago'; }
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2600); }
 function dot(kind, text) { const d = document.createElement('span'); d.className = 'dot ' + kind; const f = document.createDocumentFragment(); f.append(d, text); return f; }
 function setNote(el, kind, text) { el.className = 'note ' + kind; el.textContent = text; el.hidden = !text; }
+function el(tag, props, ...kids) { const e = Object.assign(document.createElement(tag), props || {}); e.append(...kids); return e; }
 
-const codes = {};  // what was typed per device, kept across the 1.5 s refreshes
+// What was typed per device and which pairings are under way: kept across the 1.5 s refreshes, which rebuild the lists.
+const codes = {}, busy = new Set();
+
+function codeBox(addr, submit) {
+  const input = el('input', { type: 'text', className: 'code', placeholder: '000000', maxLength: 7, inputMode: 'numeric', autocomplete: 'off', value: codes[addr] || '' });
+  input.dataset.addr = addr;
+  input.oninput = () => {
+    input.value = input.value.replace(/[^0-9 ]/g, '');
+    codes[addr] = input.value;
+    if (input.value.replace(/\s/g, '').length === 6) submit();   // the sixth digit sends it
+  };
+  input.onkeydown = e => { if (e.key === 'Enter') submit(); };
+  return input;
+}
+
+// Sends the code of one device; `path` is /ui/devices/connect (a device found nearby) or /ui/devices/pair (a known one).
+async function pairWith(path, addr, name) {
+  const code = (codes[addr] || '').replace(/\s/g, '');
+  if (code.length !== 6) { toast('Type the 6-digit code shown on the device.'); return; }
+  if (busy.has(addr)) return;
+  busy.add(addr); refresh();
+  try { await api(path, 'POST', { addr, code }); codes[addr] = ''; toast('Paired with ' + (name || addr)); }
+  catch (e) { toast(e.message); codes[addr] = ''; }
+  busy.delete(addr); refresh();
+}
+
+function pairRow(addr, name, path) {
+  const submit = () => pairWith(path, addr, name);
+  const b = el('button', { textContent: busy.has(addr) ? 'Pairing...' : 'Pair', className: 'primary', disabled: busy.has(addr) });
+  b.onclick = submit;
+  return [codeBox(addr, submit), b];
+}
+
+function devName(addr, name) {
+  return el('span', { className: 'grow' }, el('b', { textContent: name || addr }), ' ', el('span', { className: 'dim small', textContent: name ? addr : '' }));
+}
+
 function renderDevices(list) {
   const box = $('devices');
-  const focused = document.activeElement && box.contains(document.activeElement) ? document.activeElement.dataset.addr : null;
+  const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.addr : null;
   box.replaceChildren();
-  if (!list.length) box.append(Object.assign(document.createElement('div'), { className: 'dim note', textContent: 'No device yet.' }));
   for (const dv of list) {
-    const row = document.createElement('div'); row.className = 'dev';
-    const name = document.createElement('span'); name.className = 'grow';
-    name.append(Object.assign(document.createElement('b'), { textContent: dv.name || dv.addr }), ' ', Object.assign(document.createElement('span'), { className: 'dim small', textContent: dv.name ? dv.addr : '' }));
+    const row = el('div', { className: 'dev' });
     const kind = { connected: 'good', pairing_required: 'warn', offline: 'bad', connecting: '' }[dv.state] || '';
     const label = { connected: 'Connected', pairing_required: 'Needs pairing', offline: 'Not reachable', connecting: 'Connecting...' }[dv.state] || dv.state;
-    row.append(name, dot(kind, label + (dv.detail && dv.state !== 'connected' ? ' - ' + dv.detail : '')));
-    if (dv.state === 'pairing_required') {
-      const code = Object.assign(document.createElement('input'), { type: 'text', placeholder: '123456', maxLength: 6, inputMode: 'numeric', value: codes[dv.addr] || '' });
-      code.dataset.addr = dv.addr;
-      code.oninput = () => { codes[dv.addr] = code.value; };
-      const pair = Object.assign(document.createElement('button'), { textContent: 'Pair', className: 'primary' });
-      const go = async () => { try { await api('/ui/devices/pair', 'POST', { addr: dv.addr, code: (codes[dv.addr] || '').replace(/\s/g, '') }); codes[dv.addr] = ''; refresh(); } catch (e) { toast(e.message); } };
-      pair.onclick = go; code.onkeydown = e => { if (e.key === 'Enter') go(); };
-      row.append(code, pair);
-    }
-    const rm = Object.assign(document.createElement('button'), { textContent: 'Remove' });
+    row.append(devName(dv.addr, dv.name), dot(kind, label + (dv.detail && dv.state !== 'connected' && dv.state !== 'pairing_required' ? ' - ' + dv.detail : '')));
+    if (dv.state === 'pairing_required') row.append(...pairRow(dv.addr, dv.name, '/ui/devices/pair'));
+    const rm = el('button', { textContent: 'Remove' });
     rm.onclick = async () => { if (!confirm('Stop reporting to ' + (dv.name || dv.addr) + '?')) return; try { await api('/ui/devices/remove', 'POST', { addr: dv.addr }); refresh(); } catch (e) { toast(e.message); } };
-    row.append(rm); box.append(row);
+    row.append(rm);
+    box.append(row);
+    if (dv.state === 'pairing_required') {
+      const hint = dv.detail && dv.detail !== 'enter the code shown on the device' ? dv.detail : 'Open Settings → Sources → Pair a source on the device and type the code it shows.';
+      box.append(el('div', { className: 'note ' + (dv.detail && dv.detail !== 'enter the code shown on the device' ? 'bad' : 'dim'), textContent: hint, style: 'margin:-4px 0 6px 6px' }));
+    }
+    if (dv.state === 'offline') box.append(el('div', { className: 'note dim', textContent: 'Switched off or out of WiFi range? It reconnects by itself. If you reset it, remove it here and pair it again.', style: 'margin:-4px 0 6px 6px' }));
   }
-  if (focused) { const el = box.querySelector('input[data-addr="' + CSS.escape(focused) + '"]'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
+  if (focused) { const x = box.querySelector('input[data-addr="' + CSS.escape(focused) + '"]'); if (x) { x.focus(); x.setSelectionRange(x.value.length, x.value.length); } }
 }
 
 function renderNearby(list) {
-  const box = $('nearby'); box.replaceChildren();
+  const box = $('nearby');
+  const focused = document.activeElement && box.contains(document.activeElement) ? document.activeElement.dataset.addr : null;
+  box.replaceChildren();
   if (!list.length) return;
-  box.append(Object.assign(document.createElement('div'), { className: 'dim small', style: 'margin-top:10px', textContent: 'Found on your network:' }));
+  box.append(el('div', { className: 'dim small', style: 'margin-top:8px', textContent: 'Found on your network:' }));
   for (const f of list) {
-    const row = document.createElement('div'); row.className = 'dev';
-    const name = document.createElement('span'); name.className = 'grow';
-    name.append(Object.assign(document.createElement('b'), { textContent: f.name }), ' ', Object.assign(document.createElement('span'), { className: 'dim small', textContent: f.addr }));
-    const go = Object.assign(document.createElement('button'), { textContent: 'Connect', className: 'primary' });
-    go.onclick = async () => { try { await api('/ui/devices/add', 'POST', { addr: f.addr }); refresh(); } catch (e) { toast(e.message); } };
-    row.append(name, go); box.append(row);
+    const row = el('div', { className: 'dev' });
+    row.append(devName(f.addr, f.name), ...pairRow(f.addr, f.name, '/ui/devices/connect'));
+    box.append(row);
   }
+  box.append(el('div', { className: 'note dim', textContent: 'The code appears on the device under Settings → Sources → Pair a source (a new device shows it during setup).' }));
+  if (focused) { const x = box.querySelector('input[data-addr="' + CSS.escape(focused) + '"]'); if (x) { x.focus(); x.setSelectionRange(x.value.length, x.value.length); } }
 }
 
 function render(d) {
   data = d;
-  renderNearby(d.nearby || []);
-  renderDevices(d.devices || []);
+  const devices = d.devices || [], nearby = d.nearby || [];
   $('ver').textContent = 'v' + d.version;
-  // shown only when it matters: the bridge listens on the network, or a device has already called it
-  const local = /^(127\.|localhost|::1)/.test(d.bind);
-  const legacyIdle = local && d.device.requests === 0 && d.device.denied === 0;
-  $('legacy-body').hidden = legacyIdle;
-  $('legacy-off').hidden = !legacyIdle;
-  const host = d.lan_ip || '<this PC\'s IP>';
-  $('addr').replaceChildren(Object.assign(document.createElement('code'), { textContent: host + ':' + d.port }));
-  $('token').textContent = shown ? d.auth.token : '•'.repeat(d.auth.token.length);
-  $('show').textContent = shown ? 'Hide' : 'Show';
-  $('regen').disabled = d.auth.fixed;
-  $('regen').title = d.auth.fixed ? 'The token was set with --token' : '';
-  setNote($('authnote'), d.auth.enforced ? 'dim' : 'warn',
-    d.auth.enforced ? 'Every request needs this token.'
-      : (local ? 'Not required while the bridge listens on this PC only.'
-                                                : 'No token is required: anyone on the network can control the players (started with --no-auth).'));
 
-  const dv = d.device;
-  $('device').replaceChildren(dv.last_seen_s != null && dv.last_seen_s < 6
-    ? dot('good', 'Connected (' + dv.ip + ')')
-    : dv.last_seen_s != null ? dot('warn', 'Last seen ' + ago(dv.last_seen_s) + ' (' + dv.ip + ')') : dot('', 'No device has connected yet'));
-  if (dv.denied > 0 && (dv.last_seen_s == null || (dv.last_denied_s != null && dv.last_denied_s < dv.last_seen_s))) {
-    setNote($('denied'), 'bad', dv.last_denied_ip + ' was refused ' + ago(dv.last_denied_s) + ': wrong or missing token (' + dv.denied + ' refused in total).');
-  } else if (dv.denied > 0) {
-    setNote($('denied'), 'dim', dv.denied + ' request(s) were refused earlier (wrong token).');
-  } else setNote($('denied'), 'dim', '');
+  const connected = devices.filter(x => x.state === 'connected');
+  $('summary').replaceChildren(connected.length
+    ? dot('good', 'Connected to ' + connected.map(x => x.name || x.addr).join(', '))
+    : dot('', devices.length ? 'No device connected right now' : 'No device yet'));
+
+  $('welcome').hidden = devices.length > 0;
+  renderDevices(devices);
+  renderNearby(nearby);
+  const lonely = !nearby.length && !devices.some(x => x.state === 'connected');
+  const waited = (Date.now() - opened) / 1000;
+  setNote($('searching'), 'dim', !lonely ? '' : waited < 20
+    ? 'Looking for Raira devices on your network...'
+    : 'Nothing found yet. Check that the device is switched on and on the same WiFi as this PC. You can also add it by its address below.');
 
   const list = $('players'); list.replaceChildren();
-  if (!d.players.players.length) list.append(Object.assign(document.createElement('div'), { className: 'dim', textContent: 'No player is running. Start Spotify, TIDAL or a browser player.' }));
+  if (!d.players.players.length) list.append(el('div', { className: 'dim', textContent: 'No player is running. Start Spotify, TIDAL or a browser player.' }));
   for (const p of d.players.players) {
-    const row = document.createElement('label'); row.className = 'player';
+    const row = el('label', { className: 'player' });
     row.classList.toggle('off', !p.enabled);
-    const radio = Object.assign(document.createElement('input'), { type: 'radio', name: 'player', checked: p.id === d.players.selected, disabled: !p.enabled });
+    const radio = el('input', { type: 'radio', name: 'player', checked: p.id === d.players.selected, disabled: !p.enabled });
     radio.onchange = async () => { try { await api('/ui/select', 'POST', { id: p.id }); refresh(); } catch (e) { toast(e.message); } };
-    const name = Object.assign(document.createElement('span'), { className: 'grow', textContent: p.name });
-    const kind = Object.assign(document.createElement('span'), { className: 'tag', textContent: p.service });
-    const send = Object.assign(document.createElement('input'), { type: 'checkbox', checked: p.enabled, title: 'Send this player to devices' });
+    const name = el('span', { className: 'grow', textContent: p.name });
+    const kind = el('span', { className: 'tag', textContent: p.service });
+    const send = el('input', { type: 'checkbox', checked: p.enabled, title: 'Send this player to devices' });
     send.onchange = async () => { try { await api('/ui/players/enabled', 'POST', { id: p.id, enabled: send.checked }); } catch (e) { toast(e.message); } refresh(); };
-    const sendLabel = Object.assign(document.createElement('span'), { className: 'tag', textContent: 'send to devices' });
+    const sendLabel = el('span', { className: 'tag', textContent: 'send to devices' });
     row.append(radio, name, kind, p.running ? dot(p.status === 'playing' ? 'good' : '', p.status) : dot('', 'not running'), sendLabel, send);
     list.append(row);
   }
@@ -238,12 +263,6 @@ $('adddev').onclick = async () => {
   try { await api('/ui/devices/add', 'POST', { addr: $('newdev').value }); $('newdev').value = ''; refresh(); } catch (e) { toast(e.message); }
 };
 $('newdev').onkeydown = e => { if (e.key === 'Enter') $('adddev').click(); };
-$('show').onclick = () => { shown = !shown; if (data) render(data); };
-$('copy').onclick = async () => { try { await navigator.clipboard.writeText(data.auth.token); toast('Token copied'); } catch { toast('Copy failed: select the token and copy it by hand'); } };
-$('regen').onclick = async () => {
-  if (!confirm('Create a new token? Devices must be given the new one.')) return;
-  try { await api('/ui/token/regenerate', 'POST'); shown = true; toast('New token created'); refresh(); } catch (e) { toast(e.message); }
-};
 $('save').onclick = async () => {
   try {
     await api('/ui/config', 'POST', { bind: $('bind').value, port: Number($('port').value), tidal_hifi: $('tidal').value });

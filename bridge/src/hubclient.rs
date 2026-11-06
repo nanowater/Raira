@@ -24,6 +24,10 @@ const HEARTBEAT: Duration = Duration::from_secs(30);
 const PING_EVERY: Duration = Duration::from_secs(3);
 const DEAD_AFTER: Duration = Duration::from_secs(10);
 
+/// The reason shown while a device waits for its pairing code. Any other reason on a device in that state is the answer
+/// to a code that was sent (wrong code, pairing not open).
+pub const PAIRING_WAITING: &str = "enter the code shown on the device";
+
 #[derive(Clone, Serialize)]
 pub struct DeviceStatus {
     pub addr: String,
@@ -387,7 +391,7 @@ async fn session(
                             }
                             "pairing_required" => {
                                 if me.secret_of(addr).is_none() {
-                                    me.set_status(addr, "pairing_required", "enter the code shown on the device");
+                                    me.set_status(addr, "pairing_required", PAIRING_WAITING);
                                 }
                             }
                             "ready" => {

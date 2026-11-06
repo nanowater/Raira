@@ -59,7 +59,7 @@ constexpr const char * PLAYER_FAILED   = "Cannot reach the bridge";
 /* settings: sources (programs on a PC that connect to this device) */
 constexpr const char * SOURCES_PAIR    = "Pair a source";
 constexpr const char * SOURCES_CANCEL  = "Cancel";
-constexpr const char * SOURCES_HINT    = "Type the code into the bridge on your PC (settings page > Devices)";
+constexpr const char * SOURCES_HINT    = "Type the code into the bridge on your PC (its settings page, Your Raira)";
 constexpr const char * SOURCES_NONE    = "No source yet. Start the bridge on your PC.";
 constexpr const char * SOURCES_WAITING = "Waiting for a code";
 constexpr const char * SOURCES_REMOVE  = "Remove";

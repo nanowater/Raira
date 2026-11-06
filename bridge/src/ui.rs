@@ -5,7 +5,7 @@
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::Duration;
 
 use axum::Json;
 use axum::extract::{ConnectInfo, Request, State};
@@ -15,16 +15,14 @@ use axum::response::{Html, IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::auth::Access;
 use crate::config::{self, Config};
 use crate::discovery::Discovery;
 use crate::hub::{ApiError, Hub};
-use crate::hubclient::HubClients;
+use crate::hubclient::{HubClients, PAIRING_WAITING};
 use crate::tidal::Tidal;
 
 pub struct UiState {
     pub hub: Arc<Hub>,
-    pub access: Arc<Access>,
     /// what the server is running with (a saved change only takes effect after a restart)
     pub bind: String,
     pub port: u16,
@@ -70,23 +68,18 @@ pub async fn page() -> Html<&'static str> {
     Html(include_str!("ui.html"))
 }
 
-/// The address a device on the same network would use: the IP of the interface the default route leaves by.
+/// The IP of this PC on the network (the interface the default route leaves by): the discovery prefers a device address on
+/// the same subnet.
 pub fn lan_ip() -> Option<String> {
     let s = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
     s.connect("192.0.2.1:9").ok()?; // no packet is sent: this only picks the outgoing interface
     Some(s.local_addr().ok()?.ip().to_string())
 }
 
-fn ago(t: Option<Instant>) -> Value {
-    t.map(|t| json!(t.elapsed().as_secs_f64()))
-        .unwrap_or(Value::Null)
-}
-
 pub async fn status(State(s): State<Ui>) -> Json<Value> {
     let (players, hidden) = s.hub.players_with_hidden().await;
     let now = s.hub.state(None).await.ok();
     let tidal = s.hub.tidal_status().await;
-    let st = s.access.stats();
     let cfg = s.config.lock().unwrap().clone();
 
     // what the next start without command-line options will use
@@ -99,16 +92,6 @@ pub async fn status(State(s): State<Ui>) -> Json<Value> {
         "version": env!("CARGO_PKG_VERSION"),
         "bind": s.bind,
         "port": s.port,
-        "lan_ip": lan_ip(),
-        "auth": { "enforced": s.access.enforced(), "fixed": s.access.fixed(), "token": s.access.token() },
-        "device": {
-            "last_seen_s": ago(st.last_seen.map(|(t, _)| t)),
-            "ip": st.last_seen.map(|(_, ip)| ip.to_string()),
-            "requests": st.requests,
-            "denied": st.denied,
-            "last_denied_s": ago(st.last_denied.map(|(t, _)| t)),
-            "last_denied_ip": st.last_denied.map(|(_, ip)| ip.to_string()),
-        },
         "players": players_json(&players, &hidden, &s.hub.disabled()),
         "now": now.map(|n| json!({ "title": n.track.title, "artists": n.track.artists, "status": n.status, "player": n.player })),
         "devices": s.clients.statuses(),
@@ -192,17 +175,6 @@ pub async fn select(
     s.hub.select(&b.id).await.map(|_| StatusCode::NO_CONTENT)
 }
 
-pub async fn regenerate_token(State(s): State<Ui>) -> Response {
-    match s.access.regenerate() {
-        Some(_) => StatusCode::NO_CONTENT.into_response(),
-        None => (
-            StatusCode::BAD_REQUEST,
-            "the token was set with --token and cannot be changed here",
-        )
-            .into_response(),
-    }
-}
-
 #[derive(Deserialize)]
 pub struct ConfigBody {
     bind: String,
@@ -270,14 +242,53 @@ pub async fn remove_device(State(s): State<Ui>, Json(b): Json<AddrBody>) -> Stat
     StatusCode::NO_CONTENT
 }
 
-pub async fn pair_device(State(s): State<Ui>, Json(b): Json<PairBody>) -> Response {
-    if s.clients.pair(&b.addr, b.code.trim()) {
-        StatusCode::NO_CONTENT.into_response()
-    } else {
-        (
-            StatusCode::BAD_REQUEST,
-            "that device is not connected right now".to_string(),
-        )
-            .into_response()
+/// Hands the code to the device's connection and waits for the answer, so the page can say "paired" or why not. A device
+/// that was only just added needs a moment before its connection can take a code.
+async fn pair_and_wait(s: &Ui, addr: &str, code: &str) -> Result<(), String> {
+    let tick = Duration::from_millis(100);
+    let mut sent = false;
+    for _ in 0..50 {
+        if s.clients.pair(addr, code) {
+            sent = true;
+            break;
+        }
+        tokio::time::sleep(tick).await;
     }
+    if !sent {
+        return Err("cannot reach the device".into());
+    }
+    for _ in 0..50 {
+        tokio::time::sleep(tick).await;
+        let Some(d) = s.clients.statuses().into_iter().find(|d| d.addr == addr) else {
+            return Err("the device was removed".into());
+        };
+        match d.state.as_str() {
+            "connected" => return Ok(()),
+            "pairing_required" if d.detail != PAIRING_WAITING => return Err(d.detail),
+            "offline" => return Err(d.detail),
+            _ => {}
+        }
+    }
+    Err("the device did not answer".into())
+}
+
+fn pair_result(r: Result<(), String>) -> Response {
+    match r {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(m) => (StatusCode::BAD_REQUEST, m).into_response(),
+    }
+}
+
+/// For a device the bridge already knows (its row says "needs pairing").
+pub async fn pair_device(State(s): State<Ui>, Json(b): Json<PairBody>) -> Response {
+    pair_result(pair_and_wait(&s, b.addr.trim(), b.code.trim()).await)
+}
+
+/// For a device found nearby: adds it and pairs in one go.
+pub async fn connect_device(State(s): State<Ui>, Json(b): Json<PairBody>) -> Response {
+    let addr = b.addr.trim().to_string();
+    if let Err(m) = s.clients.add(&addr) {
+        return (StatusCode::BAD_REQUEST, m).into_response();
+    }
+    pair_result(pair_and_wait(&s, &addr, b.code.trim()).await)
 }

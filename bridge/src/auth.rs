@@ -75,8 +75,6 @@ pub struct Stats {
 
 pub struct Access {
     token: RwLock<String>,
-    /// given with --token: not stored and not regenerable
-    fixed: bool,
     enforce: bool,
     stats: Mutex<Stats>,
 }
@@ -104,7 +102,6 @@ impl Access {
         let enforce = !no_auth && (fixed || !is_loopback(bind));
         Arc::new(Self {
             token: RwLock::new(token),
-            fixed,
             enforce,
             stats: Mutex::new(Stats::default()),
         })
@@ -116,22 +113,8 @@ impl Access {
     pub fn enforced(&self) -> bool {
         self.enforce
     }
-    pub fn fixed(&self) -> bool {
-        self.fixed
-    }
     pub fn stats(&self) -> Stats {
         self.stats.lock().unwrap().clone()
-    }
-
-    /// A new token (devices have to be given it again). None when the token was fixed on the command line.
-    pub fn regenerate(&self) -> Option<String> {
-        if self.fixed {
-            return None;
-        }
-        let t = generate();
-        store(&token_path(), &t);
-        *self.token.write().unwrap() = t.clone();
-        Some(t)
     }
 }
 

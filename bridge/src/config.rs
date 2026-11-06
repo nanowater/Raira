@@ -25,6 +25,9 @@ pub struct Config {
     /// the devices (hubs) this bridge connects to
     #[serde(default)]
     pub devices: Vec<DeviceCfg>,
+    /// the settings page was opened for the user once, at the first start without a device (see main.rs)
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub welcomed: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

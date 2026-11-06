@@ -276,9 +276,19 @@ async fn main() {
     let clients = hubclient::HubClients::start(hub.clone(), cfg.clone(), extra);
 
     let discovery = discovery::Discovery::start(clients.clone());
+    // The first start without any device: open the settings page once, so the user is not left to find the tray icon to
+    // pair the device. Not on a headless run (--no-tray), and not again after a later start.
+    let first_run = {
+        let mut c = cfg.lock().unwrap();
+        let first = c.devices.is_empty() && !c.welcomed && !flag("--no-tray");
+        if first {
+            c.welcomed = true;
+            let _ = config::save(&c);
+        }
+        first
+    };
     let ui_state: ui::Ui = Arc::new(ui::UiState {
         hub: hub.clone(),
-        access: access.clone(),
         bind: bind.clone(),
         port,
         config: cfg,
@@ -290,11 +300,11 @@ async fn main() {
         .route("/ui/status", get(ui::status))
         .route("/ui/select", post(ui::select))
         .route("/ui/players/enabled", post(ui::set_player_enabled))
-        .route("/ui/token/regenerate", post(ui::regenerate_token))
         .route("/ui/config", post(ui::set_config))
         .route("/ui/devices/add", post(ui::add_device))
         .route("/ui/devices/remove", post(ui::remove_device))
         .route("/ui/devices/pair", post(ui::pair_device))
+        .route("/ui/devices/connect", post(ui::connect_device))
         .with_state(ui_state.clone())
         .layer(axum::middleware::from_fn_with_state(ui_state, ui::guard));
 
@@ -302,6 +312,13 @@ async fn main() {
     let page = format!("http://127.0.0.1:{port}/");
     tracing::info!("raira-bridge listening on http://{addr}/v0 — settings: {page}");
 
+    if first_run {
+        let url = page.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await; // the server is up by then
+            tray::open_in_browser(&url);
+        });
+    }
     if !flag("--no-tray") {
         tokio::spawn(tray::spawn(page, hub, access));
     }

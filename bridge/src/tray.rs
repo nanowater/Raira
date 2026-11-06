@@ -16,7 +16,7 @@ struct BridgeTray {
     status: String,
 }
 
-fn open_in_browser(url: &str) {
+pub fn open_in_browser(url: &str) {
     let _ = std::process::Command::new("xdg-open").arg(url).spawn();
 }
 
