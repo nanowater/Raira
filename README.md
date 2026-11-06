@@ -8,7 +8,7 @@ Raira is a media controller inspired by the Spotify Car Thing. It is not tied to
 
 It shows what is playing on your PC (cover, title, progress, synced lyrics) on a small touch screen. You play/pause, skip, seek, shuffle, repeat and change the volume by touching the screen or turning the dial.
 
-![Raira on the simulator](docs/img/screenshot.png)
+![Raira running on the ESP32-P4 device](docs/img/device.jpg)
 
 ## How does it work?
 
@@ -45,6 +45,8 @@ Raira currently needs:
 ## Try it yourself
 
 For now the PC side runs on Linux only. You can try the screen with the simulator, no device needed.
+
+![Raira on the simulator](docs/img/screenshot.png)
 
 You need: a C++23 compiler, CMake, SDL2, libturbojpeg, libwebsockets, nlohmann_json, and Rust.
 

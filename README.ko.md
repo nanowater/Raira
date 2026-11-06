@@ -8,7 +8,7 @@ Raira는 Spotify Car Thing에서 영감을 받은 미디어 컨트롤러입니�
 
 PC에서 재생 중인 곡의 커버, 제목, 진행 상태, 싱크 가사를 작은 터치스크린에 보여줍니다. 재생/일시정지, 건너뛰기, 탐색, 셔플, 반복, 볼륨은 화면을 터치하거나 다이얼을 돌려서 조작합니다.
 
-![시뮬레이터에서 실행한 Raira](docs/img/screenshot.png)
+![ESP32-P4 기기에서 실행 중인 Raira](docs/img/device.jpg)
 
 ## 어떻게 동작하나요?
 
@@ -45,6 +45,8 @@ Raira는 현재 아래와 같은 것들을 필요로 합니다.
 ## 직접 써보기
 
 지금은 PC 쪽이 Linux에서만 동작합니다. 기기가 없어도 시뮬레이터로 화면을 먼저 체험할 수 있습니다.
+
+![시뮬레이터에서 실행한 Raira](docs/img/screenshot.png)
 
 필요한 것: C++23 컴파일러, CMake, SDL2, libturbojpeg, libwebsockets, nlohmann_json, Rust.
 
