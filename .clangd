@@ -1,0 +1,6 @@
+CompileFlags:
+  CompilationDatabase: firmware/build_p4
+  Remove:
+    # ESP32-P4 GCC extensions that clangd's parser does not know.
+    - -march=*
+    - -mtune=*
