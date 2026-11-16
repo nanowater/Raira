@@ -42,6 +42,24 @@ Raira는 현재 아래와 같은 것들을 필요로 합니다.
 | Spotify           | ✅   |
 | Tidal(Tidal-hifi) | ✅   |
 
+## 설치 (빌드 없이)
+
+[Releases 페이지](https://github.com/nanowater/Raira/releases)에서 최신 릴리스의 파일을 받습니다.
+
+1. **기기.** 보드를 USB로 연결하고 이미지 전체를 한 번 씁니다([esptool](https://github.com/espressif/esptool)이 필요하며 `pip install esptool`로 설치합니다).
+
+        esptool --chip esp32p4 -p /dev/ttyACM0 write-flash 0x0 raira-p4-<버전>.bin
+
+   보드에 설정 안내(기기 이름, WiFi, 페어링)가 나옵니다.
+2. **PC (Linux).** 브리지를 풀고 설치 스크립트를 실행합니다. 로그인할 때마다 자동으로 시작하고, 처음에는 설정 페이지를 한 번 엽니다.
+
+        tar xzf raira-bridge-<버전>-linux-x86_64.tar.gz
+        cd raira-bridge-<버전>-linux-x86_64 && ./install.sh
+
+3. 기기 화면에 나온 코드를 브리지 페이지(`http://127.0.0.1:18801/`, "Your Raira")에 입력합니다.
+
+`tools/make_release.sh`는 소스에서 이 파일들을 만듭니다.
+
 ## 직접 써보기
 
 지금은 PC 쪽이 Linux에서만 동작합니다. 기기가 없어도 시뮬레이터로 화면을 먼저 체험할 수 있습니다.
@@ -59,8 +77,6 @@ Raira는 현재 아래와 같은 것들을 필요로 합니다.
 3. 연결이 자동으로 안 되면 브리지를 `--device 127.0.0.1:18322`로 시작해 보세요.
 
 브리지를 로그인할 때마다 자동으로 켜지게 하려면 `tools/install_bridge.sh`를 실행하세요. 되돌리려면 `--uninstall`을 붙입니다.
-
-이는 추후에 쉽게 사용할 수 있도록 인스톨러 같은 방식으로 제공될 예정입니다.
 
 ## 실제 기기 만들기
 

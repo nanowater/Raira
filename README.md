@@ -42,6 +42,24 @@ Raira currently needs:
 | Spotify           | ✅    |
 | Tidal (tidal-hifi) | ✅   |
 
+## Install (no build needed)
+
+Download the files of the latest release from the [Releases page](https://github.com/nanowater/Raira/releases).
+
+1. **The device.** Connect the board by USB and write the whole image once ([esptool](https://github.com/espressif/esptool) needs Python, `pip install esptool`):
+
+        esptool --chip esp32p4 -p /dev/ttyACM0 write-flash 0x0 raira-p4-<version>.bin
+
+   The board shows the setup guide: device name, WiFi, then pairing.
+2. **The PC (Linux).** Unpack the bridge and run its installer; it starts at every login and opens its settings page the first time:
+
+        tar xzf raira-bridge-<version>-linux-x86_64.tar.gz
+        cd raira-bridge-<version>-linux-x86_64 && ./install.sh
+
+3. Type the code shown on the device into the bridge's page (`http://127.0.0.1:18801/`, "Your Raira").
+
+`tools/make_release.sh` builds these files from the source.
+
 ## Try it yourself
 
 For now the PC side runs on Linux only. You can try the screen with the simulator, no device needed.
@@ -59,8 +77,6 @@ You need: a C++23 compiler, CMake, SDL2, libturbojpeg, libwebsockets, nlohmann_j
 3. If they do not connect on their own, start the bridge with `--device 127.0.0.1:18322`.
 
 To have the bridge start at every login, run `tools/install_bridge.sh`. Add `--uninstall` to undo it.
-
-An installer that makes this easier is planned.
 
 ## Building the real device
 
